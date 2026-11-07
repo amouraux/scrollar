@@ -420,5 +420,26 @@ check(Incremental.carryOver(from: [checkedBefore], into: [dated("nf2", daysAgo: 
 check(try! JSONDecoder().decode(Paper.self, from: Data(#"{"id":"W1","title":"T","date":"2026-01-01","authors":[],"authorIDs":[],"citedBy":0,"topics":[],"topicIDs":[],"isOpenAccess":false,"isRepository":false,"pubmedTypes":[],"abstractFromPubMed":false,"reasons":[],"citesYou":false,"followed":false}"#.utf8)).notInPubMed == nil,
       "a cache written before the field existed still loads")
 
+
+// MARK: the one-sentence summary
+check(Summary.sentence(from: nil) == nil && Summary.sentence(from: "  ") == nil, "no abstract, no summary")
+check(Summary.strippingHeading("Background And Aims: Chronic pain is common.") == "Chronic pain is common.", "a labelled heading is removed")
+check(Summary.strippingHeading("Abstract Application of cold relieves pain.") == "Application of cold relieves pain.", "a heading glued to the sentence is removed")
+check(Summary.strippingHeading("Results: Pain fell by half.") == "Pain fell by half.", "Results: is removed")
+check(Summary.strippingHeading("Resting-state EEG captures sensitisation.") == "Resting-state EEG captures sensitisation.", "an ordinary sentence is left alone")
+let abstract1 = "Chronic pain affects a quarter of adults worldwide and is poorly treated. We aimed to test whether cold relieves pain in mice. We found that a brainstem enkephalin circuit mediates cold-induced analgesia in mice. These data open new routes to treatment."
+check(Summary.sentence(from: abstract1) == "We found that a brainstem enkephalin circuit mediates cold-induced analgesia in mice.", "the sentence with the finding wins over background and intent")
+let labelledAbstract = "BACKGROUND: Postoperative pain is common and costly for patients. METHODS: We recruited 200 adults. RESULTS: Pain scores were significantly lower in the treated group. CONCLUSION: Treatment improved recovery."
+check(Summary.sentence(from: labelledAbstract)?.hasPrefix("Pain scores were significantly lower") == true || Summary.sentence(from: labelledAbstract)?.hasPrefix("Treatment improved") == true,
+      "labels are stripped and a result or conclusion is chosen")
+check(Summary.sentence(from: "Pain scores were significantly lower in the treated group of adults.") == "Pain scores were significantly lower in the treated group of adults.", "a one-sentence abstract is returned whole")
+let noFinding = "Pain is common among adults in every country. Treatment options remain limited for many of those patients. Access to care varies widely between regions."
+check(Summary.sentence(from: noFinding) == "Access to care varies widely between regions.", "with no finding, the last sentence is chosen")
+let long = "We found that " + String(repeating: "a very long clause about pain ", count: 20) + "mattered."
+let clipped = Summary.sentence(from: long, maxLength: 80)!
+check(clipped.count <= 81 && clipped.hasSuffix("…") && !clipped.contains("  "), "a long sentence is clipped on a word boundary")
+check(Summary.clip("short one", to: 80) == "short one", "a short sentence is not clipped")
+check(Summary.sentence(from: "Fig. 2 shows e.g. the mean of 3.5 units. We found that cold relieved pain significantly in treated mice.")?.hasPrefix("We found") == true, "abbreviations and decimals do not split a sentence")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

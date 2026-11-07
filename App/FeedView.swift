@@ -7,7 +7,7 @@ struct FeedView: View {
         NavigationStack {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 14) {
+                    LazyVStack(spacing: 8) {
                         Color.clear.frame(height: 0).id("top")
                         StatusBanner()
                         content
@@ -152,32 +152,33 @@ private struct StatusBanner: View {
     }
 }
 
-/// A picture made from the paper's topic: always there, offline, and nobody's figure.
+/// A small picture made from the paper's topic: always there, offline, and nobody's figure.
 struct CoverView: View {
     @Environment(\.colorScheme) private var scheme
     let paper: Paper
+    var size: CGFloat = 56
 
     var body: some View {
         let spec = Cover.spec(for: paper)
-        let saturation = scheme == .dark ? 0.55 : 0.55
-        let brightness = scheme == .dark ? 0.50 : 0.90
-        ZStack(alignment: .bottomTrailing) {
+        let brightness = scheme == .dark ? 0.50 : 0.88
+        ZStack {
             LinearGradient(
-                colors: [Color(hue: spec.hueA, saturation: saturation, brightness: brightness),
-                         Color(hue: spec.hueB, saturation: saturation, brightness: brightness - 0.14)],
+                colors: [Color(hue: spec.hueA, saturation: 0.55, brightness: brightness),
+                         Color(hue: spec.hueB, saturation: 0.55, brightness: brightness - 0.14)],
                 startPoint: .topLeading, endPoint: .bottomTrailing)
             Image(systemName: spec.symbol)
-                .font(.system(size: 66, weight: .light))
-                .foregroundStyle(.white.opacity(0.38))
-                .rotationEffect(.degrees(-8))
-                .offset(x: 8, y: 16)
+                .font(.system(size: size * 0.42, weight: .regular))
+                .foregroundStyle(.white.opacity(0.9))
         }
-        .frame(height: 84)
-        .clipped()
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.22))
         .accessibilityHidden(true)
     }
 }
 
+/// A row in the stream: thumbnail, title, where and when, and one sentence. A tap
+/// opens it to the full abstract and the actions, so the stream itself stays dense
+/// enough to skim several papers to a screen.
 struct PaperCard: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
@@ -190,22 +191,26 @@ struct PaperCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            CoverView(paper: paper)
-            VStack(alignment: .leading, spacing: 10) {
-                header
-                Text(paper.title)
-                    .font(.headline)
-                    .fixedSize(horizontal: false, vertical: true)
-                byline
-                abstract
-                reasons
-                actions
+            HStack(alignment: .top, spacing: 8) {
+                Button(action: toggle) { row }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(expanded ? "Hides the abstract" : "Shows the abstract")
+                Button {
+                    model.toggleSaved(paper)
+                } label: {
+                    Image(systemName: model.isSaved(paper) ? "bookmark.fill" : "bookmark")
+                        .font(.body)
+                        .frame(width: 32, height: 32)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(model.isSaved(paper) ? "Remove from saved" : "Save")
             }
-            .padding(16)
+            if expanded { details.padding(.top, 10).transition(.opacity) }
         }
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
         // Dimmed once read, but never while it is open in front of the reader.
         .opacity(status == .read && !expanded ? 0.6 : 1)
         .accessibilityElement(children: .contain)
@@ -220,110 +225,120 @@ struct PaperCard: View {
         .onDisappear { seenTimer?.cancel() }
     }
 
-    private var header: some View {
-        HStack(spacing: 8) {
+    private func toggle() {
+        withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+        // Opening a paper to its abstract is reading it, for this purpose.
+        if expanded { model.markOpened(paper) }
+    }
+
+    // MARK: Collapsed
+
+    private var row: some View {
+        HStack(alignment: .top, spacing: 12) {
+            CoverView(paper: paper)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(paper.title)
+                    .font(.subheadline.weight(.semibold))
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(expanded ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: true)
+                meta
+                if !expanded, let line = Summary.sentence(from: paper.abstract, maxLength: 150) {
+                    Text(line)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                }
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    private var meta: some View {
+        HStack(spacing: 6) {
             if status == .new {
-                Text("New")
-                    .font(.caption2.weight(.bold))
-                    .padding(.horizontal, 7).padding(.vertical, 3)
+                Text("NEW")
+                    .font(.system(size: 9, weight: .heavy))
+                    .padding(.horizontal, 5).padding(.vertical, 2)
                     .background(Color.accentColor, in: Capsule())
                     .foregroundStyle(.white)
             }
             if status == .read {
-                Label("Read", systemImage: "checkmark")
-                    .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                Image(systemName: "checkmark").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
             }
-            if paper.kind != .research {
-                Text(paper.kind.label.capitalized)
-                    .font(.caption2.weight(.semibold))
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Color.accentColor.opacity(0.15), in: Capsule())
-                    .foregroundStyle(Color.accentColor)
-            }
-            if paper.isOpenAccess {
-                Label("Open access", systemImage: "lock.open")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Text(ageLabel(paper.date)).font(.caption).foregroundStyle(.secondary)
+            Text(metaLine)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 
-    private var byline: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if let journal = paper.journal {
-                Text(journal).font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
-            }
+    private var metaLine: String {
+        var parts: [String] = []
+        if let journal = paper.journal { parts.append(journal) }
+        parts.append(ageLabel(paper.date))
+        if paper.kind != .research { parts.append(paper.kind.label) }
+        return parts.joined(separator: " · ")
+    }
+
+    // MARK: Expanded
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 10) {
             if !paper.authors.isEmpty {
                 Text(authorLine).font(.footnote).foregroundStyle(.secondary)
             }
+            if let text = paper.abstract {
+                Text(text)
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            } else {
+                Text("No abstract available.").font(.callout).foregroundStyle(.tertiary)
+            }
+            HStack(spacing: 6) {
+                if paper.isOpenAccess {
+                    Label("Open access", systemImage: "lock.open").font(.caption).foregroundStyle(.secondary)
+                    Text("·").foregroundStyle(.tertiary)
+                }
+                Label(paper.reasons.joined(separator: " · "), systemImage: "arrow.turn.down.right")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            actions
         }
     }
 
     private var authorLine: String {
         let names = paper.authors
-        if names.count <= 3 { return names.joined(separator: ", ") }
-        return names.prefix(2).joined(separator: ", ") + " … " + (names.last ?? "")
-    }
-
-    @ViewBuilder private var abstract: some View {
-        if let text = paper.abstract {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(text)
-                    .font(.callout)
-                    .lineLimit(expanded ? nil : 6)
-                    .fixedSize(horizontal: false, vertical: true)
-                if text.count > 320 {
-                    Button(expanded ? "Show less" : "Read more") {
-                        withAnimation { expanded.toggle() }
-                        // Reading the whole abstract is reading the paper, for this purpose.
-                        if expanded { model.markOpened(paper) }
-                    }
-                    .font(.footnote.weight(.semibold))
-                }
-            }
-        } else {
-            Text("No abstract available.").font(.callout).foregroundStyle(.tertiary)
-        }
-    }
-
-    private var reasons: some View {
-        Label(paper.reasons.joined(separator: " · "), systemImage: "arrow.turn.down.right")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(2)
+        if names.count <= 4 { return names.joined(separator: ", ") }
+        return names.prefix(3).joined(separator: ", ") + " … " + (names.last ?? "")
     }
 
     private var actions: some View {
-        HStack(spacing: 22) {
-            Button {
-                model.toggleSaved(paper)
-            } label: {
-                Image(systemName: model.isSaved(paper) ? "bookmark.fill" : "bookmark")
-            }
-            .accessibilityLabel(model.isSaved(paper) ? "Remove from saved" : "Save")
-
+        HStack(spacing: 10) {
             if let url = paper.link {
                 Button {
                     model.markOpened(paper)
                     openURL(url)
                 } label: {
-                    Image(systemName: "arrow.up.right.square")
+                    Label("Open", systemImage: "arrow.up.right.square")
                 }
-                .accessibilityLabel("Open paper")
-                ShareLink(item: url, subject: Text(paper.title)) { Image(systemName: "square.and.arrow.up") }
+                ShareLink(item: url, subject: Text(paper.title)) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
             }
             Spacer()
-            Button {
+            Button(role: .destructive) {
                 withAnimation { model.hide(paper) }
             } label: {
-                Image(systemName: "eye.slash")
+                Label("Hide", systemImage: "eye.slash")
             }
             .accessibilityLabel("Hide, don't show this again")
         }
-        .font(.title3)
-        .buttonStyle(.borderless)
-        .padding(.top, 2)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
     }
 }
 

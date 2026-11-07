@@ -48,6 +48,7 @@ their own into Settings and it will live in the Keychain.
   Apple's NaturalLanguage; nothing else touches either.
 - `Core/History.swift`: what was seen and read, and how a feed is sorted into new, earlier and read.
 - `Core/Incremental.swift`: refreshing by asking only for what was published since the last fetch, and keeping the rest.
+- `Core/Summary.swift`: the one sentence on a collapsed row, chosen from the abstract's own sentences.
 - `Core/Cover.swift`: the generated picture on each card (colour and symbol from the topic).
 - `Core/Engine.swift`: settings in, ranked feed out. The app and the command line both call it.
 - `App/`: SwiftUI. The OpenAlex key is in the Keychain, never in the settings file or the binary.
