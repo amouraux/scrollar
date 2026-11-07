@@ -4,6 +4,7 @@ import SwiftUI
 struct ScrollarApp: App {
     @State private var model = AppModel()
     @State private var tab: Tab = .feed
+    @Environment(\.scenePhase) private var scenePhase
 
     enum Tab { case feed, saved, settings }
 
@@ -22,6 +23,10 @@ struct ScrollarApp: App {
             }
             .environment(model)
             .task { await model.refreshIfStale() }
+            // What has been seen is written out when the app leaves the screen.
+            .onChange(of: scenePhase) { _, new in
+                if new != .active { model.saveHistoryNow() }
+            }
             // Changes made in Tune are applied when the user goes back to the feed,
             // not on every tap.
             .onChange(of: tab) { _, new in

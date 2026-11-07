@@ -305,5 +305,59 @@ check(CachingEmbedder.hash("abc") == CachingEmbedder.hash("abc") && CachingEmbed
 let codedPaper = try! JSONDecoder().decode(Paper.self, from: JSONEncoder().encode(Paper(id: "W1", doi: "10.1/x", title: "T", date: "2026-01-01")))
 check(codedPaper.doi == "10.1/x" && codedPaper.title == "T", "a paper survives the feed cache")
 
+
+// MARK: history: new, seen, read
+let day: TimeInterval = 86_400
+let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+var hist = History()
+let pa = ok("ha"), pb = ok("hb"), pc = ok("hc")
+check(hist.status(of: pa.dedupeKey) == .new, "a paper never shown is new")
+hist.markSeen(pa.dedupeKey, at: t0)
+check(hist.status(of: pa.dedupeKey) == .seen, "a shown paper is seen")
+hist.markSeen(pa.dedupeKey, at: t0.addingTimeInterval(day))
+check(hist.states[pa.dedupeKey]?.seenCount == 2 && hist.states[pa.dedupeKey]?.firstSeen == t0, "seeing again counts, and keeps the first sighting")
+hist.markOpened(pb, at: t0)
+check(hist.status(of: pb.dedupeKey) == .read, "an opened paper is read, even if never scrolled past")
+check(hist.read.first?.paper.title == pb.title, "read papers keep a snapshot for the Read list")
+hist.markSeen(pb.dedupeKey, at: t0.addingTimeInterval(day))
+check(hist.status(of: pb.dedupeKey) == .read, "seeing a read paper again does not make it unread")
+let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
+let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+check((try? dec.decode(History.self, from: enc.encode(hist))) == hist, "history survives a save and a load")
+
+func rp(_ p: Paper, _ score: Double) -> RankedPaper { RankedPaper(paper: p, score: score, similarity: 0.5) }
+let list = [rp(pa, 3), rp(pb, 2), rp(pc, 1)]
+let settings7 = FeedSettings()
+let arranged = Arranger.arrange(list, history: hist, settings: settings7, now: t0.addingTimeInterval(2 * day))
+check(arranged.fresh.map(\.paper.id) == ["hc"], "unseen papers are new")
+check(arranged.earlier.map(\.paper.id) == ["ha"], "seen papers go to earlier")
+check(arranged.read.map(\.paper.id) == ["hb"], "read papers are set apart")
+let later = Arranger.arrange(list, history: hist, settings: settings7, now: t0.addingTimeInterval(9 * day))
+check(later.earlier.isEmpty && later.fresh.map(\.paper.id) == ["hc"], "a seen paper expires after seven days")
+hist.markSeen(pa.dedupeKey, at: t0.addingTimeInterval(8 * day))
+check(Arranger.arrange(list, history: hist, settings: settings7, now: t0.addingTimeInterval(9 * day)).earlier.isEmpty,
+      "expiry counts from the first sighting, so scrolling back does not keep a card alive")
+var longer = FeedSettings(); longer.seenExpiryDays = 14
+check(Arranger.arrange(list, history: hist, settings: longer, now: t0.addingTimeInterval(9 * day)).earlier.map(\.paper.id) == ["ha"], "the expiry is a setting")
+let ranking = Arranger.arrange([rp(pc, 1), rp(ok("hd"), 5), rp(ok("he"), 3)], history: History(), settings: settings7, now: t0)
+check(ranking.fresh.map(\.paper.id) == ["hc", "hd", "he"], "arranging keeps the ranked order within a group")
+hist.markSeen("old", at: t0.addingTimeInterval(-500 * day))
+hist.prune(now: t0)
+check(hist.states["old"] == nil && hist.states[pa.dedupeKey] != nil, "prune forgets only very old states")
+let expirySettings = try! FeedSettings.decode(Data(#"{"seenExpiryDays":500,"showReadPapers":true}"#.utf8))
+check(expirySettings.seenExpiryDays == 60 && expirySettings.showReadPapers, "history settings are read and clamped")
+
+// MARK: covers
+let coverPaper = ok("cv") { $0.topics = ["Pain Mechanisms and Treatments"] }
+check(Cover.spec(for: coverPaper) == Cover.spec(for: coverPaper), "the same paper always gets the same cover")
+let sameTopic = ok("cv2") { $0.topics = ["Pain Mechanisms and Treatments"]; $0.title = "Something else about pain" }
+let otherTopic = ok("cv3") { $0.topics = ["Galaxy formation"]; $0.title = "Dark matter halos" }
+check(Cover.spec(for: coverPaper).hueA == Cover.spec(for: sameTopic).hueA, "papers on one topic share a colour")
+check(Cover.spec(for: coverPaper).hueA != Cover.spec(for: otherTopic).hueA, "different topics get different colours")
+check(Cover.symbol(for: ok("s1") { $0.title = "Touch and haptic feedback" }) == "hand.point.up.left", "a symbol follows the subject")
+check(Cover.symbol(for: ok("s2") { $0.title = "Ion channel gating in nociceptors" }) == "atom", "the more specific subject wins")
+check(Cover.symbol(for: ok("s3") { $0.title = "Dark matter halos" }) == "doc.text.magnifyingglass", "an unknown subject gets the generic symbol")
+check((0...1).contains(Cover.spec(for: coverPaper).hueA) && (0...1).contains(Cover.spec(for: coverPaper).hueB), "hues are valid")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

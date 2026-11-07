@@ -56,6 +56,7 @@ struct Store {
 
     private var settingsURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("settings.json") }
     private var feedURL: URL { folder(.cachesDirectory).appendingPathComponent("feed.json") }
+    private var historyURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("history.json") }
     private var embeddingsURL: URL { folder(.cachesDirectory).appendingPathComponent("embeddings.plist") }
 
     enum SettingsResult {
@@ -95,6 +96,21 @@ struct Store {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         if let data = try? encoder.encode(feed) { try? data.write(to: feedURL, options: .atomic) }
+    }
+
+    /// A record of behaviour, not something the user entered: if it cannot be
+    /// read the feed starts again from "everything is new", which costs little.
+    func loadHistory() -> History {
+        guard let data = try? Data(contentsOf: historyURL) else { return History() }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return (try? decoder.decode(History.self, from: data)) ?? History()
+    }
+
+    func saveHistory(_ history: History) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        if let data = try? encoder.encode(history) { try? data.write(to: historyURL, options: .atomic) }
     }
 
     func loadEmbeddings() -> Data? { try? Data(contentsOf: embeddingsURL) }

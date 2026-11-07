@@ -5,29 +5,39 @@ struct FeedView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                LazyVStack(spacing: 14) {
-                    StatusBanner()
-
-                    if !model.citedYou.isEmpty {
-                        SectionTitle(text: "Cited you", systemImage: "quote.bubble")
-                        ForEach(model.citedYou.prefix(10), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 14) {
+                        Color.clear.frame(height: 0).id("top")
+                        StatusBanner()
+                        content
                     }
-                    if !model.forYou.isEmpty {
-                        SectionTitle(text: "For you", systemImage: "sparkles")
-                        ForEach(model.forYou.prefix(150), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
-                    }
-                    if model.citedYou.isEmpty, model.forYou.isEmpty, !model.isLoading {
-                        EmptyFeed()
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: 700)
+                    .frame(maxWidth: .infinity)
+                }
+                .background(Color(.systemGroupedBackground))
+                .refreshable { await model.refresh() }
+                .overlay(alignment: .top) {
+                    if model.pendingNew > 0 {
+                        Button {
+                            model.applyPending()
+                            withAnimation { proxy.scrollTo("top", anchor: .top) }
+                        } label: {
+                            Label("\(model.pendingNew) new papers", systemImage: "arrow.up")
+                                .font(.subheadline.weight(.semibold))
+                                .padding(.horizontal, 16).padding(.vertical, 9)
+                                .background(Color.accentColor, in: Capsule())
+                                .foregroundStyle(.white)
+                                .shadow(radius: 4, y: 2)
+                        }
+                        .padding(.top, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .frame(maxWidth: 700)
-                .frame(maxWidth: .infinity)
+                .animation(.default, value: model.pendingNew)
             }
-            .background(Color(.systemGroupedBackground))
-            .refreshable { await model.refresh() }
             .navigationTitle("Scrollar")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -35,6 +45,33 @@ struct FeedView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder private var content: some View {
+        let layout = model.layout
+        let cited = layout.citedYou.fresh + layout.citedYou.earlier
+        if !cited.isEmpty {
+            SectionTitle(text: "Cited you", systemImage: "quote.bubble")
+            ForEach(cited.prefix(10), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+        }
+
+        if !layout.forYou.fresh.isEmpty {
+            SectionTitle(text: "For you", systemImage: "sparkles")
+            ForEach(layout.forYou.fresh.prefix(150), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+        }
+
+        if !layout.forYou.earlier.isEmpty {
+            if layout.forYou.fresh.isEmpty { CaughtUp() }
+            SectionTitle(text: "Earlier", systemImage: "clock")
+            ForEach(layout.forYou.earlier.prefix(60), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+        }
+
+        if model.settings.showReadPapers, !layout.forYou.read.isEmpty {
+            SectionTitle(text: "Read", systemImage: "checkmark.circle")
+            ForEach(layout.forYou.read.prefix(60), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+        }
+
+        if layout.isEmpty, !model.isLoading { EmptyFeed() }
     }
 }
 
@@ -48,6 +85,15 @@ private struct SectionTitle: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 8)
             .accessibilityAddTraits(.isHeader)
+    }
+}
+
+private struct CaughtUp: View {
+    var body: some View {
+        Label("You're up to date", systemImage: "checkmark.seal")
+            .font(.subheadline).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
     }
 }
 
@@ -106,32 +152,87 @@ private struct StatusBanner: View {
     }
 }
 
-struct PaperCard: View {
-    @Environment(AppModel.self) private var model
-    let ranked: RankedPaper
-    @State private var expanded = false
-
-    private var paper: Paper { ranked.paper }
+/// A picture made from the paper's topic: always there, offline, and nobody's figure.
+struct CoverView: View {
+    @Environment(\.colorScheme) private var scheme
+    let paper: Paper
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            header
-            Text(paper.title)
-                .font(.headline)
-                .fixedSize(horizontal: false, vertical: true)
-            byline
-            abstract
-            reasons
-            actions
+        let spec = Cover.spec(for: paper)
+        let saturation = scheme == .dark ? 0.55 : 0.55
+        let brightness = scheme == .dark ? 0.50 : 0.90
+        ZStack(alignment: .bottomTrailing) {
+            LinearGradient(
+                colors: [Color(hue: spec.hueA, saturation: saturation, brightness: brightness),
+                         Color(hue: spec.hueB, saturation: saturation, brightness: brightness - 0.14)],
+                startPoint: .topLeading, endPoint: .bottomTrailing)
+            Image(systemName: spec.symbol)
+                .font(.system(size: 66, weight: .light))
+                .foregroundStyle(.white.opacity(0.38))
+                .rotationEffect(.degrees(-8))
+                .offset(x: 8, y: 16)
         }
-        .padding(16)
+        .frame(height: 84)
+        .clipped()
+        .accessibilityHidden(true)
+    }
+}
+
+struct PaperCard: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.openURL) private var openURL
+    let ranked: RankedPaper
+    @State private var expanded = false
+    @State private var seenTimer: Task<Void, Never>?
+
+    private var paper: Paper { ranked.paper }
+    private var status: History.Status { model.status(of: paper) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            CoverView(paper: paper)
+            VStack(alignment: .leading, spacing: 10) {
+                header
+                Text(paper.title)
+                    .font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
+                byline
+                abstract
+                reasons
+                actions
+            }
+            .padding(16)
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        // Dimmed once read, but never while it is open in front of the reader.
+        .opacity(status == .read && !expanded ? 0.6 : 1)
         .accessibilityElement(children: .contain)
+        // Counts as seen once it has stayed on screen for a second: a card flicked
+        // past is not read, and one that scrolls out cancels the wait.
+        .onAppear {
+            seenTimer = Task {
+                try? await Task.sleep(for: .seconds(1))
+                if !Task.isCancelled { model.markSeen(paper) }
+            }
+        }
+        .onDisappear { seenTimer?.cancel() }
     }
 
     private var header: some View {
         HStack(spacing: 8) {
+            if status == .new {
+                Text("New")
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(Color.accentColor, in: Capsule())
+                    .foregroundStyle(.white)
+            }
+            if status == .read {
+                Label("Read", systemImage: "checkmark")
+                    .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            }
             if paper.kind != .research {
                 Text(paper.kind.label.capitalized)
                     .font(.caption2.weight(.semibold))
@@ -142,7 +243,6 @@ struct PaperCard: View {
             if paper.isOpenAccess {
                 Label("Open access", systemImage: "lock.open")
                     .font(.caption2).foregroundStyle(.secondary)
-                    .labelStyle(.titleAndIcon)
             }
             Spacer()
             Text(ageLabel(paper.date)).font(.caption).foregroundStyle(.secondary)
@@ -174,8 +274,12 @@ struct PaperCard: View {
                     .lineLimit(expanded ? nil : 6)
                     .fixedSize(horizontal: false, vertical: true)
                 if text.count > 320 {
-                    Button(expanded ? "Show less" : "Read more") { withAnimation { expanded.toggle() } }
-                        .font(.footnote.weight(.semibold))
+                    Button(expanded ? "Show less" : "Read more") {
+                        withAnimation { expanded.toggle() }
+                        // Reading the whole abstract is reading the paper, for this purpose.
+                        if expanded { model.markOpened(paper) }
+                    }
+                    .font(.footnote.weight(.semibold))
                 }
             }
         } else {
@@ -200,8 +304,13 @@ struct PaperCard: View {
             .accessibilityLabel(model.isSaved(paper) ? "Remove from saved" : "Save")
 
             if let url = paper.link {
-                Link(destination: url) { Image(systemName: "arrow.up.right.square") }
-                    .accessibilityLabel("Open paper")
+                Button {
+                    model.markOpened(paper)
+                    openURL(url)
+                } label: {
+                    Image(systemName: "arrow.up.right.square")
+                }
+                .accessibilityLabel("Open paper")
                 ShareLink(item: url, subject: Text(paper.title)) { Image(systemName: "square.and.arrow.up") }
             }
             Spacer()

@@ -103,6 +103,17 @@ struct SettingsView: View {
                     Text("Time and balance")
                 }
 
+                Section {
+                    Picker("Forget unread papers after", selection: $model.settings.seenExpiryDays) {
+                        ForEach([3, 7, 14, 30], id: \.self) { Text("\($0) days").tag($0) }
+                    }
+                    Toggle("Show papers I have read", isOn: $model.settings.showReadPapers)
+                } header: {
+                    Text("Seen and read")
+                } footer: {
+                    Text("A paper you scrolled past sinks below the new ones, then drops out. A paper you open or read in full leaves the feed and is kept under Saved, Read.")
+                }
+
                 Section("Content") {
                     Toggle("Only papers with an abstract", isOn: $model.settings.requireAbstract)
                     Toggle("Only open access", isOn: $model.settings.openAccessOnly)

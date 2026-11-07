@@ -10,12 +10,22 @@ final class AppModel {
         case failed(String)
     }
 
+    /// What is on screen: the feed sorted into new, earlier and read. It changes
+    /// when a feed is loaded or the user asks for the new papers, never as they
+    /// scroll, so no card moves while it is being looked at.
+    struct Layout {
+        var citedYou = Arranged()
+        var forYou = Arranged()
+        var isEmpty: Bool { citedYou.isEmpty && forYou.isEmpty }
+    }
+
     var settings: FeedSettings {
         didSet {
             store.saveSettings(settings)
             // Following something new or muting something means fetching again;
             // hiding one paper does not.
             if settings.withoutFeedback != oldValue.withoutFeedback { needsRefresh = true }
+            if settings.seenExpiryDays != oldValue.seenExpiryDays { rearrange() }
         }
     }
 
@@ -27,16 +37,23 @@ final class AppModel {
         }
     }
 
-    private(set) var citedYou: [RankedPaper] = []
-    private(set) var forYou: [RankedPaper] = []
+    private(set) var layout = Layout()
+    private(set) var history: History
     private(set) var authorName: String?
     private(set) var updated: Date?
     private(set) var usedEmbeddings = true
     private(set) var phase: Phase = .idle
+    /// How many papers a background refresh found that are not on screen yet.
+    private(set) var pendingNew = 0
     /// Something the user should be told once, such as a settings file that would not load.
     var notice: String?
     var needsRefresh = false
 
+    /// The whole ranked feed behind `layout`.
+    private var citedYou: [RankedPaper] = []
+    private var forYou: [RankedPaper] = []
+    private var pending: FeedResult?
+    private var saveHistoryTask: Task<Void, Never>?
     private let store = Store()
 
     init() {
@@ -55,6 +72,7 @@ final class AppModel {
             settings = s
         }
         apiKey = Keychain.load()
+        history = store.loadHistory()
         if let cached = store.loadFeed() {
             citedYou = cached.citedYou
             forYou = cached.forYou
@@ -64,6 +82,7 @@ final class AppModel {
             // A follow added just before the app was closed must not wait six hours.
             if let built = cached.builtWith, built != settings.withoutFeedback { needsRefresh = true }
         }
+        rearrange()
     }
 
     /// The key to use. In a debug build an environment variable stands in when
@@ -88,14 +107,18 @@ final class AppModel {
     // MARK: Feed
 
     /// Open the app: show what is cached, and fetch only if it is old or the
-    /// settings changed since.
+    /// settings changed since. A fetch the user did not ask for waits behind a
+    /// "new papers" pill instead of replacing the list they are about to read.
     func refreshIfStale() async {
         guard hasKey else { return }
-        let stale = updated.map { Date().timeIntervalSince($0) > 6 * 3600 } ?? true
-        if stale || needsRefresh { await refresh() }
+        if needsRefresh {
+            await refresh()
+        } else if updated.map({ Date().timeIntervalSince($0) > 6 * 3600 }) ?? true {
+            await refresh(userInitiated: false)
+        }
     }
 
-    func refresh() async {
+    func refresh(userInitiated: Bool = true) async {
         if isLoading { return }
         let key = effectiveKey
         guard !key.isEmpty else {
@@ -120,20 +143,61 @@ final class AppModel {
                 return (result, cache?.snapshot(keeping: used))
             }.value
 
-            citedYou = result.citedYou
-            forYou = result.forYou
-            authorName = result.author?.name
-            updated = Date()
-            usedEmbeddings = result.usedEmbeddings
             phase = .idle
-            store.saveFeed(CachedFeed(citedYou: citedYou, forYou: forYou, authorName: authorName,
-                                      date: Date(), usedEmbeddings: result.usedEmbeddings,
-                                      builtWith: settings.withoutFeedback))
             if let vectors { store.saveEmbeddings(vectors) }
+            if userInitiated || layout.isEmpty {
+                apply(result)
+            } else {
+                stage(result)
+            }
         } catch {
             // Keep showing the last feed; only say what went wrong.
             phase = .failed("\(error)")
         }
+    }
+
+    /// Show what a background refresh found.
+    func applyPending() {
+        guard let result = pending else { return }
+        apply(result)
+    }
+
+    private func apply(_ result: FeedResult) {
+        pending = nil
+        pendingNew = 0
+        citedYou = result.citedYou
+        forYou = result.forYou
+        authorName = result.author?.name
+        updated = Date()
+        usedEmbeddings = result.usedEmbeddings
+        history.prune(now: Date())
+        rearrange()
+        store.saveHistory(history)
+        store.saveFeed(CachedFeed(citedYou: citedYou, forYou: forYou, authorName: authorName,
+                                  date: Date(), usedEmbeddings: result.usedEmbeddings,
+                                  builtWith: settings.withoutFeedback))
+    }
+
+    /// Keep a refresh aside and count what is new in it, without touching the screen.
+    private func stage(_ result: FeedResult) {
+        let shown = layout.citedYou.fresh + layout.citedYou.earlier + layout.forYou.fresh + layout.forYou.earlier
+        let onScreen = Set(shown.map { $0.paper.dedupeKey })
+        let now = Date()
+        let incoming = Arranger.arrange(result.citedYou, history: history, settings: settings, now: now).fresh
+            + Arranger.arrange(result.forYou, history: history, settings: settings, now: now).fresh
+        let count = incoming.filter { !onScreen.contains($0.paper.dedupeKey) }.count
+        if count == 0 {
+            apply(result)   // nothing the user would notice changing
+        } else {
+            pending = result
+            pendingNew = count
+        }
+    }
+
+    private func rearrange() {
+        let now = Date()
+        layout = Layout(citedYou: Arranger.arrange(citedYou, history: history, settings: settings, now: now),
+                        forYou: Arranger.arrange(forYou, history: history, settings: settings, now: now))
     }
 
     private func progress(_ message: String) {
@@ -141,6 +205,35 @@ final class AppModel {
     }
 
     // MARK: What the user does with a paper
+
+    func status(of p: Paper) -> History.Status { history.status(of: p.dedupeKey) }
+
+    /// Called when a card has been on screen long enough to count as seen. The
+    /// layout is deliberately not rearranged: that waits for the next refresh.
+    func markSeen(_ p: Paper) {
+        history.markSeen(p.dedupeKey, at: Date())
+        saveHistorySoon()
+    }
+
+    /// Opened the paper or read its abstract in full.
+    func markOpened(_ p: Paper) {
+        history.markOpened(p, at: Date())
+        saveHistoryNow()
+    }
+
+    private func saveHistorySoon() {
+        saveHistoryTask?.cancel()
+        saveHistoryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            self?.saveHistoryNow()
+        }
+    }
+
+    func saveHistoryNow() {
+        saveHistoryTask?.cancel()
+        store.saveHistory(history)
+    }
 
     func isSaved(_ p: Paper) -> Bool { settings.feedback.saved.contains { $0.id == p.dedupeKey } }
 
@@ -150,7 +243,13 @@ final class AppModel {
 
     func hide(_ p: Paper) {
         settings.feedback.hide(p)
-        citedYou.removeAll { $0.paper.dedupeKey == p.dedupeKey }
-        forYou.removeAll { $0.paper.dedupeKey == p.dedupeKey }
+        let key = p.dedupeKey
+        func drop(_ a: inout Arranged) {
+            a.fresh.removeAll { $0.paper.dedupeKey == key }
+            a.earlier.removeAll { $0.paper.dedupeKey == key }
+            a.read.removeAll { $0.paper.dedupeKey == key }
+        }
+        drop(&layout.citedYou)
+        drop(&layout.forYou)
     }
 }

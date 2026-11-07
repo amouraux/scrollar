@@ -137,6 +137,11 @@ struct FeedSettings: Codable, Equatable {
     // MARK: Content
     var requireAbstract = false
     var openAccessOnly = false
+    /// A paper that was shown but not read drops out of the feed this many days
+    /// after it was first shown.
+    var seenExpiryDays = 7
+    /// Show papers already read, dimmed, at the end of the feed.
+    var showReadPapers = false
     /// ISO 639-1 codes. Empty means any. A paper with no detected language passes.
     var languages: [String] = []
 
@@ -209,7 +214,7 @@ extension FeedSettings {
         case followedFunders, followedKeywords, trackedPapers
         case mutedJournals, mutedAuthors, mutedTopics, mutedKeywords
         case kindWeights, daysBack, recency, closeness
-        case requireAbstract, openAccessOnly, languages, feedback
+        case requireAbstract, openAccessOnly, seenExpiryDays, showReadPapers, languages, feedback
     }
 
     init(from decoder: Decoder) throws {
@@ -238,6 +243,8 @@ extension FeedSettings {
         closeness = min(max(get(.closeness, closeness), 0), 1)
         requireAbstract = get(.requireAbstract, requireAbstract)
         openAccessOnly = get(.openAccessOnly, openAccessOnly)
+        seenExpiryDays = min(max(get(.seenExpiryDays, seenExpiryDays), 1), 60)
+        showReadPapers = get(.showReadPapers, showReadPapers)
         languages = get(.languages, languages)
         feedback = get(.feedback, feedback)
     }

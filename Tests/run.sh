@@ -4,5 +4,5 @@
 set -e
 cd "$(dirname "$0")/.."
 mkdir -p .build
-swiftc -swift-version 5 Core/Model.swift Core/Kind.swift Core/Seed.swift Core/PubMed.swift Core/Settings.swift Core/FeedBuilder.swift Core/Ranking.swift Tests/main.swift -o .build/tests
+swiftc -swift-version 5 Core/Model.swift Core/Kind.swift Core/Seed.swift Core/PubMed.swift Core/Settings.swift Core/FeedBuilder.swift Core/History.swift Core/Cover.swift Core/Ranking.swift Tests/main.swift -o .build/tests
 .build/tests
