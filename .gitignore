@@ -1,0 +1,5 @@
+.DS_Store
+.build/
+# The OpenAlex key lives here and nowhere else. Never commit it, never compile it in.
+Secrets.local
+settings.local.json
