@@ -53,6 +53,11 @@ final class AppModel {
     private var citedYou: [RankedPaper] = []
     private var forYou: [RankedPaper] = []
     private var pending: FeedResult?
+    private var pendingBuiltFor: FeedSettings?
+    /// What the cached feed covers, so the next refresh can ask for less.
+    private var builtWith: FeedSettings?
+    private var fetchedThrough: Date?
+    private var fullBuildAt: Date?
     private var saveHistoryTask: Task<Void, Never>?
     private let store = Store()
 
@@ -79,6 +84,9 @@ final class AppModel {
             authorName = cached.authorName
             updated = cached.date
             usedEmbeddings = cached.usedEmbeddings ?? true
+            builtWith = cached.builtWith
+            fetchedThrough = cached.fetchedThrough
+            fullBuildAt = cached.fullBuildAt
             // A follow added just before the app was closed must not wait six hours.
             if let built = cached.builtWith, built != settings.withoutFeedback { needsRefresh = true }
         }
@@ -128,6 +136,10 @@ final class AppModel {
         phase = .loading("Starting…")
         needsRefresh = false
         let settings = self.settings
+        // What this feed is built for, taken now: the user may change a follow
+        // while it runs, and the result must not claim to match that.
+        let builtFor = settings.withoutFeedback
+        let previous = previousFeed()
         let cachedVectors = store.loadEmbeddings()
         let report: (String) -> Void = { [weak self] message in
             Task { @MainActor in self?.progress(message) }
@@ -138,7 +150,7 @@ final class AppModel {
             let (result, vectors) = try await Task.detached(priority: .userInitiated) { () -> (FeedResult, Data?) in
                 let cache = NLTextEmbedder().map { CachingEmbedder($0, stored: cachedVectors) }
                 let engine = FeedEngine(openAlex: OpenAlexClient(apiKey: key), embedder: cache, log: report)
-                let result = try await engine.build(settings)
+                let result = try await engine.build(settings, previous: previous)
                 let used = result.profileTexts + (result.citedYou + result.forYou).map { Ranker.text($0.paper) }
                 return (result, cache?.snapshot(keeping: used))
             }.value
@@ -146,9 +158,9 @@ final class AppModel {
             phase = .idle
             if let vectors { store.saveEmbeddings(vectors) }
             if userInitiated || layout.isEmpty {
-                apply(result)
+                apply(result, builtFor: builtFor)
             } else {
-                stage(result)
+                stage(result, builtFor: builtFor)
             }
         } catch {
             // Keep showing the last feed; only say what went wrong.
@@ -158,28 +170,51 @@ final class AppModel {
 
     /// Show what a background refresh found.
     func applyPending() {
-        guard let result = pending else { return }
-        apply(result)
+        guard let result = pending, let builtFor = pendingBuiltFor else { return }
+        apply(result, builtFor: builtFor)
     }
 
-    private func apply(_ result: FeedResult) {
+    /// What the last fetch covers, if it can be built on.
+    private func previousFeed() -> PreviousFeed? {
+        guard let through = fetchedThrough, let full = fullBuildAt, let built = builtWith,
+              !(citedYou.isEmpty && forYou.isEmpty) else { return nil }
+        return PreviousFeed(papers: (citedYou + forYou).map(\.paper),
+                            fetchedThrough: through, fullBuildAt: full, builtWith: built)
+    }
+
+    private func apply(_ result: FeedResult, builtFor: FeedSettings) {
         pending = nil
+        pendingBuiltFor = nil
         pendingNew = 0
         citedYou = result.citedYou
         forYou = result.forYou
         authorName = result.author?.name
         updated = Date()
         usedEmbeddings = result.usedEmbeddings
+
+        // Advance what the cache covers only if every seed answered. A fetch with a
+        // gap must be asked for again; a full build with a gap cannot be built on at all.
+        builtWith = builtFor
+        if result.complete {
+            fetchedThrough = result.fetchedAt
+            if !result.mode.isIncremental { fullBuildAt = result.fetchedAt }
+        } else if !result.mode.isIncremental {
+            fetchedThrough = nil
+            fullBuildAt = nil
+        }
+        // Settings changed while this was building: it is already out of date.
+        if settings.withoutFeedback != builtFor { needsRefresh = true }
+
         history.prune(now: Date())
         rearrange()
         store.saveHistory(history)
         store.saveFeed(CachedFeed(citedYou: citedYou, forYou: forYou, authorName: authorName,
                                   date: Date(), usedEmbeddings: result.usedEmbeddings,
-                                  builtWith: settings.withoutFeedback))
+                                  builtWith: builtFor, fetchedThrough: fetchedThrough, fullBuildAt: fullBuildAt))
     }
 
     /// Keep a refresh aside and count what is new in it, without touching the screen.
-    private func stage(_ result: FeedResult) {
+    private func stage(_ result: FeedResult, builtFor: FeedSettings) {
         let shown = layout.citedYou.fresh + layout.citedYou.earlier + layout.forYou.fresh + layout.forYou.earlier
         let onScreen = Set(shown.map { $0.paper.dedupeKey })
         let now = Date()
@@ -187,9 +222,10 @@ final class AppModel {
             + Arranger.arrange(result.forYou, history: history, settings: settings, now: now).fresh
         let count = incoming.filter { !onScreen.contains($0.paper.dedupeKey) }.count
         if count == 0 {
-            apply(result)   // nothing the user would notice changing
+            apply(result, builtFor: builtFor)   // nothing the user would notice changing
         } else {
             pending = result
+            pendingBuiltFor = builtFor
             pendingNew = count
         }
     }

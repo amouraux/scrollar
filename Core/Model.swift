@@ -63,6 +63,9 @@ struct Paper: Hashable, Codable {
     /// Found by something the user chose to follow (a journal, an author…), as
     /// opposed to something we inferred from their own papers.
     var followed = false
+    /// A DOI lookup found no PubMed record, so it is not tried again on every
+    /// refresh. Optional so a cache written before this field existed still loads.
+    var notInPubMed: Bool? = nil
 
     /// One paper can arrive from several seeds, and from OpenAlex and PubMed;
     /// the DOI is the join key, with the PMID and the OpenAlex id as fallbacks.

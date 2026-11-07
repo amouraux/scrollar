@@ -41,6 +41,10 @@ struct CachedFeed: Codable {
     /// The settings (without feedback) this feed was built from. If they differ at
     /// the next launch, the feed is out of date however recent it is.
     var builtWith: FeedSettings?
+    /// The last fetch every seed answered covered papers up to here.
+    var fetchedThrough: Date?
+    /// When the whole look-back window was last fetched from scratch.
+    var fullBuildAt: Date?
 }
 
 /// Files in the app's own container. Settings are kept; the feed and the

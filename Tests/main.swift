@@ -359,5 +359,66 @@ check(Cover.symbol(for: ok("s2") { $0.title = "Ion channel gating in nociceptors
 check(Cover.symbol(for: ok("s3") { $0.title = "Dark matter halos" }) == "doc.text.magnifyingglass", "an unknown subject gets the generic symbol")
 check((0...1).contains(Cover.spec(for: coverPaper).hueA) && (0...1).contains(Cover.spec(for: coverPaper).hueB), "hues are valid")
 
+
+// MARK: incremental refresh
+let tNow = Date(timeIntervalSince1970: 1_800_000_000)   // a fixed "now"
+let baseSettings = FeedSettings()
+func prev(fetched: Double = 1, full: Double = 1, with s: FeedSettings = baseSettings) -> PreviousFeed {
+    PreviousFeed(papers: [], fetchedThrough: tNow.addingTimeInterval(-fetched * day),
+                 fullBuildAt: tNow.addingTimeInterval(-full * day), builtWith: s.withoutFeedback)
+}
+check(Incremental.mode(previous: nil, settings: baseSettings, now: tNow) == .full(reason: "first build"), "no previous feed: full build")
+check(Incremental.mode(previous: prev(), settings: baseSettings, now: tNow).isIncremental, "a recent feed on the same settings: incremental")
+var changed = baseSettings; changed.followedKeywords = [KeywordRule(phrase: "x")]
+check(Incremental.mode(previous: prev(), settings: changed, now: tNow) == .full(reason: "settings changed"), "changed follows: full build, the kept reasons would be wrong")
+var onlyFeedback = baseSettings; onlyFeedback.feedback.hidden = ["doi:1"]
+check(Incremental.mode(previous: prev(), settings: onlyFeedback, now: tNow).isIncremental, "hiding a paper does not force a full build")
+check(!Incremental.mode(previous: prev(full: 4), settings: baseSettings, now: tNow).isIncremental, "a full build is repeated after three days")
+check(Incremental.mode(previous: prev(full: 2.9), settings: baseSettings, now: tNow).isIncremental, "and not before")
+check(!Incremental.mode(previous: prev(fetched: 31), settings: baseSettings, now: tNow).isIncremental, "away longer than the look-back: full build")
+check(Incremental.mode(previous: prev(fetched: 1, with: week), settings: baseSettings, now: tNow) == .full(reason: "settings changed"), "a different look-back is a different feed: full build")
+let fetchedOneDayAgo = Incremental.mode(previous: prev(fetched: 1), settings: baseSettings, now: tNow)
+check(fetchedOneDayAgo == .incremental(since: Ranker.dayString(tNow.addingTimeInterval(-4 * day))), "starts three days before the last fetch, to catch late records")
+var week = baseSettings; week.daysBack = 7
+check(Incremental.mode(previous: prev(fetched: 6, with: week), settings: week, now: tNow) == .incremental(since: Ranker.dayString(tNow.addingTimeInterval(-7 * day))),
+      "never reaches back past the look-back window")
+
+let winStart = Ranker.dayString(tNow.addingTimeInterval(-30 * day))
+func dated(_ id: String, daysAgo: Double, doi: String? = nil) -> Paper {
+    // Dated from the fixed test clock, like the window, not from the real one.
+    var p = Paper(id: id, title: "T \(id)", date: Ranker.dayString(tNow.addingTimeInterval(-daysAgo * day)))
+    p.doi = doi
+    return p
+}
+let oldKept = dated("old", daysAgo: 20), tooOld = dated("ancient", daysAgo: 45)
+let mergedFeed = Incremental.merge(previous: [oldKept, tooOld], fresh: [dated("new", daysAgo: 1)], windowStart: winStart)
+check(Set(mergedFeed.map(\.id)) == ["old", "new"], "papers older than the look-back age out, the rest are kept")
+var prevCopy = dated("same", daysAgo: 5, doi: "10.1/s"); prevCopy.reasons = ["Topic: A"]
+var freshCopy = dated("same2", daysAgo: 5, doi: "10.1/s"); freshCopy.reasons = ["Journal: B"]; freshCopy.abstract = "now has one"
+let dup = Incremental.merge(previous: [prevCopy], fresh: [freshCopy], windowStart: winStart)
+check(dup.count == 1 && dup[0].abstract == "now has one", "a paper seen again is one paper, with the newer data")
+check(Set(dup[0].reasons) == ["Topic: A", "Journal: B"], "and keeps every reason it was found for")
+check(Incremental.merge(previous: [oldKept], fresh: [], windowStart: winStart).map(\.id) == ["old"], "nothing new still keeps the old feed")
+
+
+var enrichedBefore = dated("p1", daysAgo: 4, doi: "10.1/carry")
+enrichedBefore.pmid = "777"; enrichedBefore.pubmedTypes = ["Journal Article", "Review"]
+enrichedBefore.abstract = "from pubmed"; enrichedBefore.abstractFromPubMed = true
+let refetched = dated("p1b", daysAgo: 4, doi: "10.1/carry")
+let carried = Incremental.carryOver(from: [enrichedBefore], into: [refetched, dated("other", daysAgo: 1, doi: "10.1/other")])
+check(carried[0].pubmedTypes == ["Journal Article", "Review"] && carried[0].pmid == "777", "PubMed's types and PMID are carried to the fresh copy")
+check(carried[0].abstract == "from pubmed" && carried[0].abstractFromPubMed, "so is an abstract PubMed supplied")
+check(carried[1].pubmedTypes.isEmpty && carried[1].abstract == nil, "a paper not seen before is left alone")
+var withOwn = refetched; withOwn.abstract = "openalex abstract"
+check(Incremental.carryOver(from: [enrichedBefore], into: [withOwn])[0].abstract == "openalex abstract", "an abstract the fresh copy already has is kept")
+check(Incremental.carryOver(from: [], into: [refetched]) == [refetched], "with nothing before, nothing changes")
+
+
+var checkedBefore = dated("nf", daysAgo: 2, doi: "10.1/notthere"); checkedBefore.notInPubMed = true
+check(Incremental.carryOver(from: [checkedBefore], into: [dated("nf2", daysAgo: 2, doi: "10.1/notthere")])[0].notInPubMed == true,
+      "a paper already found to be absent from PubMed is not looked up again")
+check(try! JSONDecoder().decode(Paper.self, from: Data(#"{"id":"W1","title":"T","date":"2026-01-01","authors":[],"authorIDs":[],"citedBy":0,"topics":[],"topicIDs":[],"isOpenAccess":false,"isRepository":false,"pubmedTypes":[],"abstractFromPubMed":false,"reasons":[],"citesYou":false,"followed":false}"#.utf8)).notInPubMed == nil,
+      "a cache written before the field existed still loads")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

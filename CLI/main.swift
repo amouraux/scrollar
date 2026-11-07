@@ -73,6 +73,31 @@ func run() async throws {
 
     var engine = FeedEngine(openAlex: OpenAlexClient(apiKey: key), log: { print($0) })
     if CommandLine.arguments.contains("--no-embeddings") { engine.embedder = nil }
+
+    if CommandLine.arguments.contains("--compare") {
+        // Full build, then an incremental one as if the last fetch were two days ago.
+        // They should give the same feed; the second should be much faster.
+        if let base = NLTextEmbedder() { engine.embedder = CachingEmbedder(base) }
+        var t = Date()
+        let first = try await engine.build(settings)
+        let fullTime = Date().timeIntervalSince(t)
+        let previous = PreviousFeed(papers: (first.citedYou + first.forYou).map(\.paper),
+                                    fetchedThrough: first.fetchedAt.addingTimeInterval(-2 * 86_400),
+                                    fullBuildAt: first.fetchedAt.addingTimeInterval(-2 * 86_400),
+                                    builtWith: settings.withoutFeedback)
+        print("\n--- second build, as if two days later ---")
+        t = Date()
+        let second = try await engine.build(settings, previous: previous)
+        let incrementalTime = Date().timeIntervalSince(t)
+
+        let a = (first.citedYou + first.forYou).map(\.paper.dedupeKey)
+        let b = (second.citedYou + second.forYou).map(\.paper.dedupeKey)
+        print(String(format: "\nfull: %.1fs, %d papers | incremental: %.1fs, %d papers (%d new)",
+                     fullTime, a.count, incrementalTime, b.count, second.newPapers))
+        print("same papers in both: \(Set(a) == Set(b)) | same top 10: \(Array(first.forYou.prefix(10).map(\.paper.dedupeKey)) == Array(second.forYou.prefix(10).map(\.paper.dedupeKey)))")
+        return
+    }
+
     let result = try await engine.build(settings)
 
     if let me = result.author {

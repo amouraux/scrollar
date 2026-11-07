@@ -24,6 +24,15 @@ The iOS Simulator has no Apple sentence-embedding model, so it ranks by word
 counts only and the feed says so; check embeddings on a real device or with the
 command line on a Mac.
 
+## Refreshing
+
+A refresh asks only for papers published since the last complete fetch, minus three
+days of overlap, and merges them into the papers already held. OpenAlex's "added
+since" filters are paid-plan only, so a paper indexed weeks after its publication date
+can slip through; the whole window is therefore fetched again every three days, when the
+settings change, and after a long absence. `./run.sh <orcid> --compare` runs a full
+build and then an incremental one and checks they agree.
+
 ## Key
 
 OpenAlex needs a free key (<https://openalex.org/settings/api>). Copy
@@ -38,6 +47,7 @@ their own into Settings and it will live in the Keychain.
 - `Core/OpenAlex.swift`, `PubMedClient.swift`, `Embedding.swift`: the network and
   Apple's NaturalLanguage; nothing else touches either.
 - `Core/History.swift`: what was seen and read, and how a feed is sorted into new, earlier and read.
+- `Core/Incremental.swift`: refreshing by asking only for what was published since the last fetch, and keeping the rest.
 - `Core/Cover.swift`: the generated picture on each card (colour and symbol from the topic).
 - `Core/Engine.swift`: settings in, ranked feed out. The app and the command line both call it.
 - `App/`: SwiftUI. The OpenAlex key is in the Keychain, never in the settings file or the binary.

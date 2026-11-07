@@ -69,10 +69,11 @@ struct OpenAlexClient {
         )
     }
 
-    func works(filter: String, perPage: Int, sort: String = "publication_date:desc") async throws -> [Paper] {
+    func works(filter: String, perPage: Int, sort: String = "publication_date:desc", page: Int = 1) async throws -> [Paper] {
         let data = try await fetch("works", [
             "filter": filter,
             "per-page": String(perPage),
+            "page": String(page),
             "sort": sort,
             "select": Self.workFields,
         ])
@@ -107,8 +108,15 @@ struct OpenAlexClient {
     }
 
     /// Run one seed, tagging every result with why it is there.
-    func papers(for seed: Seed, since: String, perPage: Int = 100) async throws -> [Paper] {
-        var found = try await works(filter: seed.filter(since: since), perPage: perPage)
+    /// `maxPages` more than 1 keeps asking while a page comes back full, so a long
+    /// gap since the last refresh is not cut off at the newest `perPage` papers.
+    func papers(for seed: Seed, since: String, perPage: Int = 100, maxPages: Int = 1) async throws -> [Paper] {
+        var found: [Paper] = []
+        for page in 1...max(maxPages, 1) {
+            let batch = try await works(filter: seed.filter(since: since), perPage: perPage, page: page)
+            found += batch
+            if batch.count < perPage { break }
+        }
         for i in found.indices {
             found[i].reasons = [seed.reason]
             found[i].citesYou = seed.citesYou
