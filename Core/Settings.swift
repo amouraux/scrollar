@@ -62,6 +62,16 @@ struct SavedPaper: Codable, Hashable {
     }
 }
 
+extension SavedPaper {
+    /// Saved papers are keyed by DOI or PMID, which is also how to reach them.
+    var link: URL? {
+        if id.hasPrefix("doi:") { return URL(string: "https://doi.org/" + id.dropFirst(4)) }
+        if id.hasPrefix("pmid:") { return URL(string: "https://pubmed.ncbi.nlm.nih.gov/" + id.dropFirst(5)) }
+        if id.hasPrefix("oa:") { return URL(string: "https://openalex.org/" + id.dropFirst(3)) }
+        return nil
+    }
+}
+
 /// What the user does with the feed teaches it more honestly than what they say.
 struct Feedback: Codable, Equatable {
     /// Saved papers join the profile: more like these.
@@ -135,6 +145,14 @@ struct FeedSettings: Codable, Equatable {
     init() {}
 
     func weight(for kind: PaperKind) -> Weight { kindWeights[kind.rawValue] ?? .normal }
+
+    /// Everything except what the user did with the feed. Changing a follow or a
+    /// filter means fetching again; hiding one paper does not.
+    var withoutFeedback: FeedSettings {
+        var s = self
+        s.feedback = Feedback()
+        return s
+    }
 
     mutating func setWeight(_ weight: Weight, for kind: PaperKind) {
         kindWeights[kind.rawValue] = weight

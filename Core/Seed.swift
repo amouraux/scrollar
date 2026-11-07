@@ -38,8 +38,11 @@ enum Seed: Hashable {
         case .topic(let id, _): base = "topics.id:\(id)"
         case .journal(let id, _): base = "primary_location.source.id:\(id)"
         case .author(let id, _): base = "author.id:\(id)"
-        case .institution(let id, _): base = "authorships.institutions.id:\(id)"
-        case .funder(let id, _): base = "grants.funder:\(id)"
+        // The filter keys OpenAlex's own autocomplete recommends. `grants.funder` is
+        // not a valid field at all (checked against the API, not assumed), and
+        // `lineage` also covers an institution's departments and hospitals.
+        case .institution(let id, _): base = "authorships.institutions.lineage:\(id)"
+        case .funder(let id, _): base = "awards.funder_id:\(id)"
         // A comma would end the filter value early.
         case .keyword(let k): base = "title_and_abstract.search:" + k.replacingOccurrences(of: ",", with: " ")
         case .cites(let ids, _): base = "cites:" + ids.prefix(100).joined(separator: "|")

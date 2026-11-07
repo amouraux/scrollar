@@ -1,6 +1,6 @@
 import Foundation
 
-enum Text {
+enum Words {
     static let stopwords: Set<String> = [
         "the", "and", "for", "with", "that", "this", "from", "are", "was", "were", "has", "have",
         "had", "not", "but", "can", "its", "into", "than", "their", "these", "those", "which",
@@ -65,6 +65,64 @@ protocol TextEmbedder {
     func vector(for text: String) -> [Double]?
 }
 
+/// Embedding a paper costs about 60 ms per sentence, so a refresh that re-reads
+/// last week's papers is mostly wasted work. Vectors are kept by a hash of the
+/// text and survive on disk between launches (`snapshot()` / `init(stored:)`).
+final class CachingEmbedder: TextEmbedder {
+    private let base: TextEmbedder
+    private let lock = NSLock()
+    private var store: [UInt64: [Float]] = [:]
+    private(set) var hits = 0
+    private(set) var misses = 0
+
+    init(_ base: TextEmbedder, stored: Data? = nil) {
+        self.base = base
+        if let stored, let saved = try? PropertyListDecoder().decode([String: Data].self, from: stored) {
+            for (key, bytes) in saved {
+                guard let k = UInt64(key, radix: 16) else { continue }
+                store[k] = bytes.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+            }
+        }
+    }
+
+    func vector(for text: String) -> [Double]? {
+        let key = CachingEmbedder.hash(text)
+        lock.lock()
+        if let v = store[key] { hits += 1; lock.unlock(); return v.map(Double.init) }
+        lock.unlock()
+
+        guard let v = base.vector(for: text) else { return nil }
+        lock.lock()
+        misses += 1
+        store[key] = v.map(Float.init)
+        lock.unlock()
+        return v
+    }
+
+    var count: Int { lock.lock(); defer { lock.unlock() }; return store.count }
+
+    /// Keep only vectors for these texts, so the file does not grow with every
+    /// paper ever seen. Call it after a refresh with the texts that were just used.
+    func snapshot(keeping texts: [String]? = nil) -> Data? {
+        lock.lock(); defer { lock.unlock() }
+        let wanted = texts.map { Set($0.map(CachingEmbedder.hash)) }
+        var out: [String: Data] = [:]
+        for (key, v) in store where wanted?.contains(key) ?? true {
+            out[String(key, radix: 16)] = v.withUnsafeBufferPointer { Data(buffer: $0) }
+        }
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
+        return try? encoder.encode(out)
+    }
+
+    /// FNV-1a: unlike `hashValue`, the same text hashes the same on every launch.
+    static func hash(_ text: String) -> UInt64 {
+        var h: UInt64 = 0xcbf29ce484222325
+        for byte in text.utf8 { h = (h ^ UInt64(byte)) &* 0x100000001b3 }
+        return h
+    }
+}
+
 enum Vectors {
     static func normalise(_ v: [Double]) -> [Double] {
         let norm = v.reduce(0) { $0 + $1 * $1 }.squareRoot()
@@ -78,7 +136,7 @@ enum Vectors {
     }
 }
 
-struct RankedPaper {
+struct RankedPaper: Codable {
     let paper: Paper
     let score: Double
     /// How close the paper is to the user's own work, 0 to 1: its rank among
@@ -145,7 +203,8 @@ enum Ranker {
         }
     }
 
-    private static func text(_ p: Paper) -> String {
+    /// The text that stands for a paper: what is embedded, so also what a cache is keyed on.
+    static func text(_ p: Paper) -> String {
         p.title + (p.abstract.map { ". " + $0 } ?? "")
     }
 
@@ -155,8 +214,8 @@ enum Ranker {
     }
 
     private static func lexicalScores(_ candidates: [Paper], profileTexts: [String]) -> [Double] {
-        let profile = profileTexts.map(Text.tokens)
-        let cands = candidates.map { Text.tokens(text($0)) }
+        let profile = profileTexts.map(Words.tokens)
+        let cands = candidates.map { Words.tokens(text($0)) }
         let model = TfIdf(documents: profile + cands)
         let profileVectors = profile.map(model.vector)
         return cands.map { tokens in

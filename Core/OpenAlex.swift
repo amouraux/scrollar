@@ -79,6 +79,33 @@ struct OpenAlexClient {
         return try JSONDecoder().decode(WorksDTO.self, from: data).results.compactMap(\.paper)
     }
 
+    enum EntityKind: String, CaseIterable {
+        case topics, sources, authors, institutions, funders
+    }
+
+    struct EntityHit: Identifiable, Hashable {
+        var entity: Entity
+        /// What tells two of the same name apart: an author's institution, a
+        /// journal's publisher, a topic's description.
+        var hint: String?
+        var worksCount: Int
+        var id: String { entity.id }
+    }
+
+    /// Search by name, for the pickers in Settings. Names are ambiguous, so the
+    /// user chooses from candidates and what is stored is the id.
+    func search(_ kind: EntityKind, query: String) async throws -> [EntityHit] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard q.count >= 2 else { return [] }
+        let data = try await fetch("autocomplete/\(kind.rawValue)", ["q": q])
+        let response = try JSONDecoder().decode(AutocompleteDTO.self, from: data)
+        return response.results.compactMap { r in
+            guard let name = r.display_name else { return nil }
+            return EntityHit(entity: Entity(id: Identifiers.openAlexID(r.id), name: name),
+                             hint: r.hint, worksCount: r.works_count ?? 0)
+        }
+    }
+
     /// Run one seed, tagging every result with why it is there.
     func papers(for seed: Seed, since: String, perPage: Int = 100) async throws -> [Paper] {
         var found = try await works(filter: seed.filter(since: since), perPage: perPage)
@@ -102,6 +129,16 @@ private struct AuthorDTO: Decodable {
 
     struct Stats: Decodable { let h_index: Int? }
     struct Topic: Decodable { let id: String?; let display_name: String?; let count: Int? }
+}
+
+private struct AutocompleteDTO: Decodable {
+    let results: [Hit]
+    struct Hit: Decodable {
+        let id: String
+        let display_name: String?
+        let hint: String?
+        let works_count: Int?
+    }
 }
 
 private struct WorksDTO: Decodable {

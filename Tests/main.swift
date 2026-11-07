@@ -214,8 +214,8 @@ check(planned.first { $0.seed == .topic(id: "T3", name: "Touch") }?.explicit == 
 check(planned.contains { $0.seed.reason == "Cites: A paper" }, "a tracked paper becomes a citation seed with its own label")
 var noPubs = follow; noPubs.useMyPublications = false
 check(FeedBuilder.seeds(noPubs, myTopics: [Entity(id: "T3", name: "Touch")], myWorkIDs: ["W1"]).count == 4, "without publications only the follows remain")
-check(Seed.institution(id: "I1", name: "x").filter(since: "d").hasPrefix("authorships.institutions.id:I1"), "institution filter")
-check(Seed.funder(id: "F1", name: "x").filter(since: "d").hasPrefix("grants.funder:F1"), "funder filter")
+check(Seed.institution(id: "I1", name: "x").filter(since: "d").hasPrefix("authorships.institutions.lineage:I1"), "institution filter")
+check(Seed.funder(id: "F1", name: "x").filter(since: "d").hasPrefix("awards.funder_id:F1"), "funder filter")
 let keywordFilter = Seed.keyword("a, b").filter(since: "d")
 check(keywordFilter == "title_and_abstract.search:a  b,from_publication_date:d", "a comma in a keyword cannot end the filter early")
 
@@ -282,6 +282,28 @@ let r0 = Ranker.rank([pain, galaxy], profileTexts: profile, settings: nearFollow
 check(abs(r0[0].score - r0[1].score) < 0.001, "closeness 0 stops similarity from mattering")
 let m1 = Merge.combine([followedP, plainP.withDOI("10.1/q"), ])
 check(m1.count == 2, "merge keeps distinct papers apart")
+
+
+// MARK: embedding cache
+final class CountingEmbedder: TextEmbedder {
+    var calls = 0
+    func vector(for text: String) -> [Double]? { calls += 1; return text.isEmpty ? nil : [Double(text.count), 1, 0.5] }
+}
+let counting = CountingEmbedder()
+let cache = CachingEmbedder(counting)
+_ = cache.vector(for: "alpha"); _ = cache.vector(for: "alpha"); _ = cache.vector(for: "beta")
+check(counting.calls == 2 && cache.hits == 1 && cache.misses == 2, "the same text is embedded once")
+check(cache.vector(for: "") == nil, "an unreadable text is not cached")
+let saved = cache.snapshot()!
+let counting2 = CountingEmbedder()
+let reloaded = CachingEmbedder(counting2, stored: saved)
+check(reloaded.vector(for: "alpha") == cache.vector(for: "alpha") && counting2.calls == 0, "vectors survive a restart")
+check(reloaded.count == 2, "reloaded cache has what was saved")
+let trimmed = CachingEmbedder(CountingEmbedder(), stored: cache.snapshot(keeping: ["alpha"]))
+check(trimmed.count == 1, "a snapshot can keep only the texts still in use")
+check(CachingEmbedder.hash("abc") == CachingEmbedder.hash("abc") && CachingEmbedder.hash("abc") != CachingEmbedder.hash("abd"), "hash is stable and distinguishes texts")
+let codedPaper = try! JSONDecoder().decode(Paper.self, from: JSONEncoder().encode(Paper(id: "W1", doi: "10.1/x", title: "T", date: "2026-01-01")))
+check(codedPaper.doi == "10.1/x" && codedPaper.title == "T", "a paper survives the feed cache")
 
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

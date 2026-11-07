@@ -26,7 +26,7 @@ enum Identifiers {
     }
 }
 
-struct Paper: Hashable {
+struct Paper: Hashable, Codable {
     var id: String
     var doi: String? = nil
     var pmid: String? = nil

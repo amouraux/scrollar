@@ -1,6 +1,6 @@
 import Foundation
 
-enum PaperKind: String {
+enum PaperKind: String, CaseIterable {
     case research, review, caseReport, conferenceAbstract, preprint, commentary
 
     var label: String {

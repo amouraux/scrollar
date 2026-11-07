@@ -3,12 +3,26 @@
 A feed for researchers: scroll through new papers from the journals, topics,
 people and keywords you follow, ranked by how close they are to your own work.
 
-Status: prototype. The core runs from the command line; there is no app yet.
+Status: prototype. An iPhone and iPad app (feed, saved papers, and a Tune screen
+for everything that shapes the feed) on top of a tested core that also runs from
+the command line.
 
 ```sh
-Tests/run.sh                      # pure functions, no network, no key
-./run.sh 0000-0000-0000-0000      # ORCID in, ranked feed out (needs a key)
+Tests/run.sh                                    # pure functions, no network, no key
+./run.sh 0000-0000-0000-0000                    # ORCID in, ranked feed out (needs a key)
+./run.sh 0000-0000-0000-0000 --init-settings s.json   # write settings to edit
+./run.sh --settings s.json                      # feed from a settings file
+
+# The app. The simulator destination must be generic: named devices do not resolve here.
+xcodebuild -project Scrollar.xcodeproj -scheme Scrollar \
+  -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/derived build
 ```
+
+In a debug build the simulator can be started without typing a key:
+`SIMCTL_CHILD_SCROLLAR_OPENALEX_KEY=… SIMCTL_CHILD_SCROLLAR_ORCID=… xcrun simctl launch <device> com.andremouraux.scrollar`.
+The iOS Simulator has no Apple sentence-embedding model, so it ranks by word
+counts only and the feed says so; check embeddings on a real device or with the
+command line on a Mac.
 
 ## Key
 
@@ -20,7 +34,11 @@ their own into Settings and it will live in the Keychain.
 ## Layout
 
 - `Core/Model.swift`, `Seed.swift`, `Ranking.swift`: Foundation only, tested.
-- `Core/OpenAlex.swift`: the only file that touches the network.
+- `Core/Settings.swift`, `FeedBuilder.swift`: everything the user can tune, and what it does.
+- `Core/OpenAlex.swift`, `PubMedClient.swift`, `Embedding.swift`: the network and
+  Apple's NaturalLanguage; nothing else touches either.
+- `Core/Engine.swift`: settings in, ranked feed out. The app and the command line both call it.
+- `App/`: SwiftUI. The OpenAlex key is in the Keychain, never in the settings file or the binary.
 - `CLI/main.swift`: prototype driver.
 
 Every seed (a topic, journal, author, keyword, or "cites my work") becomes one

@@ -17,6 +17,11 @@ struct FeedResult {
     var citedYou: [RankedPaper]
     /// Everything else, best first.
     var forYou: [RankedPaper]
+    /// The texts the profile was built from, so a cache can keep their vectors.
+    var profileTexts: [String]
+    /// False when this device has no sentence model (the iOS Simulator does not),
+    /// so similarity came from word counts alone. The user is told, not left to guess.
+    var usedEmbeddings: Bool
 }
 
 /// The network half: settings in, a ranked feed out. The app and the command
@@ -100,7 +105,9 @@ struct FeedEngine {
 
         return FeedResult(author: me,
                           citedYou: ranked.filter { $0.paper.citesYou },
-                          forYou: ranked.filter { !$0.paper.citesYou })
+                          forYou: ranked.filter { !$0.paper.citesYou },
+                          profileTexts: profileTexts,
+                          usedEmbeddings: embedder != nil)
     }
 
     /// PubMed is an addition, never a requirement: if it is down the feed still works.
