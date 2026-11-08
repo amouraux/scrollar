@@ -38,8 +38,8 @@ compare the binary's timestamp with the edit before debugging the code.
 In a debug build the simulator can be started without typing anything in:
 `SIMCTL_CHILD_SCROLLAR_OPENALEX_KEY=… SIMCTL_CHILD_SCROLLAR_ORCID=… xcrun simctl launch <device> com.andremouraux.scrollar`
 (the ORCID only applies when there are no saved settings). The iOS Simulator has no Apple
-sentence-embedding model, so it ranks by word counts only and the feed says so; check
-embeddings on a real device or with the command line on a Mac. Apple's on-device language
+sentence-embedding model; the app then falls back to Apple's contextual model (see "Without Apple Intelligence"),
+and says in Tune which one ranked the feed. Check embeddings on a real device or with the command line on a Mac. Apple's on-device language
 model (summaries) does run in the simulator, through the host Mac.
 
 ## Refreshing
@@ -319,6 +319,51 @@ The EndNote desktop app and the mobile apps open the file by tapping it; I could
 managers here (the simulator has none), only the file itself, which is checked in `Tests/main.swift`
 and by reading what the app wrote.
 
+## Without Apple Intelligence
+
+Apple Intelligence is not switched on everywhere (not on iPhones in the EU, at the time of writing), and
+the app must not depend on it. Two different things were behind one banner, and they are now separate.
+
+**Matching** (how close a paper is to the user's work) never needed Apple Intelligence: it uses an
+on-device text model. `TextEmbedders.best()` takes Apple's sentence model where the device has one, else
+Apple's **contextual** model (`NLContextualEmbedding`: 512-dimension vectors, about 25 ms a text on a Mac,
+tried here with related and unrelated abstracts and ranking them correctly), which is a downloadable language asset
+and not an Apple Intelligence feature; it is fetched once, on first use. Only if neither can be loaded does ranking
+fall back to word counts, and the line under the feed says so. The two models' vectors are not comparable, so the
+vector cache records which model made it (`CachingEmbedder.modelKey`) and is never read by another; a
+cache from before this, which came from the sentence model, is read as that. Tune, Summaries and matching,
+says which model is in use. Not tested on a real EU iPhone: here the contextual model was run on a Mac and the
+app's fallback path was built, not exercised on a device that lacks the sentence model.
+
+**Summaries** (the sentence under each title) need a language model. Where the device has Apple's, it is used and
+nothing leaves the phone. Otherwise the user can set up an account of their own in Tune (`Core/RemoteSummary.swift`):
+**Claude** (Anthropic's messages API; default model `claude-opus-5-5`, low effort, no sampling settings, which
+current models reject, and room for thinking) or **ChatGPT** (OpenAI's chat completions; default `gpt-4o-mini`),
+the model name editable. It is an API key, a separate pay-per-use account, not a chat subscription, which an app
+cannot use; the screen says so, with the cost (a fraction of a cent to a cent or two per takeaway, far less with a
+small model such as `claude-haiku-5-5`) and what is sent (the title and abstract of papers that stay on screen, and
+nothing else). The key is tried once with a sample abstract before it is kept, lives in the Keychain, goes only to
+that service, and is in no sync file or backup. A hard limit of 200 summaries per launch, three at a time, each kept
+in `summaries.json` so a paper is asked for once, stops a loop or a long scroll becoming a bill; a refused key is
+said once and not retried for every paper. When there is no key and no model, the sentence is still chosen from the
+abstract's own sentences. Not tried against the real services here: the requests, the answers and the failures are
+tested against a stub.
+
+## Library file and pasted references
+
+EndNote, Mendeley, Papers, Citavi and others cannot be read directly, but all write RIS or BibTeX. Tune,
+Library file takes either (`Core/LibraryImport.swift`, tested), by **Paste references** (a sheet that says live how
+many papers it found) or by choosing a file. It reads RIS records and BibTeX entries (nested braces, `@string`,
+quotes or parentheses, LaTeX accents, UTF-8, UTF-16 and Windows-1252) and, for a rough paste, a list of references
+or of titles, one per line or separated by blank lines: Vancouver- and APA-style references give their title and
+DOI, a quoted title is taken as it is, a bare DOI is left out because it says nothing about the paper. The
+items feed the profile exactly as Zotero's do (`useLibraryFile`, `zoteroRecent`, both synced, re-rank without
+fetching). An export has no date added, so an item that was not in the last import counts as new today and the
+others keep their dates, and items that arrive together are ordered by publication year: paste or import again from time to time
+and the newest are the newest. What was read (not the file) is kept in Application Support, because
+when each item first appeared cannot be fetched again; it is not synced (do it on each device). Adding
+by paste adds to what is held, a paper pasted twice is one, and the cap is 5,000 items.
+
 ## Zotero
 
 Tune, Zotero library connects an account with an API key made at zotero.org/settings/keys. The
@@ -346,9 +391,8 @@ authors, abstract, DOI, link and topics as tags, under a write token so a retry 
 that can only read says so before anything is sent. The PDF is not attached; Zotero's own Find
 Available PDF does that. The answer shows briefly over the feed.
 
-Not built: group libraries (only the account's own), filling a missing abstract from the DOI, suggesting
-follows from the library's tags, and EndNote or Mendeley, for which there is no reading API I could
-use (the RIS export covers writing to them). The client is tested against a stub that answers instead
+EndNote and Mendeley: see Library file and pasted references. Not built: group libraries (only the account's own), filling a missing abstract from the DOI, suggesting
+follows from the library's tags. The client is tested against a stub that answers instead
 of the network; a real library has not been read here.
 
 ## Tune

@@ -6,6 +6,7 @@ import Security
 enum Keychain {
     private static let openAlex = "com.andremouraux.scrollar.openalex"
     static let zotero = "com.andremouraux.scrollar.zotero"
+    static let summaries = "com.andremouraux.scrollar.summaries"
     private static let account = "api-key"
 
     private static func query(_ service: String) -> [String: Any] {
@@ -39,6 +40,8 @@ struct CachedFeed: Codable {
     var authorName: String?
     var date: Date
     var usedEmbeddings: Bool?
+    /// Which on-device text model ranked it. Optional: a cache written before there was a second one.
+    var embedderID: String?
     /// The settings (without feedback) this feed was built from. If they differ at
     /// the next launch, the feed is out of date however recent it is.
     var builtWith: FeedSettings?
@@ -67,6 +70,7 @@ struct Store {
     private var ledgerURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("sync-ledger.json") }
     private var summariesURL: URL { folder(.cachesDirectory).appendingPathComponent("summaries.json") }
     private var zoteroURL: URL { folder(.cachesDirectory).appendingPathComponent("zotero.json") }
+    private var libraryFileURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("library-import.json") }
     private var embeddingsURL: URL { folder(.cachesDirectory).appendingPathComponent("embeddings.plist") }
 
     enum SettingsResult {
@@ -159,6 +163,18 @@ struct Store {
     func saveZotero(_ cache: ZoteroCache?) {
         guard let cache, let data = try? JSONEncoder().encode(cache) else { try? fm.removeItem(at: zoteroURL); return }
         try? data.write(to: zoteroURL, options: .atomic)
+    }
+
+    /// The last RIS or BibTeX export imported. In Application Support, not the caches: it cannot be
+    /// fetched again, and when each item first appeared is only known from having seen it.
+    func loadLibraryFile() -> LibraryFile? {
+        guard let data = try? Data(contentsOf: libraryFileURL) else { return nil }
+        return try? JSONDecoder().decode(LibraryFile.self, from: data)
+    }
+
+    func saveLibraryFile(_ file: LibraryFile?) {
+        guard let file, let data = try? JSONEncoder().encode(file) else { try? fm.removeItem(at: libraryFileURL); return }
+        try? data.write(to: libraryFileURL, options: .atomic)
     }
 
     func loadEmbeddings() -> Data? { try? Data(contentsOf: embeddingsURL) }

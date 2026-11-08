@@ -204,6 +204,8 @@ struct FeedSettings: Codable, Equatable {
     /// Learn what interests the user from the most recently added items of their Zotero library,
     /// as from the papers they save. The key is not a setting: it lives in the Keychain.
     var useZotero = false
+    /// The same, from a RIS or BibTeX export of another manager (EndNote, Mendeley…) imported in Tune.
+    var useLibraryFile = false
     /// How many of the newest items count. Old interests fade because the newest are what is read.
     var zoteroRecent = 100
 
@@ -318,6 +320,7 @@ struct FeedSettings: Codable, Equatable {
         s.profileFilled = d.profileFilled
         // The library only changes how what is held is ranked, like a slider.
         s.useZotero = d.useZotero
+        s.useLibraryFile = d.useLibraryFile
         s.zoteroRecent = d.zoteroRecent
         return s
     }
@@ -378,7 +381,7 @@ extension Feedback {
 extension FeedSettings {
     enum CodingKeys: String, CodingKey {
         case formatVersion, orcid, profileOrcids, profileFilled, useMyPublications, useOpenAlex, useEuropePMC
-        case useZotero, zoteroRecent
+        case useZotero, useLibraryFile, zoteroRecent
         case followedTopics, followedJournals, followedAuthors, followedInstitutions
         case followedFunders, followedKeywords, trackedPapers, feedOrder, highlightCount, highlightCloseness, highlightImpact, highlightAuthorH
         case mutedJournals, mutedAuthors, mutedTopics, mutedKeywords
@@ -400,6 +403,7 @@ extension FeedSettings {
         useOpenAlex = get(.useOpenAlex, useOpenAlex)
         useEuropePMC = get(.useEuropePMC, useEuropePMC)
         useZotero = get(.useZotero, useZotero)
+        useLibraryFile = get(.useLibraryFile, useLibraryFile)
         zoteroRecent = min(max(get(.zoteroRecent, zoteroRecent), 10), 500)
         followedTopics = get(.followedTopics, followedTopics)
         followedJournals = get(.followedJournals, followedJournals)

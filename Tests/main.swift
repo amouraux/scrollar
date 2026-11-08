@@ -303,6 +303,23 @@ check(reloaded.vector(for: "alpha") == cache.vector(for: "alpha") && counting2.c
 check(reloaded.count == 2, "reloaded cache has what was saved")
 let trimmed = CachingEmbedder(CountingEmbedder(), stored: cache.snapshot(keeping: ["alpha"]))
 check(trimmed.count == 1, "a snapshot can keep only the texts still in use")
+final class NamedEmbedder: TextEmbedder {
+    let modelID: String; var calls = 0
+    init(_ id: String) { modelID = id }
+    func vector(for text: String) -> [Double]? { calls += 1; return [Double(text.count), 1, 0.5] }
+}
+let sentenceModel = NamedEmbedder("apple-sentence"), contextualModel = NamedEmbedder("apple-contextual")
+let sentenceCache = CachingEmbedder(sentenceModel); _ = sentenceCache.vector(for: "alpha")
+let sentenceSaved = sentenceCache.snapshot()!
+check(CachingEmbedder(contextualModel, stored: sentenceSaved).count == 0, "embedding cache: vectors made by one model are never used by another")
+check(CachingEmbedder(NamedEmbedder("apple-sentence"), stored: sentenceSaved).count == 1, "embedding cache: the model that wrote them may read them back")
+let legacySaved: Data = {
+    var d = try! PropertyListDecoder().decode([String: Data].self, from: sentenceSaved)
+    d.removeValue(forKey: CachingEmbedder.modelKey)
+    let e = PropertyListEncoder(); e.outputFormat = .binary
+    return try! e.encode(d)
+}()
+check(CachingEmbedder(NamedEmbedder("apple-sentence"), stored: legacySaved).count == 1 && CachingEmbedder(contextualModel, stored: legacySaved).count == 0, "embedding cache: a file written before models were named came from the sentence model")
 check(CachingEmbedder.hash("abc") == CachingEmbedder.hash("abc") && CachingEmbedder.hash("abc") != CachingEmbedder.hash("abd"), "hash is stable and distinguishes texts")
 let codedPaper = try! JSONDecoder().decode(Paper.self, from: JSONEncoder().encode(Paper(id: "W1", doi: "10.1/x", title: "T", date: "2026-01-01")))
 check(codedPaper.doi == "10.1/x" && codedPaper.title == "T", "a paper survives the feed cache")
@@ -1228,6 +1245,107 @@ ZoteroStub.seen = []
 var zReadOnly = ""
 do { try await ZoteroClient(account: zRead, session: zSession).add(zRef) } catch { zReadOnly = "\(error)" }
 check(zReadOnly.contains("only read") && ZoteroStub.seen.isEmpty, "zotero client: a read-only key is told so before anything is sent")
+
+// MARK: summaries from a model the user has an account with
+let rsClaude = RemoteSummaryConfig(provider: .anthropic, key: "SECRET", model: "")
+let rsReq = RemoteSummary.request(rsClaude, title: "A title", abstract: "An abstract.")
+let rsBody = try! JSONSerialization.jsonObject(with: rsReq.httpBody!) as! [String: Any]
+check(rsReq.url?.absoluteString == "https://api.anthropic.com/v1/messages" && rsReq.value(forHTTPHeaderField: "x-api-key") == "SECRET" && rsReq.value(forHTTPHeaderField: "anthropic-version") == "2026-10-21" && !rsReq.url!.absoluteString.contains("SECRET"), "remote summary: Claude is asked over its messages API, the key in a header only")
+check(rsBody["model"] as? String == "claude-opus-5-5" && (rsBody["output_config"] as? [String: String]) == ["effort": "low"] && rsBody["temperature"] == nil && rsBody["top_p"] == nil && (rsBody["max_tokens"] as? Int ?? 0) >= 2000, "remote summary: an empty model means the default; low effort; no sampling settings (current models reject them); room for thinking")
+var rsOld = rsClaude; rsOld.model = "claude-haiku-4-5"
+check((try! JSONSerialization.jsonObject(with: RemoteSummary.request(rsOld, title: "t", abstract: "a").httpBody!) as! [String: Any])["output_config"] == nil && RemoteSummary.supportsEffort("claude-haiku-5-5") && RemoteSummary.supportsEffort("claude-sonnet-5-5") && !RemoteSummary.supportsEffort("claude-sonnet-4-6"), "remote summary: the effort setting is sent only to a model that has it")
+let rsAI = RemoteSummary.request(RemoteSummaryConfig(provider: .openai, key: "SECRET", model: "gpt-x"), title: "t", abstract: "a")
+check(rsAI.url?.host == "api.openai.com" && rsAI.value(forHTTPHeaderField: "Authorization") == "Bearer SECRET" && ((try! JSONSerialization.jsonObject(with: rsAI.httpBody!) as! [String: Any])["model"] as? String) == "gpt-x", "remote summary: ChatGPT is asked over its chat completions API with the model the user named")
+check((try! JSONSerialization.jsonObject(with: rsReq.httpBody!) as! [String: Any])["system"] as? String == RemoteSummary.instructions && String(decoding: rsReq.httpBody!, as: UTF8.self).contains("Abstract: An abstract."), "remote summary: the paper goes in the message and the brief in the system prompt")
+let rsLongAbstract = RemoteSummary.prompt(title: "T", abstract: String(repeating: "x", count: 9000))
+check(rsLongAbstract.count < 3100, "remote summary: a very long abstract is cut before it is sent")
+check(RemoteSummary.text(from: Data(#"{"content":[{"type":"thinking","thinking":""},{"type":"text","text":"Patients showed a reduced late potential."}],"stop_reason":"end_turn"}"#.utf8), provider: .anthropic) == "Patients showed a reduced late potential.", "remote summary: only the text blocks of Claude's answer are read, not its thinking")
+check(RemoteSummary.text(from: Data(#"{"content":[],"stop_reason":"refusal"}"#.utf8), provider: .anthropic) == nil && RemoteSummary.text(from: Data("x".utf8), provider: .anthropic) == nil, "remote summary: a refusal or an unreadable answer is no text")
+check(RemoteSummary.text(from: Data(#"{"choices":[{"message":{"content":"One finding."}}]}"#.utf8), provider: .openai) == "One finding." && RemoteSummary.text(from: Data(#"{"choices":[{"message":{"content":null,"refusal":"no"}}]}"#.utf8), provider: .openai) == nil, "remote summary: ChatGPT's reply is read, a refusal is none")
+check(RemoteSummary.clean("\"The study found that EEG gamma power rose. It did not change with pain intensity. A third sentence follows here. And a fourth one.\"") != nil && RemoteSummary.clean("ok") == nil, "remote summary: an answer is held to two sentences, like the on-device one, and a stub of one word is dropped")
+ZoteroStub.seen = []
+ZoteroStub.answer = { _ in (200, [:], Data(#"{"content":[{"type":"text","text":"The EEG gamma response was larger in patients with chronic pain."}],"stop_reason":"end_turn"}"#.utf8)) }
+let rsGot = try? await RemoteSummary.takeaway(rsClaude, title: "T", abstract: "A.", session: zSession)
+check(rsGot == "The EEG gamma response was larger in patients with chronic pain.", "remote summary: a call returns the cleaned takeaway")
+var rsFailure = ""
+ZoteroStub.answer = { _ in (401, [:], Data()) }
+do { _ = try await RemoteSummary.takeaway(rsClaude, title: "T", abstract: "A.", session: zSession) } catch { rsFailure = "\(error)" }
+check(rsFailure.contains("refused") && !rsFailure.contains("SECRET"), "remote summary: a refused key is said so, without the key")
+ZoteroStub.answer = { _ in (200, [:], Data(#"{"content":[],"stop_reason":"refusal"}"#.utf8)) }
+let rsDeclined = try? await RemoteSummary.takeaway(rsClaude, title: "T", abstract: "A.", session: zSession)
+check(rsDeclined == .some(nil), "remote summary: a model that declines gives nothing, which is not an error")
+check(RemoteSummaryConfig(provider: .openai, key: "k", model: "  ").modelOrDefault == "gpt-4o-mini", "remote summary: a blank model name means the default")
+
+// MARK: library import (RIS and BibTeX)
+let impRIS = "\u{FEFF}TY  - JOUR\r\nAU  - Legrain, Valéry\r\nTI  - Cortical gamma responses\r\n  to painful heat\r\nT2  - Pain\r\nPY  - 2025///\r\nAB  - We recorded EEG in 84 patients.\r\nN2  - Short note.\r\nAB  - We recorded EEG in 84 patients with chronic pain\r\nand 80 controls.\r\nKW  - EEG\r\nKW  - pain; gamma\r\nDO  - https://doi.org/10.1000/ABC\r\nER  - \r\n\r\nTY  - CONF\r\nT1  - A conference paper\r\nJO  - Proc. X\r\nY1  - 2023/05/01/\r\nER  - \r\n\r\nTY  - JOUR\r\nAB  - A record with no title\r\nER  - \r\n"
+let impRisItems = LibraryImport.ris(LibraryImport.text(of: Data(impRIS.utf8))!)
+check(impRisItems.count == 2 && impRisItems[0].title == "Cortical gamma responses to painful heat" && impRisItems[1].title == "A conference paper", "import ris: records from TY to ER, a wrapped title joined, a record with no title left out")
+check(impRisItems[0].abstract == "We recorded EEG in 84 patients with chronic pain and 80 controls." && impRisItems[0].doi == "10.1000/abc" && impRisItems[0].journal == "Pain" && impRisItems[0].published == "2025", "import ris: the longest abstract wins, a wrapped line is joined, the DOI made bare, the year read from RIS's date")
+check(impRisItems[0].tags == ["EEG", "pain", "gamma"] && impRisItems[1].journal == "Proc. X" && impRisItems[1].published == "2023" && impRisItems[1].itemType == "conf", "import ris: keywords are split on , and ;, T1 and JO and Y1 are read as well as TI, T2 and PY")
+let impBib = #"""
+% a comment
+@comment{jabref-meta: x}
+@string{pain = "Pain"}
+@article{legrain2025,
+  author = {Legrain, Val{\'e}ry and M{\"u}ller, Jonas},
+  title = {Cortical {EEG} responses to {P}ainful heat in {\"U}ber-chronic pain},
+  journal = pain,
+  year = 2025,
+  doi = {10.1000/Bib.1},
+  abstract = {We recorded EEG
+     in 84 patients; \emph{gamma} rose by 20\% (see {Fig. 1}).},
+  keywords = {EEG, pain; gamma},
+  date-added = {2026-11-02 10:00:00 +0100}
+}
+@inproceedings(conf1, title = "A plain {Q}uoted title", booktitle = {Proc. Y}, year = {2022})
+@book{nottitle, year = 2020}
+"""#
+let impBibItems = LibraryImport.bibtex(impBib)
+check(impBibItems.count == 2 && impBibItems[1].title == "A plain Quoted title" && impBibItems[1].journal == "Proc. Y", "import bibtex: comments and @string are skipped, an entry with no title is left out, quotes and parentheses work")
+check(impBibItems[0].title == "Cortical EEG responses to Painful heat in Über-chronic pain", "import bibtex: protective braces are dropped and accents become letters")
+check(impBibItems[0].abstract == "We recorded EEG in 84 patients; gamma rose by 20% (see Fig. 1)." && impBibItems[0].doi == "10.1000/bib.1" && impBibItems[0].published == "2025" && impBibItems[0].tags == ["EEG", "pain", "gamma"], "import bibtex: nested braces, a command, an escaped percent sign, the DOI, a bare year and keywords are read")
+check(impBibItems[0].dateAdded == "2026-11-02T00:00:00Z" && impBibItems[1].dateAdded == "", "import bibtex: a date-added the file carries is kept")
+check(LibraryImport.clean(#"Stra{\ss}e \c{c}a \v{S}koda {\o}l"#) == "Straße ça Škoda øl", "import bibtex: LaTeX symbols and accents are turned into characters")
+check(LibraryImport.format(of: impRIS) == .ris && LibraryImport.format(of: impBib) == .bibtex && LibraryImport.format(of: "hello", filename: "x.ris") == .ris && LibraryImport.format(of: "hello", filename: "x.txt") == nil, "import: the format is told from the contents first and the extension second")
+check(LibraryImport.items(from: Data(impRIS.utf8), filename: "export.txt").count == 2 && LibraryImport.items(from: Data("nothing here".utf8), filename: "a.txt").isEmpty, "import: a file with no papers gives none")
+check(LibraryImport.text(of: Data([0x54, 0x69, 0xE9]))  == "Tié", "import: a Windows-1252 file is read as that")
+var impUTF16 = Data([0xFF, 0xFE]); impUTF16.append("TY  - JOUR".data(using: .utf16LittleEndian)!)
+check(LibraryImport.text(of: impUTF16)?.hasSuffix("JOUR") == true, "import: a UTF-16 file is read")
+let impDay1 = Date(timeIntervalSince1970: 1_700_000_000), impDay2 = Date(timeIntervalSince1970: 1_700_000_000 + 86_400 * 30)
+let impFirst = LibraryImport.merged(previous: nil, parsed: impRisItems, name: "a.ris", now: impDay1)
+check(impFirst.items.count == 2 && Set(impFirst.items.map(\.dateAdded)).count == 1 && impFirst.items[0].key == "doi:10.1000/abc" && impFirst.items[1].key.hasPrefix("title:"), "import: a first import dates everything alike and keys by DOI, else by title")
+let impNew = LibraryItem(key: "", title: "Brand new paper", abstract: nil, doi: nil, dateAdded: "", tags: [], journal: nil, itemType: "jour", published: "2026")
+let impSecond = LibraryImport.merged(previous: impFirst, parsed: [impNew] + impRisItems + impRisItems, name: "b.ris", now: impDay2)
+check(impSecond.items.count == 3 && impSecond.items.first { $0.title == "Brand new paper" }?.dateAdded == impSecond.importedAt && impSecond.items.first { $0.doi == "10.1000/abc" }?.dateAdded == impFirst.importedAt, "import: a second import keeps when old items first appeared, dates the new one today, and drops duplicates")
+let impTexts = Zotero.profileTexts(impSecond.items, recent: 1)
+check(impTexts.count == 1 && impTexts[0].hasPrefix("Brand new paper"), "import: what was added in the latest import comes first")
+let impSame = LibraryImport.merged(previous: nil, parsed: [LibraryItem(key: "", title: "Older", abstract: nil, doi: nil, dateAdded: "", tags: [], journal: nil, itemType: "jour", published: "2019"), LibraryItem(key: "", title: "Newer", abstract: nil, doi: nil, dateAdded: "", tags: [], journal: nil, itemType: "jour", published: "2025")], name: "c.ris", now: impDay1)
+check(Zotero.profileTexts(impSame.items, recent: 2).map { String($0.prefix(5)) } == ["Newer", "Older"], "import: items that arrived together are ordered by publication year, newest first")
+check(LibraryImport.merged(previous: nil, parsed: (0..<10).map { LibraryItem(key: "", title: "P\($0)", abstract: nil, doi: nil, dateAdded: "", tags: [], journal: nil, itemType: "jour") }, name: "x", now: impDay1, limit: 4).items.count == 4, "import: a huge export is capped")
+var impSettings = FeedSettings(); impSettings.useLibraryFile = true
+check(FeedBuilder.profileTexts(impSettings, own: [], library: ["from a file"]).contains("from a file") && impSettings.forFetching == FeedSettings().forFetching && device(impSettings, stamp: at(1)).apply(to: FeedSettings()).useLibraryFile, "import: the choice joins the profile, re-ranks without fetching, and syncs")
+
+// MARK: rough pastes
+let roughRefs = """
+1. Legrain V, Iannetti GD, Plaghki L, Mouraux A. The pain matrix reloaded: a salience detection system for the body. Prog Neurobiol. 2011;93(1):111-124. doi:10.1016/j.pneurobio.2010.10.005
+[2] Mouraux, A., & Iannetti, G. D. (2018). The search for pain biomarkers in the human brain. Brain, 141(12), 3290-3293. https://doi.org/10.1093/brain/awy281
+- “Cortical gamma responses to painful heat in chronic pain” Pain, 2025
+Spinal cord stimulation for neuropathic pain
+10.1000/only.a.doi
+too short
+"""
+let roughItems = LibraryImport.rough(roughRefs)
+check(roughItems.count == 4, "paste: a list of references with no blank lines gives one entry per line, and a bare DOI or a stub is left out")
+check(roughItems[0].title == "The pain matrix reloaded: a salience detection system for the body" && roughItems[0].doi == "10.1016/j.pneurobio.2010.10.005" && roughItems[0].published == "2011", "paste: a Vancouver-style reference gives its title, DOI and year")
+check(roughItems[1].title == "The search for pain biomarkers in the human brain" && roughItems[1].journal == "Brain" && roughItems[1].doi == "10.1093/brain/awy281", "paste: an APA-style reference gives the title after the year, the journal after it, and the DOI from a link")
+check(roughItems[2].title == "Cortical gamma responses to painful heat in chronic pain" && roughItems[3].title == "Spinal cord stimulation for neuropathic pain", "paste: a quoted title is taken as it is, and a line that is only a title is a title")
+let roughBlocks = LibraryImport.rough("Cortical gamma responses to painful heat\nin chronic low back pain patients\n\nSpinal cord stimulation for neuropathic pain in the era\nof closed-loop control")
+check(roughBlocks.count == 2 && roughBlocks[0].title == "Cortical gamma responses to painful heat in chronic low back pain patients", "paste: blank lines separate entries and a wrapped one is joined")
+check(LibraryImport.rough(impBib).count == 2 && LibraryImport.rough(impRIS).count == 2 && LibraryImport.rough("").isEmpty && LibraryImport.rough("   \n\n  ").isEmpty, "paste: RIS and BibTeX are read as such, and nothing is nothing")
+let roughFirst = LibraryImport.adding(to: nil, parsed: roughItems, name: "Pasted", now: impDay1)
+let roughMore = LibraryImport.adding(to: roughFirst, parsed: LibraryImport.rough("Brand new pasted paper about itch and scratching") + roughItems, name: "Pasted", now: impDay2)
+check(roughMore.items.count == 5 && roughMore.items.first { $0.title.hasPrefix("Brand new") }?.dateAdded == roughMore.importedAt && roughMore.items.first { $0.doi == "10.1016/j.pneurobio.2010.10.005" }?.dateAdded == roughFirst.importedAt && roughMore.name == "Pasted", "paste: a second paste adds, keeps the dates of what was there, and does not double a paper")
+check(Zotero.profileTexts(roughMore.items, recent: 1)[0].hasPrefix("Brand new"), "paste: what was pasted last counts as the newest")
 
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

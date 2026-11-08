@@ -47,7 +47,7 @@ enum FeedBuilder {
         var texts = s.useMyPublications ? own.map { $0.title + ". " + ($0.abstract ?? "") } : []
         texts += s.feedback.saved.map { $0.title + ". " + ($0.abstract ?? "") }
         // The reference library, already chosen and turned to text; empty unless the user connected one.
-        if s.useZotero { texts += library }
+        if s.useZotero || s.useLibraryFile { texts += library }
         return texts
     }
 

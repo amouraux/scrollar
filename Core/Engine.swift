@@ -31,6 +31,8 @@ struct FeedResult {
     /// False when this device has no sentence model (the iOS Simulator does not),
     /// so similarity came from word counts alone. The user is told, not left to guess.
     var usedEmbeddings: Bool
+    /// Which on-device model made the similarity ("apple-sentence", "apple-contextual"), nil for word counts.
+    var embedderID: String? = nil
     /// How this feed was fetched, so the app can remember what it covers.
     var mode: Incremental.Mode
     /// Every seed answered. If one failed, the app must not treat this fetch as
@@ -231,13 +233,14 @@ struct FeedEngine {
 
         // 5. Rank.
         let ranked = Ranker.rank(kept, profileTexts: profileTexts, embedder: embedder, settings: settings, today: today)
-        log((embedder == nil ? "Similarity: word counts only" : "Similarity: Apple embeddings + word counts") + "  [\(lap())]")
+        log((embedder == nil ? "Similarity: word counts only" : "Similarity: \(embedder?.modelID ?? "embeddings") + word counts") + "  [\(lap())]")
 
         return FeedResult(author: me,
                           citedYou: ranked.filter { $0.paper.citesYou },
                           forYou: ranked.filter { !$0.paper.citesYou },
                           profileTexts: profileTexts,
                           usedEmbeddings: embedder != nil,
+                          embedderID: embedder?.modelID,
                           mode: mode,
                           complete: complete,
                           fetchedAt: today,

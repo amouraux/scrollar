@@ -196,7 +196,7 @@ private struct PaperReader: View {
                 Text("No abstract available.").foregroundStyle(.tertiary)
             }
             if model.takeaway(for: paper)?.writtenByModel == true {
-                Label("The sentences on the post were written on this device by Apple's language model. The abstract is the authors' own.",
+                Label("The sentences on the post were \(model.summaryNote). The abstract is the authors' own.",
                       systemImage: "sparkles")
                     .font(.caption).foregroundStyle(.tertiary)
             }

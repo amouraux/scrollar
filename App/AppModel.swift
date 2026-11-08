@@ -52,6 +52,12 @@ final class AppModel {
     private(set) var layout = Layout()
     /// The connected Zotero account, with its key: from the Keychain, never from a file.
     private(set) var zotero: ZoteroAccount?
+    /// The RIS or BibTeX export last imported, for managers that have no API to read.
+    private(set) var libraryFile: LibraryFile?
+    /// A Claude or ChatGPT account for takeaways on a device with no on-device model; from the Keychain.
+    private(set) var remoteSummary: RemoteSummaryConfig?
+    /// Why takeaways from it are not arriving, if they are not; shown in Tune.
+    private(set) var summaryProblem: String?
     /// What the last read of the library did, for Tune; nil before one.
     private(set) var zoteroStatus: String?
     /// A one-line answer to something the user just did, shown briefly over the feed.
@@ -68,6 +74,8 @@ final class AppModel {
     private(set) var authorName: String?
     private(set) var updated: Date?
     private(set) var usedEmbeddings = true
+    /// "apple-sentence", "apple-contextual", or nil when similarity came from word counts alone.
+    private(set) var embedderID: String?
     private(set) var phase: Phase = .idle
     /// Takeaways written by the on-device model, by paper. Where there is none,
     /// a post shows sentences chosen from the abstract instead.
@@ -134,6 +142,8 @@ final class AppModel {
             settings = s
         }
         apiKey = Keychain.load()
+        remoteSummary = Keychain.load(service: Keychain.summaries).data(using: .utf8).flatMap { try? JSONDecoder().decode(RemoteSummaryConfig.self, from: $0) }
+        libraryFile = store.loadLibraryFile()
         zotero = Keychain.load(service: Keychain.zotero).data(using: .utf8).flatMap { try? JSONDecoder().decode(ZoteroAccount.self, from: $0) }
         history = store.loadHistory()
         summaries = store.loadSummaries()
@@ -143,6 +153,7 @@ final class AppModel {
             authorName = cached.authorName
             updated = cached.date
             usedEmbeddings = cached.usedEmbeddings ?? true
+            embedderID = cached.embedderID ?? (usedEmbeddings ? CachingEmbedder.legacyModelID : nil)
             builtWith = cached.builtWith
             fetchedThrough = cached.fetchedThrough
             fullBuildAt = cached.fullBuildAt
@@ -172,6 +183,7 @@ final class AppModel {
         syncFileName = syncFile?.name
         syncStatus = syncFile == nil ? .off : .idle(nil)
         rearrange()
+        if let remote = remoteSummary { Task { await Summarizer.shared.configure(remote: remote) } }
     }
 
     /// The key to use. In a debug build an environment variable stands in when
@@ -247,7 +259,7 @@ final class AppModel {
         if !older { needsRefresh = false }
         let settings = self.settings
         // Going back asks for nothing from Zotero: the copy already held ranks what it fetches.
-        let library = await zoteroTexts(allowNetwork: !older)
+        let library = await zoteroTexts(allowNetwork: !older) + libraryFileTexts()
         let useOpenAlex = usesOpenAlex
         // What this feed is built for, taken now: the user may change a follow
         // while it runs, and the result must not claim to match that.
@@ -260,7 +272,8 @@ final class AppModel {
         do {
             // The ranking is CPU work, so it runs off the main thread.
             let (result, vectors) = try await Task.detached(priority: .userInitiated) { () -> (FeedResult, Data?) in
-                let cache = NLTextEmbedder().map { CachingEmbedder($0, stored: cachedVectors) }
+                // Apple's sentence model, else its contextual one (fetched once if need be), else none.
+                let cache = await TextEmbedders.best().map { CachingEmbedder($0, stored: cachedVectors) }
                 let engine = FeedEngine(openAlex: useOpenAlex ? OpenAlexClient(apiKey: key) : nil,
                                         europePMC: settings.useEuropePMC ? EuropePMCClient() : nil,
                                         embedder: cache, log: report)
@@ -308,6 +321,7 @@ final class AppModel {
         authorName = result.author?.name
         updated = Date()
         usedEmbeddings = result.usedEmbeddings
+        embedderID = result.embedderID
 
         // Advance what the cache covers only if every seed answered. A fetch with a
         // gap must be asked for again; a full build with a gap cannot be built on at all.
@@ -332,7 +346,7 @@ final class AppModel {
         rearrange()
         store.saveHistory(history)
         store.saveFeed(CachedFeed(citedYou: citedYou, forYou: forYou, authorName: authorName,
-                                  date: Date(), usedEmbeddings: result.usedEmbeddings,
+                                  date: Date(), usedEmbeddings: result.usedEmbeddings, embedderID: result.embedderID,
                                   builtWith: builtFor, fetchedThrough: fetchedThrough, fullBuildAt: fullBuildAt,
                                   extraDays: extraDays))
     }
@@ -382,14 +396,67 @@ final class AppModel {
     func writeTakeaway(for p: Paper) async {
         let key = p.dedupeKey
         guard summaries[key] == nil, !summaryFailures.contains(key),
-              let abstract = p.abstract, Summarizer.isAvailable else { return }
-        if let text = await Summarizer.shared.takeaway(title: p.title, abstract: abstract) {
+              let abstract = p.abstract, canSummarise, summaryProblem == nil else { return }
+        switch await Summarizer.shared.takeaway(title: p.title, abstract: abstract) {
+        case .text(let text):
             summaries[key] = text
             saveSummariesSoon()
-        } else if !Task.isCancelled {
-            summaryFailures.insert(key)   // refused or failed: do not ask again this run
+        case .failed(let why):
+            // A refused key would be refused for every paper: say so once, and stop asking.
+            if !Task.isCancelled { summaryProblem = why }
+        case .declined:
+            if !Task.isCancelled { summaryFailures.insert(key) }   // do not ask again this run
+        case .unavailable:
+            break
         }
     }
+
+    // MARK: Takeaways from the user's own model
+
+    /// What judged how close the papers are to the user's work, for Tune: this is the answer to
+    /// "why does it say it matches by words only".
+    var embeddingDescription: String {
+        switch embedderID {
+        case "apple-sentence": return "Apple's sentence model"
+        case "apple-contextual": return "Apple's contextual text model"
+        default: return updated == nil ? "not built yet" : "word counts only"
+        }
+    }
+
+    /// Something can write takeaways: the on-device model, or an account set up in Tune.
+    var canSummarise: Bool { Summarizer.isAvailable || remoteSummary != nil }
+
+    /// What the note under an opened paper says wrote its takeaway.
+    var summaryNote: String {
+        if Summarizer.isAvailable { return "written on this device by Apple's language model" }
+        if let remote = remoteSummary { return "written by \(remote.provider.name) from the title and abstract, with the key you set up in Tune" }
+        return "written by a language model"
+    }
+
+    /// Try the account with one small request; keep it only if that works, so a wrong key or model
+    /// name is found now and not by a feed of missing takeaways.
+    func setUpRemoteSummary(_ config: RemoteSummaryConfig) async throws {
+        let sample = "Patients with chronic back pain showed a reduced late positive potential and an enhanced early gamma response to painful heat. These responses correlated with pain interference but not with pain intensity."
+        guard try await RemoteSummary.takeaway(config, title: "EEG responses in chronic back pain", abstract: sample) != nil else {
+            throw RemoteSummaryError.unreadable
+        }
+        guard let data = try? JSONEncoder().encode(config) else { return }
+        Keychain.save(String(decoding: data, as: UTF8.self), service: Keychain.summaries)
+        remoteSummary = config
+        summaryProblem = nil
+        summaryFailures = []
+        await Summarizer.shared.configure(remote: config)
+    }
+
+    func clearRemoteSummary() {
+        Keychain.save("", service: Keychain.summaries)
+        remoteSummary = nil
+        summaryProblem = nil
+        Task { await Summarizer.shared.configure(remote: nil) }
+    }
+
+    /// Let the next card try again after the user has fixed a key in Tune.
+    func clearSummaryProblem() { summaryProblem = nil; summaryFailures = [] }
 
     private func saveSummariesSoon() {
         saveSummariesTask?.cancel()
@@ -684,6 +751,62 @@ final class AppModel {
             }
         }
         return Zotero.profileTexts(cache?.items ?? [], recent: settings.zoteroRecent)
+    }
+
+    // MARK: A library file
+
+    enum ImportProblem: LocalizedError {
+        case unreadable, noPapers
+        var errorDescription: String? {
+            switch self {
+            case .unreadable: return "That file could not be read."
+            case .noPapers: return "No papers were found. Paste a RIS or BibTeX export, a list of references, or titles one per line (a bare DOI says nothing about the paper)."
+            }
+        }
+    }
+
+    /// Read an export the user picked and keep it. Importing again later (a newer export) keeps when
+    /// each item first appeared, which is how "recently added" is known from files that carry no date.
+    /// Returns how many papers it holds and how many of them are new.
+    @discardableResult
+    func importLibrary(from url: URL) throws -> (total: Int, added: Int) {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url), data.count < 200_000_000 else { throw ImportProblem.unreadable }
+        let parsed = LibraryImport.items(from: data, filename: url.lastPathComponent)
+        guard !parsed.isEmpty else { throw ImportProblem.noPapers }
+        let before = Set((libraryFile?.items ?? []).map(\.key))
+        let file = LibraryImport.merged(previous: libraryFile, parsed: parsed, name: url.lastPathComponent, now: Date())
+        store.saveLibraryFile(file)
+        libraryFile = file
+        // Importing a file is asking to use it.
+        settings.useLibraryFile = true
+        return (file.items.count, file.items.filter { !before.contains($0.key) }.count)
+    }
+
+    /// Add what the user pasted to the library: RIS or BibTeX, a list of references, or titles one per
+    /// line. Each paste counts as added now, so what was pasted last is what counts as newest.
+    @discardableResult
+    func addPastedReferences(_ text: String) throws -> (total: Int, added: Int) {
+        let parsed = LibraryImport.rough(text)
+        guard !parsed.isEmpty else { throw ImportProblem.noPapers }
+        let before = Set((libraryFile?.items ?? []).map(\.key))
+        let file = LibraryImport.adding(to: libraryFile, parsed: parsed, name: "Pasted references", now: Date())
+        store.saveLibraryFile(file)
+        libraryFile = file
+        settings.useLibraryFile = true
+        return (file.items.count, file.items.filter { !before.contains($0.key) }.count)
+    }
+
+    func removeLibraryFile() {
+        store.saveLibraryFile(nil)
+        libraryFile = nil
+        settings.useLibraryFile = false
+    }
+
+    private func libraryFileTexts() -> [String] {
+        guard settings.useLibraryFile, let file = libraryFile else { return [] }
+        return Zotero.profileTexts(file.items, recent: settings.zoteroRecent)
     }
 
     /// Add a paper to the user's Zotero library, unless its DOI is already there.

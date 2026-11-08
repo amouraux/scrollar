@@ -4,8 +4,9 @@ import Foundation
 // stands for the user's interests, and writing the record to save a paper. The requests themselves
 // are in `ZoteroClient.swift`.
 
-/// One entry of the user's library, reduced to what is used.
-struct ZoteroItem: Codable, Equatable {
+/// One entry of a reference library, reduced to what is used: from Zotero's API, or from a RIS or
+/// BibTeX export of EndNote, Mendeley or any other manager.
+struct LibraryItem: Codable, Equatable {
     var key: String
     var title: String
     var abstract: String?
@@ -15,6 +16,9 @@ struct ZoteroItem: Codable, Equatable {
     var tags: [String]
     var journal: String?
     var itemType: String
+    /// The year (or date) it was published, when the library says. An export carries no date added,
+    /// so this is what orders items that arrived together. Optional: a cache written before it still loads.
+    var published: String? = nil
 }
 
 /// Who the key belongs to and what it may do, read once when it is connected.
@@ -31,7 +35,7 @@ enum Zotero {
 
     /// The items of an `/items` response. A reply that is not a list, or an item with no title, gives
     /// nothing rather than failing the feed.
-    static func items(from data: Data) -> [ZoteroItem] {
+    static func items(from data: Data) -> [LibraryItem] {
         guard let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
         return list.compactMap { entry in
             guard let key = entry["key"] as? String, let d = entry["data"] as? [String: Any],
@@ -42,17 +46,17 @@ enum Zotero {
                 (d[k] as? String).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 }
             }
             let tags = ((d["tags"] as? [[String: Any]]) ?? []).compactMap { $0["tag"] as? String }
-            return ZoteroItem(key: key, title: title, abstract: text("abstractNote"),
+            return LibraryItem(key: key, title: title, abstract: text("abstractNote"),
                               doi: Identifiers.doi(text("DOI")), dateAdded: text("dateAdded") ?? "",
                               tags: tags, journal: text("publicationTitle") ?? text("repository") ?? text("proceedingsTitle"),
-                              itemType: type)
+                              itemType: type, published: text("date").flatMap(LibraryImport.year))
         }
     }
 
     /// What stands for an item: title, abstract and the user's own tags, which say in their words
     /// what they filed it under. Tags go last, where the embedder (which reads the title and the
     /// last sentences) will see them.
-    static func profileText(_ i: ZoteroItem) -> String {
+    static func profileText(_ i: LibraryItem) -> String {
         var text = i.title
         if let abstract = i.abstract { text += ". " + abstract }
         let tags = i.tags.filter { !$0.isEmpty }.prefix(8)
@@ -62,8 +66,14 @@ enum Zotero {
 
     /// The `recent` most recently added items, as profile texts, newest first. Added, not
     /// modified: an old paper whose note was edited yesterday is not what the user is into now.
-    static func profileTexts(_ items: [ZoteroItem], recent: Int) -> [String] {
-        items.sorted { $0.dateAdded > $1.dateAdded }.prefix(max(recent, 0)).map(profileText)
+    static func profileTexts(_ items: [LibraryItem], recent: Int) -> [String] {
+        // Items that arrived together (one import) are ordered by publication year, newest first,
+        // and then as they were listed.
+        items.enumerated().sorted { a, b in
+            if a.element.dateAdded != b.element.dateAdded { return a.element.dateAdded > b.element.dateAdded }
+            let (pa, pb) = (a.element.published ?? "", b.element.published ?? "")
+            return pa != pb ? pa > pb : a.offset < b.offset
+        }.prefix(max(recent, 0)).map { profileText($0.element) }
     }
 
     /// The account behind a key: `GET /keys/current`.

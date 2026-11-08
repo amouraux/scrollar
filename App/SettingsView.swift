@@ -265,7 +265,11 @@ struct SettingsView: View {
                     Text("A file you keep: your follows, mutes, keywords, sliders, and saved and hidden papers as they are now. It does not hold your OpenAlex or Zotero key, the feed, or what you have read. Restoring replaces your current settings after asking, and with syncing on the other devices follow. Sync keeps your devices the same; a backup is how you go back.")
                 }
 
+                SummariesSection()
+
                 ZoteroSection()
+
+                LibraryFileSection()
 
                 Section {
                     Toggle("Europe PMC and PubMed", isOn: $model.settings.useEuropePMC)
@@ -828,5 +832,187 @@ struct ZoteroSection: View {
             }
             connecting = false
         }
+    }
+}
+
+
+/// Takeaways on a device without an on-device model. Apple's is used wherever there is one; where
+/// there is not (Apple Intelligence is not offered in every region), a Claude or ChatGPT account of
+/// the user's own can write them, which sends the title and abstract of papers they scroll past.
+struct SummariesSection: View {
+    @Environment(AppModel.self) private var model
+    @State private var provider = SummaryProvider.anthropic
+    @State private var key = ""
+    @State private var modelName = ""
+    @State private var testing = false
+    @State private var problem: String?
+
+    var body: some View {
+        Section {
+            LabeledContent("Papers are compared with", value: model.embeddingDescription)
+            if Summarizer.isAvailable {
+                Label("This device writes them itself, with Apple's language model.", systemImage: "checkmark.circle")
+            } else if let config = model.remoteSummary {
+                LabeledContent("Written by", value: "\(config.provider.name), \(config.modelOrDefault)")
+                if let problem = model.summaryProblem {
+                    Text(problem).font(.footnote).foregroundStyle(.red)
+                    Button("Try again") { model.clearSummaryProblem() }
+                }
+                Button("Stop using it", role: .destructive) { model.clearRemoteSummary() }
+            } else {
+                Text("This device has no on-device language model, so the sentence under each title is chosen from the abstract. Set up your own account to have a model write it.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Picker("Account", selection: $provider) {
+                    ForEach(SummaryProvider.allCases, id: \.self) { Text($0.name).tag($0) }
+                }
+                SecureField("API key", text: $key)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                TextField("Model (blank: \(provider.defaultModel))", text: $modelName)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                Button(testing ? "Trying it…" : "Try it and keep it") { setUp() }
+                    .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty || testing)
+                if let problem { Text(problem).font(.footnote).foregroundStyle(.red) }
+                Link(provider == .anthropic ? "Get a Claude API key" : "Get an OpenAI API key",
+                     destination: URL(string: provider == .anthropic ? "https://console.anthropic.com/settings/keys"
+                                                                     : "https://platform.openai.com/api-keys")!)
+            }
+        } header: {
+            Text("Summaries and matching")
+        } footer: {
+            Text("Matching uses a text model on this device: Apple's sentence model where it has one, otherwise its contextual model, which is fetched once and does not need Apple Intelligence; with neither, words alone. A key is not a chat subscription: it is a separate, pay-per-use account of your own (Claude or OpenAI). When it is set up, the title and abstract of a paper that stays on screen are sent to that service, and nothing else. Each takeaway costs a fraction of a cent to a cent or two, depending on the model: a smaller one costs far less, and Claude Haiku (claude-haiku-5-5) is the cheapest Claude. At most \(Summarizer.remoteLimit) are written per launch, and each is kept, so a paper is never asked for twice. The key stays in this device's Keychain and is sent only to that service. A device that has Apple's model uses it instead and sends nothing.")
+        }
+    }
+
+    private func setUp() {
+        testing = true
+        problem = nil
+        let config = RemoteSummaryConfig(provider: provider, key: key.trimmingCharacters(in: .whitespacesAndNewlines), model: modelName)
+        Task {
+            do {
+                try await model.setUpRemoteSummary(config)
+                key = ""
+            } catch {
+                problem = "\(error)"
+            }
+            testing = false
+        }
+    }
+}
+
+
+/// EndNote, Mendeley, Papers, Citavi and the rest have no way in that an app can use, but every one
+/// exports RIS or BibTeX. Importing one gives the same signal as Zotero's library does.
+struct LibraryFileSection: View {
+    @Environment(AppModel.self) private var appModel
+    @State private var choosing = false
+    @State private var pasting = false
+    @State private var message: String?
+    @State private var failed = false
+
+    var body: some View {
+        @Bindable var model = appModel
+        Section {
+            if let file = model.libraryFile {
+                LabeledContent("Imported", value: "\(file.items.count) papers")
+                Text("From \(file.name), \(importedText(file.importedAt)).").font(.footnote).foregroundStyle(.secondary)
+                Toggle("Learn from it", isOn: $model.settings.useLibraryFile)
+                if model.settings.useLibraryFile {
+                    Stepper("Newest items used: \(model.settings.zoteroRecent)",
+                            value: $model.settings.zoteroRecent, in: 10...500, step: 10)
+                }
+                importButton("Import a newer export…")
+                Button("Paste more references…") { pasting = true }
+                Button("Remove it", role: .destructive) { model.removeLibraryFile(); message = nil }
+            } else {
+                importButton("Import an export (RIS or BibTeX)…")
+                Button("Paste references…") { pasting = true }
+            }
+            if let message { Text(message).font(.footnote).foregroundStyle(failed ? Color.red : Color.secondary) }
+        } header: {
+            Text("Library file (EndNote, Mendeley and others)")
+        } footer: {
+            Text("The quickest way: choose Paste references, then copy from your reference manager (select papers, Copy, or Copy as reference list) or from any bibliography and paste. A RIS or BibTeX export pasted there is read as one; a plain list gives a title and DOI per reference, and a paper with only a DOI is left out. Or, in your reference manager, export your library (or the part you are working on) as RIS or BibTeX, then choose the file here. It is read on this device, and its titles, abstracts and keywords stand for what you are into, as a Zotero library does. An export does not say when each paper was added, so the first import treats them alike and puts the more recently published first; import a newer export from time to time and the papers that were not in the last one count as the newest. The file is not kept, only what was read from it, and it is not synced: import it on each device.")
+        }
+        .sheet(isPresented: $pasting) { PasteReferencesSheet { paste($0) } }
+    }
+
+    private func paste(_ text: String) {
+        do {
+            let r = try appModel.addPastedReferences(text)
+            failed = false
+            message = "Added \(r.added) papers; \(r.total) in all."
+        } catch {
+            failed = true
+            message = error.localizedDescription
+        }
+    }
+
+    private func importButton(_ title: String) -> some View {
+        Button(title) { choosing = true }
+            .fileImporter(isPresented: $choosing,
+                          allowedContentTypes: [UTType(filenameExtension: "ris"), UTType(filenameExtension: "bib"),
+                                                UTType(filenameExtension: "bibtex"), .plainText, .text].compactMap { $0 }) { result in
+                switch result {
+                case .success(let url):
+                    do {
+                        let r = try appModel.importLibrary(from: url)
+                        failed = false
+                        message = "Read \(r.total) papers" + (r.added == r.total ? "." : ", \(r.added) new since the last import.")
+                    } catch {
+                        failed = true
+                        message = error.localizedDescription
+                    }
+                case .failure(let error):
+                    failed = true
+                    message = error.localizedDescription
+                }
+            }
+    }
+
+    private func importedText(_ iso: String) -> String {
+        guard let d = ISO8601DateFormatter().date(from: iso) else { return "imported" }
+        return "imported " + d.formatted(date: .abbreviated, time: .omitted)
+    }
+}
+
+
+/// A window to paste into: anything a reference manager or a bibliography will copy.
+struct PasteReferencesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+    let add: (String) -> Void
+
+    private var found: Int { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0 : LibraryImport.rough(text).count }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Paste references from your reference manager, a bibliography or a list of titles, one per entry. RIS and BibTeX work too.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                TextEditor(text: $text)
+                    .font(.callout)
+                    .padding(6)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.3)))
+                    .frame(minHeight: 220)
+                HStack {
+                    Button("Paste from clipboard", systemImage: "doc.on.clipboard") {
+                        if let clip = UIPasteboard.general.string { text = clip }
+                    }
+                    Spacer()
+                    Text(text.isEmpty ? "" : found == 0 ? "Nothing readable yet" : "\(found) papers found")
+                        .font(.footnote).foregroundStyle(found == 0 ? .red : .secondary)
+                }
+            }
+            .padding()
+            .navigationTitle("Paste references")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") { add(text); dismiss() }.disabled(found == 0)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }

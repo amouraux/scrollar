@@ -7,7 +7,7 @@ struct ZoteroCache: Codable, Equatable {
     var version: Int
     /// How many items were asked for; a cache that holds fewer than are wanted now is not enough.
     var asked: Int
-    var items: [ZoteroItem]
+    var items: [LibraryItem]
 }
 
 enum ZoteroError: Error, CustomStringConvertible {
@@ -70,7 +70,7 @@ struct ZoteroClient {
     /// current, Zotero answers "not modified" and nothing is downloaded again.
     func recent(limit: Int, cache: ZoteroCache?) async throws -> ZoteroCache {
         let usable = cache.flatMap { $0.userID == account.userID && $0.asked >= limit ? $0 : nil }
-        var items: [ZoteroItem] = []
+        var items: [LibraryItem] = []
         var version = 0
         var start = 0
         while start < limit {

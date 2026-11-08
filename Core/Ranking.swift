@@ -63,6 +63,13 @@ struct TfIdf {
 /// and the tests use a stand-in.
 protocol TextEmbedder {
     func vector(for text: String) -> [Double]?
+    /// Which model made the vectors. Vectors from two models are not comparable, so a stored cache
+    /// is used only by the model that wrote it.
+    var modelID: String { get }
+}
+
+extension TextEmbedder {
+    var modelID: String { "unknown" }
 }
 
 /// Embedding a paper costs about 60 ms per sentence, so a refresh that re-reads
@@ -75,15 +82,23 @@ final class CachingEmbedder: TextEmbedder {
     private(set) var hits = 0
     private(set) var misses = 0
 
+    /// The key under which a snapshot records its model. A snapshot written before there was one came
+    /// from Apple's sentence model, the only one then.
+    static let modelKey = "_model"
+    static let legacyModelID = "apple-sentence"
+
     init(_ base: TextEmbedder, stored: Data? = nil) {
         self.base = base
-        if let stored, let saved = try? PropertyListDecoder().decode([String: Data].self, from: stored) {
+        if let stored, let saved = try? PropertyListDecoder().decode([String: Data].self, from: stored),
+           saved[CachingEmbedder.modelKey].map({ String(decoding: $0, as: UTF8.self) }) ?? CachingEmbedder.legacyModelID == base.modelID {
             for (key, bytes) in saved {
                 guard let k = UInt64(key, radix: 16) else { continue }
                 store[k] = bytes.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
             }
         }
     }
+
+    var modelID: String { base.modelID }
 
     func vector(for text: String) -> [Double]? {
         let key = CachingEmbedder.hash(text)
@@ -110,6 +125,7 @@ final class CachingEmbedder: TextEmbedder {
         for (key, v) in store where wanted?.contains(key) ?? true {
             out[String(key, radix: 16)] = v.withUnsafeBufferPointer { Data(buffer: $0) }
         }
+        out[CachingEmbedder.modelKey] = Data(base.modelID.utf8)
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
         return try? encoder.encode(out)

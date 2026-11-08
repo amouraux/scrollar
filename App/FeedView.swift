@@ -266,7 +266,7 @@ private struct StatusBanner: View {
                 if let updated = model.updated {
                     HStack(alignment: .firstTextBaseline) {
                         Text("Updated \(updated.formatted(.relative(presentation: .named)))"
-                             + (model.usedEmbeddings ? "" : " · matched by words only: this device has no Apple language model"))
+                             + (model.usedEmbeddings ? "" : " · matched by word counts only: no on-device text model could be loaded"))
                             .font(.caption).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         #if targetEnvironment(macCatalyst)
@@ -658,7 +658,7 @@ struct PaperCard: View {
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             if model.takeaway(for: paper)?.writtenByModel == true {
-                Label("The sentences above were written on this device by Apple's language model. The abstract is the authors' own.",
+                Label("The sentences above were \(model.summaryNote). The abstract is the authors' own.",
                       systemImage: "sparkles")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
