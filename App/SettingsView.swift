@@ -30,6 +30,7 @@ struct SettingsView: View {
     @AppStorage("showCovers") private var showCovers = true
     @State private var creatingSyncFile = false
     @State private var joiningSyncFile = false
+    @State private var suggesting = false
 
     var body: some View {
         @Bindable var model = appModel
@@ -38,22 +39,40 @@ struct SettingsView: View {
                 Section {
                     TextField("ORCID iD, 0000-0000-0000-0000", text: Binding(
                         get: { model.settings.orcid ?? "" },
-                        set: { model.settings.orcid = $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0.trimmingCharacters(in: .whitespaces) }))
+                        set: {
+                            let typed = $0.trimmingCharacters(in: .whitespaces)
+                            // A valid iD is stored in its standard form; anything else as typed.
+                            model.settings.orcid = typed.isEmpty ? nil : (Orcid.normalised(typed) ?? typed)
+                        }))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    Toggle("Learn from my publications", isOn: $model.settings.useMyPublications)
+                    if let typed = model.settings.orcid, Orcid.normalised(typed) == nil {
+                        Text("That is not a valid ORCID iD.").font(.footnote).foregroundStyle(.orange)
+                    }
+                    Toggle("Learn from publications", isOn: $model.settings.useMyPublications)
+                    NavigationLink {
+                        ProfileSourcesView()
+                    } label: {
+                        LabeledContent("Also learn from", value: count(model.settings.profileOrcids.count))
+                    }
+                    Button("Suggest what to follow…") { suggesting = true }
                 } header: {
                     Text("You")
                 } footer: {
-                    Text("Your papers set what the feed looks for, and tell you when someone cites them.")
+                    Text("Your publications, and those of anyone you add under Also learn from (a supervisor, say, if you have few papers yet), set what \"close to my work\" means, and \"Cited you\" tells you when someone cites yours. They can suggest what to follow, but nothing is followed unless it is in the Follow lists below, where you can remove it.")
                 }
 
                 Section {
-                    entityLink("Topics", kind: .topics, items: $model.settings.followedTopics)
-                    entityLink("Journals", kind: .sources, items: $model.settings.followedJournals, byName: true)
-                    entityLink("Researchers", kind: .authors, items: $model.settings.followedAuthors, byName: true)
-                    entityLink("Institutions", kind: .institutions, items: $model.settings.followedInstitutions, byName: true)
-                    entityLink("Funders", kind: .funders, items: $model.settings.followedFunders, byName: true)
+                    entityLink("Topics", kind: .topics, items: $model.settings.followedTopics,
+                               explanation: "Papers OpenAlex files under a topic (each paper has up to three). A topic is broad, a few hundred papers a month, so what it finds is ranked with everything else and gets a small bonus, not listed in full. Searched in OpenAlex; a topic taken from a paper's MeSH headings is searched in Europe PMC.")
+                    entityLink("Journals", kind: .sources, items: $model.settings.followedJournals, byName: true,
+                               explanation: "Everything these journals publish in your look-back window, newest first, under \"From what you follow\". Large general journals publish a lot: remove any you do not want in full.")
+                    entityLink("Researchers", kind: .authors, items: $model.settings.followedAuthors, byName: true,
+                               explanation: "Every paper where this person appears anywhere in the author list, under \"From what you follow\". Chosen from the search, they are matched by OpenAlex id; added by name, they are searched in Europe PMC and a namesake may slip in.")
+                    entityLink("Institutions", kind: .institutions, items: $model.settings.followedInstitutions, byName: true,
+                               explanation: "Papers with an author at this institution or one of its departments or hospitals. An institution publishes in every field, so what it finds is ranked with everything else and gets a small bonus, not listed in full.")
+                    entityLink("Funders", kind: .funders, items: $model.settings.followedFunders, byName: true,
+                               explanation: "Papers acknowledging this funder. A funder's papers are many and mixed, so what it finds is ranked with everything else and gets a small bonus, not listed in full.")
                     NavigationLink {
                         KeywordListView(rules: $model.settings.followedKeywords)
                     } label: {
@@ -63,13 +82,16 @@ struct SettingsView: View {
                 } header: {
                     Text("Follow")
                 } footer: {
-                    Text("Each follow searches for new papers. With the section on, every paper that something you follow found is listed under \"From what you follow\", newest first, with no cut-off. With it off, those papers are ranked with all the rest and only get a small bonus, so a weak match can fall out of the feed.")
+                    Text("Each follow searches for new papers. With the section on, every paper that a journal, a researcher or a keyword you follow found is listed under \"From what you follow\", newest first, with no cut-off. Topics, institutions and funders are too broad to list in full, so what they find is ranked with all the rest and gets a small bonus. With the section off, everything is ranked.")
                 }
 
                 Section("Mute") {
-                    entityLink("Journals", kind: .sources, items: $model.settings.mutedJournals, byName: true)
-                    entityLink("Researchers", kind: .authors, items: $model.settings.mutedAuthors)
-                    entityLink("Topics", kind: .topics, items: $model.settings.mutedTopics)
+                    entityLink("Journals", kind: .sources, items: $model.settings.mutedJournals, byName: true,
+                               explanation: "Papers from these journals are removed before ranking, wherever they were found, including under Cited you.")
+                    entityLink("Researchers", kind: .authors, items: $model.settings.mutedAuthors,
+                               explanation: "Papers with this person anywhere in the author list are removed. Matched by OpenAlex id, so papers that came only from Europe PMC are not affected.")
+                    entityLink("Topics", kind: .topics, items: $model.settings.mutedTopics,
+                               explanation: "Papers OpenAlex files under any of these topics are removed. Matched by OpenAlex topic id, so papers that came only from Europe PMC are not affected.")
                     NavigationLink {
                         MutedWordsView(words: $model.settings.mutedKeywords)
                     } label: {
@@ -218,6 +240,7 @@ struct SettingsView: View {
                           contentType: .json, defaultFilename: "Scrollar sync") { result in
                 if case .success(let url) = result { Task { await model.adoptSyncFile(url) } }
             }
+            .sheet(isPresented: $suggesting) { SuggestionsView() }
             .fileImporter(isPresented: $joiningSyncFile, allowedContentTypes: [.json]) { result in
                 if case .success(let url) = result { Task { await model.adoptSyncFile(url) } }
             }
@@ -225,9 +248,9 @@ struct SettingsView: View {
     }
 
     private func entityLink(_ title: String, kind: OpenAlexClient.EntityKind, items: Binding<[Entity]>,
-                            byName: Bool = false) -> some View {
+                            byName: Bool = false, explanation: String? = nil) -> some View {
         NavigationLink {
-            EntityListView(title: title, kind: kind, items: items, byName: byName)
+            EntityListView(title: title, kind: kind, items: items, byName: byName, explanation: explanation)
         } label: {
             LabeledContent(title, value: count(items.wrappedValue.count))
         }
@@ -258,15 +281,21 @@ struct EntityListView: View {
     /// Whether a name can be typed in and searched by Europe PMC, for when there is
     /// no OpenAlex key or OpenAlex does not know it.
     var byName = false
+    /// What this list does to the feed, in plain words, under the list.
+    var explanation: String?
     @State private var adding = false
 
     var body: some View {
         List {
-            if items.isEmpty {
-                Text("Nothing yet. Tap Add to search.").foregroundStyle(.secondary)
+            Section {
+                if items.isEmpty {
+                    Text("Nothing yet. Tap Add to search.").foregroundStyle(.secondary)
+                }
+                ForEach(items, id: \.id) { Text($0.name) }
+                    .onDelete { items.remove(atOffsets: $0) }
+            } footer: {
+                if let explanation { Text(explanation) }
             }
-            ForEach(items, id: \.id) { Text($0.name) }
-                .onDelete { items.remove(atOffsets: $0) }
         }
         .navigationTitle(title)
         .toolbar {

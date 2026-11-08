@@ -76,6 +76,34 @@ func run() async throws {
                             log: { print($0) })
     if CommandLine.arguments.contains("--no-embeddings") { engine.embedder = nil }
 
+    if CommandLine.arguments.contains("--suggest") {
+        // What the publications would suggest following, as the Tune sheet shows it:
+        // ./run.sh <orcid> --suggest [--also <orcid>]
+        let fetcher = ProfileFetcher(openAlex: engine.openAlex, europePMC: engine.europePMC)
+        var ids = [settings.orcid].compactMap { $0 }
+        var i = 0
+        while let n = CommandLine.arguments[i...].firstIndex(of: "--also"), n + 1 < CommandLine.arguments.count {
+            ids.append(CommandLine.arguments[n + 1]); i = n + 1
+        }
+        var sources: [ProfileSourceWorks] = []
+        var sizes: [String: Int] = [:]
+        for id in ids {
+            let (name, works, journalSizes) = try await fetcher.works(orcid: id)
+            print("\(name): \(works.count) recent papers")
+            sources.append(ProfileSourceWorks(label: name, works: works))
+            sizes.merge(journalSizes) { a, _ in a }
+        }
+        let year = Calendar.current.component(.year, from: Date())
+        let found = ProfileAnalysis.suggestions(sources, currentYear: year, journalSizes: sizes)
+        for kind in SuggestionKind.allCases {
+            print("\n\(kind.title)")
+            for s in (found[kind] ?? []).prefix(12) {
+                print("  [\(s.selected ? "x" : " ")] \(s.entity.name)  · \(s.count) papers · latest \(s.latestYear)" + (s.note.map { "  ⚠ \($0)" } ?? ""))
+            }
+        }
+        return
+    }
+
     if CommandLine.arguments.contains("--compare") {
         // Full build, then an incremental one as if the last fetch were two days ago.
         // They should give the same feed; the second should be much faster.

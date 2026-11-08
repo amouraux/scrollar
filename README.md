@@ -114,7 +114,7 @@ OpenAlex. Do not compile a key in.
 blend, 0.6 Apple embeddings and 0.4 word statistics, against the three nearest papers, so a
 researcher with several themes is not averaged into one) times the "stay close to my work"
 slider; a bonus for each further seed that found the paper, for citing the user's work and
-for being found by something they follow (which matters only with the follow section off, see below); a recency term that halves every fortnight, times
+for being found by something they follow (which matters for topics, institutions and funders, and for everything with the follow section off, see below); a recency term that halves every fortnight, times
 its slider; a small penalty for repository records (not for preprints); the kind adjustment
 (case reports and conference abstracts start lowered; hide removes them before ranking); and
 two optional terms, off by default: the journal's two-year mean citedness (OpenAlex's
@@ -123,17 +123,45 @@ last or the higher of the two authors. Both are logarithmic, neutral for a paper
 figure, and capped. The three ranking sliders only reorder what is held, so moving one costs an
 incremental refresh, not a rebuild.
 
-## What a follow does
+## What the algorithm is, and that it is the user's
+
+Tune is the algorithm, in the open and editable. **Nothing is followed unless it is in a Follow
+list**: the app no longer infers topics behind the user's back. The user's publications shape what
+"close to my work" means, and can *suggest* follows, which the user chooses (below); the feed is the
+follows, the filters and the sliders, each explained under its list.
 
 A follow becomes a search per source that can answer it (`SourceRouting`), returning the newest
-papers in the look-back window, up to about 300 per follow per source. By default
-(`followSection`, in Tune under Follow) every paper that something followed found is listed under
-"From what you follow", newest first, with no rank cut-off and no repeat in the ranked list; it still
-passes the user's mutes and filters, and the same seen, read and expiry rules. Switched off, the
-followed papers are ranked with the rest and get +0.8 (and +0.5 for each further search that found
-them), so a weak match can fall below the 150 new papers the ranked list shows. A follow never
-changes the similarity measure, which comes only from the user's own and saved papers. The section is
-a display choice (`Arranger.split`): changing it fetches and ranks nothing again.
+papers in the look-back window, up to about 300 per follow per source. By default (`followSection`,
+in Tune under Follow) every paper that a **journal, a researcher or a keyword** followed found is
+listed under "From what you follow", newest first, with no rank cut-off and no repeat in the ranked
+list; it still passes the user's mutes and filters, and the same seen, read and expiry rules. A
+**topic, an institution or a funder** is too broad to list in full (each names hundreds of papers a
+month, in every field), so what only those found is ranked with the rest and gets +0.8 (and +0.5 for
+each further search that found it); the ranked list shows 150 new papers, so a weak match can fall
+below that. With the section off, everything is ranked. A follow never changes the similarity
+measure, which comes only from the user's own and saved papers. The section is a display choice
+(`Arranger.split`, `Paper.isPinned`): changing it fetches and ranks nothing again.
+
+## Learning from publications
+
+The ORCID iD under You, and up to three more under Also learn from (a supervisor or group leader:
+most useful to a PhD student with few papers), are read for two things. They are the profile that
+defines similarity. And they suggest what to follow (`Core/Profile.swift`, `ProfileFetcher.swift`,
+`App/ProfileViews.swift`): topics, journals, co-authors, institutions and funders, each with how many
+papers it appears in and the latest year, counted with recent papers weighing more (a weight that
+halves about every two years), so what the user still works on comes first. Ticked to begin with:
+recent (within four years) and recurrent, at most eight topics, six journals and five co-authors
+(three papers together are needed); institutions and funders are listed, never ticked, and a very
+large general journal (over 100,000 papers) is listed with a warning and unticked, because following
+one would list a flood. Old interests are listed unticked in case the user still follows them. A
+consortium paper's authors are ignored as co-authors; repositories are not journals.
+
+The first time, and only then, when the follow lists are all empty and there is an iD, the ticked
+suggestions fill the lists (`profileFilled`, synced, so a second device does not repeat it, and
+nothing the user removes comes back); a notice says so. After that "Suggest what to follow…" in Tune
+shows what is not yet followed, to choose from. Without OpenAlex the same works from ORCID's list of
+works and Europe PMC (MeSH headings as topics, journals and co-authors by name; no institutions or
+funders). `./run.sh <orcid> --suggest [--also <orcid>]` prints the suggestions.
 
 ## Reading state
 
@@ -158,8 +186,8 @@ labelled as such when the post is opened.
 
 ## Tune
 
-Everything the user can enter is in `Core/Settings.swift`, with what each does: ORCID and whether
-to learn from their papers; sources; follows (topics, journals, researchers, institutions,
+Everything the user can enter is in `Core/Settings.swift`, with what each does: ORCID, up to three others to learn from, and whether
+to learn from publications; sources; follows (topics, journals, researchers, institutions,
 funders, keywords with their own must-also and must-not conditions) and tracked papers; mutes
 (journals, researchers, topics, words); a weight (hide, lower, normal, boost) for each kind of
 paper; look-back days; the three ranking sliders and which author counts; only papers with an
@@ -210,11 +238,11 @@ model is a heuristic and is sometimes background, not a finding.
     (settings in, ranked feed out; the app and the command line both call it).
   - `Settings.swift`, `History.swift`, `Incremental.swift`, `Sync.swift`, `Sources.swift`
     (routing, Europe PMC and ORCID parsing), `Summary.swift`, `Byline.swift`, `Why.swift`,
-    `Cover.swift`, `PubMed.swift`.
+    `Cover.swift`, `PubMed.swift`, `Profile.swift` (the ORCID check, and suggestions from publications).
   - Network and Apple frameworks, each in one place: `OpenAlex.swift`, `EuropePMCClient.swift`
-    (with ORCID), `PubMedClient.swift`, `Embedding.swift` (NaturalLanguage).
+    (with ORCID), `PubMedClient.swift`, `ProfileFetcher.swift` (a person's papers, for the profile and its suggestions), `Embedding.swift` (NaturalLanguage).
 - `App/`: SwiftUI. `AppModel` holds the state, `Store` the files and the Keychain,
-  `SyncFile` the sync file, `Summarizer` the on-device model, `FeedView`, `SavedView`, `SettingsView`.
+  `SyncFile` the sync file, `Summarizer` the on-device model, `FeedView`, `SavedView`, `SettingsView`, `ProfileViews` (others to learn from, and the suggestions sheet).
 - `CLI/main.swift`: the command-line driver. `Tests/`: the checks and their runner.
 
 Every seed (a topic, journal, author, keyword, or "cites my work") becomes one query per source

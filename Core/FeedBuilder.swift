@@ -9,10 +9,12 @@ struct PlannedSeed: Equatable {
 /// The pure half of building a feed: what to ask for, and what to keep. The
 /// network half is FeedEngine.
 enum FeedBuilder {
-    /// Turn the settings into the queries to run. `myTopics` and `myWorkIDs`
-    /// come from the user's OpenAlex record and only count when
+    /// Turn the settings into the queries to run. Only what is listed under Follow is
+    /// followed: nothing is inferred behind the user's back. Their own papers shape what
+    /// "close to my work" means and can suggest follows (see Profile.swift), and `myWorkIDs`
+    /// gives the one seed that is not a follow, "cites my work", which only counts when
     /// `useMyPublications` is on.
-    static func seeds(_ s: FeedSettings, myTopics: [Entity], myWorkIDs: [String]) -> [PlannedSeed] {
+    static func seeds(_ s: FeedSettings, myWorkIDs: [String]) -> [PlannedSeed] {
         var planned: [PlannedSeed] = []
         func add(_ seed: Seed, explicit: Bool) {
             // If a followed topic is also one of the user's own, the explicit one wins.
@@ -24,17 +26,16 @@ enum FeedBuilder {
         }
 
         if s.useMyPublications {
-            for t in myTopics.prefix(5) {
-                // Ids made from MeSH headings (no OpenAlex) become MeSH seeds.
-                if t.id.hasPrefix("mesh:") {
-                    if !MeSH.isGeneric(t.name) { add(.mesh(t.name), explicit: false) }
-                } else {
-                    add(.topic(id: t.id, name: t.name), explicit: false)
-                }
-            }
             if !myWorkIDs.isEmpty { add(.cites(workIDs: myWorkIDs, label: "Cites your work"), explicit: false) }
         }
-        for e in s.followedTopics { add(.topic(id: e.id, name: e.name), explicit: true) }
+        for e in s.followedTopics {
+            // A topic taken from a paper's MeSH headings has no OpenAlex id.
+            if e.id.hasPrefix("mesh:") {
+                if !MeSH.isGeneric(e.name) { add(.mesh(e.name), explicit: true) }
+            } else {
+                add(.topic(id: e.id, name: e.name), explicit: true)
+            }
+        }
         for e in s.followedJournals { add(.journal(id: e.id, name: e.name), explicit: true) }
         for e in s.followedAuthors { add(.author(id: e.id, name: e.name), explicit: true) }
         for e in s.followedInstitutions { add(.institution(id: e.id, name: e.name), explicit: true) }

@@ -207,13 +207,14 @@ follow.followedTopics = [Entity(id: "T1", name: "Pain")]
 follow.followedJournals = [Entity(id: "S2", name: "Brain")]
 follow.followedKeywords = [KeywordRule(phrase: "predictive coding")]
 follow.trackedPapers = [Entity(id: "W77", name: "A paper")]
-let planned = FeedBuilder.seeds(follow, myTopics: [Entity(id: "T1", name: "Pain"), Entity(id: "T3", name: "Touch")], myWorkIDs: ["W1", "W2"])
-check(planned.count == 6, "own topics + own citations + four follows, the shared topic counted once")
-check(planned.first { $0.seed == .topic(id: "T1", name: "Pain") }?.explicit == true, "a topic that is both followed and inferred counts as followed")
-check(planned.first { $0.seed == .topic(id: "T3", name: "Touch") }?.explicit == false, "an inferred topic is not marked followed")
+let planned = FeedBuilder.seeds(follow, myWorkIDs: ["W1", "W2"])
+check(planned.count == 5, "own citations + four follows: nothing is inferred behind the user's back")
+check(planned.first { $0.seed == .topic(id: "T1", name: "Pain") }?.explicit == true, "a followed topic is marked followed")
+check(!planned.contains { $0.seed == .topic(id: "T3", name: "Touch") }, "a topic of the user's own papers is not followed unless it is in the list")
 check(planned.contains { $0.seed.reason == "Cites: A paper" }, "a tracked paper becomes a citation seed with its own label")
 var noPubs = follow; noPubs.useMyPublications = false
-check(FeedBuilder.seeds(noPubs, myTopics: [Entity(id: "T3", name: "Touch")], myWorkIDs: ["W1"]).count == 4, "without publications only the follows remain")
+check(FeedBuilder.seeds(noPubs, myWorkIDs: ["W1"]).count == 4, "without publications only the follows remain")
+check(planned.filter { !$0.explicit }.count == 1, "the one seed that is not a follow is \"cites my work\"")
 check(Seed.institution(id: "I1", name: "x").filter(since: "d").hasPrefix("authorships.institutions.lineage:I1"), "institution filter")
 check(Seed.funder(id: "F1", name: "x").filter(since: "d").hasPrefix("awards.funder_id:F1"), "funder filter")
 let keywordFilter = Seed.keyword("a, b").filter(since: "d")
@@ -617,7 +618,8 @@ check(Paper(id: "epmc:PPR:PPR9", title: "t", date: "2026-01-01").link?.absoluteS
 check(EuropePMCParser.papers(from: Data("not json".utf8)).isEmpty, "Europe PMC: garbage reads as nothing")
 
 check(MeSH.isGeneric("Humans") && MeSH.isGeneric("Middle Aged") && !MeSH.isGeneric("Nociceptors"), "MeSH: check tags are generic, a real topic is not")
-check(!FeedBuilder.seeds(FeedSettings(), myTopics: [Entity(id: "mesh:Humans", name: "Humans")], myWorkIDs: []).contains { $0.seed == .mesh("Humans") }, "MeSH: a check tag is never a seed")
+var checkTag = FeedSettings(); checkTag.followedTopics = [Entity(id: "mesh:Humans", name: "Humans")]
+check(!FeedBuilder.seeds(checkTag, myWorkIDs: []).contains { $0.seed == .mesh("Humans") }, "MeSH: a check tag is never a seed")
 check(Html.plain("<i>Objective.</i>Tumor stiffness") == "Objective.Tumor stiffness", "html: inline tags vanish without a gap")
 check(Html.plain("<p>One</p><p>Two &lt;3</p>") == "One Two <3", "html: block tags become spaces, entities decode")
 check(Affiliation.institution(from: "Department of Physiology, Faculty of Medicine, Karolinska Institutet, Stockholm, Sweden.") == "Karolinska Institutet", "affiliation: department and faculty are skipped")
@@ -663,7 +665,8 @@ check(Merge.combine([Paper(id: "A", doi: "10.1/a", title: "Editorial", date: "20
 check(Merge.firstSurname(Paper(id: "x", title: "t", date: "d", authors: ["Gazerani P"])) == Merge.firstSurname(Paper(id: "y", title: "t", date: "d", authors: ["Parisa Gazerani"])), "surname-first and surname-last names agree")
 check(try JSONDecoder().decode(Paper.self, from: JSONEncoder().encode(fromOA)).sourceNames == ["OpenAlex"], "sources survive a round trip")
 check(try FeedSettings.decode(Data("{}".utf8)).useOpenAlex && FeedSettings().useEuropePMC, "both sources are on by default, also for an older settings file")
-check(FeedBuilder.seeds(FeedSettings(), myTopics: [Entity(id: "mesh:Pain", name: "Pain")], myWorkIDs: []).contains { $0.seed == .mesh("Pain") }, "topics made from MeSH headings become MeSH seeds")
+var meshFollow = FeedSettings(); meshFollow.followedTopics = [Entity(id: "mesh:Pain", name: "Pain")]
+check(FeedBuilder.seeds(meshFollow, myWorkIDs: []).contains { $0.seed == .mesh("Pain") && $0.explicit }, "a followed topic taken from MeSH becomes a MeSH seed")
 var mutedByName = FeedSettings(); mutedByName.mutedJournals = [Entity(id: "name:Pain", name: "Pain")]
 check(FeedBuilder.keep([fromEPMC, Paper(id: "z", title: "Other", journal: "Brain", date: "2026-10-05")], settings: mutedByName).map(\.id) == ["z"], "a journal muted by name is muted by name")
 
@@ -770,6 +773,71 @@ var sectionOff = FeedSettings(); sectionOff.followSection = false
 check(sectionOff.forRanking == FeedSettings().forRanking && sectionOff.forFetching == FeedSettings().forFetching, "follow section: only a display choice, so it asks for no refresh")
 var syncedOff = FeedSettings(); syncedOff.followSection = false
 check(device(syncedOff, stamp: at(1)).apply(to: FeedSettings()).followSection == false, "follow section: the choice syncs")
+
+// MARK: ORCID and profile suggestions
+check(Orcid.normalised("0000-0003-1056-5980") == "0000-0003-1056-5980", "orcid: a valid iD is accepted")
+check(Orcid.normalised("0000000310565980") == "0000-0003-1056-5980" && Orcid.normalised("https://orcid.org/0000-0003-1056-5980") == "0000-0003-1056-5980", "orcid: without hyphens, or as a link")
+check(Orcid.normalised("0000-0003-1056-5981") == nil && Orcid.normalised("0000-0003-1056") == nil && Orcid.normalised("hello") == nil && Orcid.normalised("") == nil, "orcid: a slip in the last digit, a short one and nonsense are refused")
+check(Orcid.normalised("0000-0002-1825-0097") == "0000-0002-1825-0097", "orcid: ORCID's own example iD is valid")
+check(Orcid.normalised("0000-0001-5109-3700") == "0000-0001-5109-3700" && Orcid.normalised("0000-0002-1694-233x") == "0000-0002-1694-233X", "orcid: a check character of X is read in either case")
+
+func pfE(_ id: String, _ name: String) -> Entity { Entity(id: id, name: name) }
+let pfYear = 2026
+let pfPain = pfE("T1", "Pain"), pfOld = pfE("T2", "Old subject"), pfRare = pfE("T3", "Once")
+let pfJournal = pfE("S1", "Pain Journal"), pfCoA = pfE("A1", "Ada"), pfCoB = pfE("A2", "Bo")
+let pfWorks = [
+    ProfileWork(year: 2026, topics: [pfPain], journal: pfJournal, people: [pfCoA], institutions: [pfE("I1", "UCLouvain")], funders: [pfE("F1", "ERC")]),
+    ProfileWork(year: 2025, topics: [pfPain, pfRare], journal: pfJournal, people: [pfCoA, pfCoB], institutions: [pfE("I1", "UCLouvain")], funders: [pfE("F1", "ERC")]),
+    ProfileWork(year: 2012, topics: [pfOld], journal: nil, people: [pfCoB], institutions: [pfE("I2", "Old lab")], funders: []),
+    ProfileWork(year: 2011, topics: [pfOld], journal: nil, people: [pfCoB], institutions: [], funders: []),
+]
+let pfSuggested = ProfileAnalysis.suggestions([ProfileSourceWorks(label: "you", works: pfWorks)], currentYear: pfYear)
+let pfTopics = pfSuggested[.topic]!
+check(pfTopics.first?.entity.id == "T1" && pfTopics.first?.count == 2 && pfTopics.first?.latestYear == 2026, "suggestions: the topic of the most recent papers comes first, with its count and latest year")
+check(pfTopics.first(where: { $0.entity.id == "T1" })?.selected == true, "suggestions: a recent, repeated topic is ticked")
+check(pfTopics.first(where: { $0.entity.id == "T2" })?.selected == false && pfTopics.first(where: { $0.entity.id == "T2" })?.count == 2, "suggestions: a topic not worked on for years is listed but not ticked")
+check(pfTopics.first(where: { $0.entity.id == "T3" })?.selected == false, "suggestions: a topic that occurs once is not ticked")
+check(pfSuggested[.journal]?.map(\.entity.id) == ["S1"], "suggestions: a repository is never a journal to follow")
+check(pfSuggested[.researcher]?.first(where: { $0.entity.id == "A2" })?.count == 3 && pfSuggested[.researcher]?.first(where: { $0.entity.id == "A2" })?.selected == true, "suggestions: co-authors counted over all papers; three together and a recent one is ticked")
+check(pfSuggested[.researcher]?.first(where: { $0.entity.id == "A1" })?.count == 2 && pfSuggested[.researcher]?.first(where: { $0.entity.id == "A1" })?.selected == false, "suggestions: two papers together is not enough to tick a co-author")
+check(pfSuggested[.institution]?.first?.entity.id == "I1" && pfSuggested[.institution]?.first?.selected == false && pfSuggested[.funder]?.first?.entity.id == "F1" && pfSuggested[.funder]?.first?.selected == false, "suggestions: institutions and funders are listed, never ticked: following one lists papers in every field")
+let pfTwo = ProfileAnalysis.suggestions([
+    ProfileSourceWorks(label: "you", works: [ProfileWork(year: 2026, topics: [pfPain])]),
+    ProfileSourceWorks(label: "Supervisor", works: [ProfileWork(year: 2026, topics: [pfPain]), ProfileWork(year: 2025, topics: [pfE("T9", "Her field")])]),
+], currentYear: pfYear)
+check(pfTwo[.topic]?.first?.entity.id == "T1" && pfTwo[.topic]?.first?.fromNames == ["you", "Supervisor"] && pfTwo[.topic]?.first?.count == 2, "suggestions: what two people share is counted together and credited to both")
+let pfSupervisor = ProfileAnalysis.suggestions([ProfileSourceWorks(label: "Supervisor", works: (0..<5).map { ProfileWork(year: 2026 - $0 % 2, topics: [pfPain], journal: pfJournal) })], currentYear: pfYear)
+check(pfSupervisor[.topic]?.first?.selected == true && pfSupervisor[.journal]?.first?.fromNames == ["Supervisor"], "suggestions: a student with no papers is served by a supervisor's")
+check(ProfileAnalysis.suggestions([], currentYear: pfYear)[.topic]?.isEmpty == true, "suggestions: no works, no suggestions")
+let pfMany = (0..<3).flatMap { _ in (0..<30).map { ProfileWork(year: 2026, people: [pfE("A\($0)", "P\($0)")]) } }
+check(ProfileAnalysis.suggestions([ProfileSourceWorks(label: "you", works: pfMany)], currentYear: pfYear)[.researcher]?.count == ProfileAnalysis.listed, "suggestions: the list is capped")
+check(ProfileAnalysis.suggestions([ProfileSourceWorks(label: "you", works: pfMany)], currentYear: pfYear)[.researcher]?.filter(\.selected).count == SuggestionKind.researcher.defaultCount, "suggestions: only a handful are ticked to begin with")
+check(ProfileAnalysis.isSameAuthor(Entity(id: "name:Mouraux A", name: "Mouraux A"), Entity(id: "name:André Mouraux", name: "André Mouraux")), "same author: surname-first with initial, and the full name")
+check(!ProfileAnalysis.isSameAuthor(Entity(id: "name:Mouraux B", name: "Mouraux B"), Entity(id: "name:André Mouraux", name: "André Mouraux")) && !ProfileAnalysis.isSameAuthor(Entity(id: "A1", name: "X"), Entity(id: "A2", name: "X")), "same author: another initial, or two different ids, is someone else")
+
+var withSupervisor = FeedSettings(); withSupervisor.profileOrcids = [ProfileSource(orcid: "0000-0002-1825-0097", label: "Supervisor")]; withSupervisor.profileFilled = true
+check(device(withSupervisor, stamp: at(1)).apply(to: FeedSettings()) == withSupervisor, "other ORCIDs and the filled flag sync")
+check((try! FeedSettings.decode(Data("{\"profileOrcids\": [{\"orcid\": \"a\"}, {\"orcid\": \"b\"}, {\"orcid\": \"c\"}, {\"orcid\": \"d\"}]}".utf8))).profileOrcids.count == 3, "no more than three other ORCIDs are read")
+check((try! FeedSettings.decode(Data("{}".utf8))).profileOrcids.isEmpty && !(try! FeedSettings.decode(Data("{}".utf8))).profileFilled, "an older settings file has none")
+var filledOnly = FeedSettings(); filledOnly.profileFilled = true
+check(filledOnly.forRanking == FeedSettings().forRanking, "the filled flag asks for no refresh by itself")
+var otherOrcid = FeedSettings(); otherOrcid.profileOrcids = [ProfileSource(orcid: "0000-0002-1825-0097")]
+check(otherOrcid.forRanking != FeedSettings().forRanking && otherOrcid.forFetching != FeedSettings().forFetching, "adding someone to learn from does refetch: their papers are part of the profile")
+
+let institutionOnly = ranked(ok("io") { $0.followed = true; $0.reasons = ["Institution: UCLouvain"]; $0.date = "2026-10-07" }, 2)
+let topicOnly = ranked(ok("to") { $0.followed = true; $0.reasons = ["Topic: Pain"]; $0.date = "2026-10-09" }, 5)
+let journalToo = ranked(ok("jt") { $0.followed = true; $0.reasons = ["Topic: Pain", "Journal: Pain"]; $0.date = "2026-10-08" }, 4)
+let splitTopics = Arranger.split([topicOnly, journalToo, plainTop, institutionOnly], followSection: true)
+let topicIDs: [String] = splitTopics.followed.map { $0.paper.id }
+let restIDs: [String] = splitTopics.rest.map { $0.paper.id }
+check(topicIDs == ["jt"] && restIDs == ["to", "pt", "io"], "follow section: a paper found only by a topic or an institution is ranked with the rest, one a journal also found is listed")
+
+let bigJournal = pfE("S9", "General Journal")
+let sizedWorks = (0..<4).map { _ in ProfileWork(year: 2026, journal: bigJournal) } + (0..<4).map { _ in ProfileWork(year: 2026, journal: pfE("S8", "Specialist Journal")) }
+let sized = ProfileAnalysis.suggestions([ProfileSourceWorks(label: "you", works: sizedWorks)], currentYear: 2026, journalSizes: ["S9": 300_000, "S8": 4_000])
+check(sized[.journal]?.first(where: { $0.entity.id == "S9" })?.selected == false && sized[.journal]?.first(where: { $0.entity.id == "S9" })?.note != nil, "suggestions: a large general journal is offered with a warning, unticked")
+check(sized[.journal]?.first(where: { $0.entity.id == "S8" })?.selected == true && sized[.journal]?.first(where: { $0.entity.id == "S8" })?.note == nil, "suggestions: a specialist journal is ticked without a warning")
+check(ProfileAnalysis.suggestions([ProfileSourceWorks(label: "you", works: sizedWorks)], currentYear: 2026)[.journal]?.allSatisfy { $0.note == nil } == true, "suggestions: with no sizes known there is no warning")
 
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

@@ -23,11 +23,7 @@ struct ScrollarApp: App {
                     .tag(Tab.settings)
             }
             .environment(model)
-            .task {
-                // The other device's follows come first, so the refresh builds for them.
-                await model.syncNow(rearrange: true)
-                await model.refreshIfStale()
-            }
+            .task { await model.resume() }
             #if targetEnvironment(macCatalyst)
             // A window that is too small to hold a post is no use; keep it readable.
             .onAppear {
@@ -44,17 +40,17 @@ struct ScrollarApp: App {
                 }
                 // The app is often resumed, not launched: the other device is read, and a
                 // feed more than six hours old is refreshed, behind the "new papers" pill.
-                if new == .active {
-                    Task {
-                        await model.syncNow(rearrange: true)
-                        await model.refreshIfStale()
-                    }
-                }
+                if new == .active { Task { await model.resume() } }
             }
             // Changes made in Tune are applied when the user goes back to the feed,
             // not on every tap.
             .onChange(of: tab) { _, new in
-                if new == .feed, model.needsRefresh { Task { await model.refresh() } }
+                if new == .feed {
+                    Task {
+                        await model.fillFromProfileIfNeeded()
+                        if model.needsRefresh { await model.refresh() }
+                    }
+                }
             }
         }
         // Menu items on the Mac, and the shortcut sheet on an iPad with a keyboard.

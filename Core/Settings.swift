@@ -100,6 +100,12 @@ struct FeedSettings: Codable, Equatable {
 
     // MARK: You
     var orcid: String? = nil
+    /// Others whose publications the feed also learns from: a supervisor, a group leader.
+    /// At most three; most useful to a PhD student who has no papers yet.
+    var profileOrcids: [ProfileSource] = []
+    /// The follow lists have been filled from the publications once. Never done again
+    /// on its own, so nothing the user removed comes back.
+    var profileFilled = false
     /// Build the profile, the topic follows and the "cited you" section from
     /// the user's own papers. Off for someone with no publications yet.
     var useMyPublications = true
@@ -190,6 +196,7 @@ struct FeedSettings: Codable, Equatable {
         s.authorWeight = d.authorWeight
         s.byline = d.byline
         s.followSection = d.followSection
+        s.profileFilled = d.profileFilled
         return s
     }
 
@@ -200,6 +207,7 @@ struct FeedSettings: Codable, Equatable {
         var s = withoutFeedback
         if s.authorWeight == 0 { s.byline = FeedSettings().byline }
         s.followSection = FeedSettings().followSection
+        s.profileFilled = FeedSettings().profileFilled
         return s
     }
 
@@ -253,7 +261,7 @@ extension Feedback {
 
 extension FeedSettings {
     enum CodingKeys: String, CodingKey {
-        case formatVersion, orcid, useMyPublications, useOpenAlex, useEuropePMC
+        case formatVersion, orcid, profileOrcids, profileFilled, useMyPublications, useOpenAlex, useEuropePMC
         case followedTopics, followedJournals, followedAuthors, followedInstitutions
         case followedFunders, followedKeywords, trackedPapers, followSection
         case mutedJournals, mutedAuthors, mutedTopics, mutedKeywords
@@ -269,6 +277,8 @@ extension FeedSettings {
         }
         formatVersion = get(.formatVersion, formatVersion)
         orcid = get(.orcid, orcid)
+        profileOrcids = Array(get(.profileOrcids, profileOrcids).prefix(3))
+        profileFilled = get(.profileFilled, profileFilled)
         useMyPublications = get(.useMyPublications, useMyPublications)
         useOpenAlex = get(.useOpenAlex, useOpenAlex)
         useEuropePMC = get(.useEuropePMC, useEuropePMC)

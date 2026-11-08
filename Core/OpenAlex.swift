@@ -80,6 +80,37 @@ struct OpenAlexClient {
         return try JSONDecoder().decode(WorksDTO.self, from: data).results.compactMap(\.paper)
     }
 
+    /// A person's most recent papers, reduced to what can be followed: topics, the journal,
+    /// co-authors, where they themselves worked, and the funders. `authorID` is theirs, so
+    /// they are left out of their own co-authors and their own affiliations are told apart.
+    func profileWorks(authorID: String, perPage: Int = 100) async throws -> [ProfileWork] {
+        let data = try await fetch("works", [
+            "filter": "author.id:\(authorID)",
+            "per-page": String(perPage),
+            "sort": "publication_date:desc",
+            "select": "id,publication_date,primary_location,authorships,topics,awards",
+        ])
+        return try JSONDecoder().decode(ProfileWorksDTO.self, from: data).results.compactMap { $0.profileWork(me: authorID) }
+    }
+
+    /// How many papers each journal has published in all, by id. A general journal with a
+    /// hundred thousand is not something to follow in full.
+    func journalSizes(ids: [String]) async throws -> [String: Int] {
+        var out: [String: Int] = [:]
+        for start in stride(from: 0, to: ids.count, by: 100) {
+            let batch = ids[start..<min(start + 100, ids.count)]
+            let data = try await fetch("sources", [
+                "filter": "openalex:" + batch.joined(separator: "|"),
+                "per-page": "100",
+                "select": "id,works_count",
+            ])
+            for source in try JSONDecoder().decode(SourceSizesDTO.self, from: data).results {
+                if let n = source.works_count { out[Identifiers.openAlexID(source.id)] = n }
+            }
+        }
+        return out
+    }
+
     /// Two-year mean citedness by journal id, for the journals OpenAlex has a figure
     /// for. One request per hundred journals.
     func journalImpact(ids: [String]) async throws -> [String: Double] {
@@ -184,6 +215,54 @@ private struct AutocompleteDTO: Decodable {
         let display_name: String?
         let hint: String?
         let works_count: Int?
+    }
+}
+
+private struct SourceSizesDTO: Decodable {
+    let results: [Source]
+    struct Source: Decodable { let id: String; let works_count: Int? }
+}
+
+private struct ProfileWorksDTO: Decodable {
+    let results: [Work]
+
+    struct Work: Decodable {
+        let publication_date: String?
+        let primary_location: Location?
+        let authorships: [Authorship]?
+        let topics: [Ref]?
+        let awards: [Award]?
+
+        struct Location: Decodable { let source: Source? }
+        struct Source: Decodable { let id: String?; let display_name: String?; let type: String? }
+        struct Authorship: Decodable { let author: Ref?; let institutions: [Ref]? }
+        struct Ref: Decodable { let id: String?; let display_name: String? }
+        struct Award: Decodable { let funder_id: String?; let funder_display_name: String? }
+
+        private func entity(_ ref: Ref?) -> Entity? {
+            guard let id = ref?.id, let name = ref?.display_name, !name.isEmpty else { return nil }
+            return Entity(id: Identifiers.openAlexID(id), name: name)
+        }
+
+        /// A consortium paper's hundreds of authors say nothing about who the person works with.
+        private static let largestTeam = 30
+
+        func profileWork(me: String) -> ProfileWork? {
+            guard let year = publication_date.flatMap({ Int($0.prefix(4)) }) else { return nil }
+            let team = authorships ?? []
+            var work = ProfileWork(year: year)
+            work.topics = (topics ?? []).compactMap(entity)
+            if let source = primary_location?.source, source.type != "repository" {
+                work.journal = entity(Ref(id: source.id, display_name: source.display_name))
+            }
+            if team.count <= Work.largestTeam {
+                work.people = team.compactMap { entity($0.author) }.filter { $0.id != me }
+            }
+            let mine = team.first { entity($0.author)?.id == me }
+            work.institutions = (mine?.institutions ?? []).compactMap(entity)
+            work.funders = (awards ?? []).compactMap { entity(Ref(id: $0.funder_id, display_name: $0.funder_display_name)) }
+            return work
+        }
     }
 }
 

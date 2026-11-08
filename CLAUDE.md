@@ -32,6 +32,10 @@ test against a live service.
   (clamped if it has a range), and an entry in `SyncProjection` (`Core/Sync.swift`) or it will
   not sync. Decide whether it is a fetching setting or only a ranking one (`forFetching`,
   `forRanking`), or moving it will trigger a full rebuild or none at all.
+- **Nothing is followed unless it is in a Follow list.** Do not add inferred or hidden seeds: Tune
+  is a transparent algorithm the user can read and edit (the principle behind the suggestions
+  sheet, the first fill, and the explanation under every list). If something should influence the
+  feed, give it a setting and a sentence of explanation in Tune.
 - **A new `Seed` case** must be handled in `Seed.reason` and `filter`, `SourceRouting.targets` and
   `EuropePMCQuery.build`; the Swift switches are exhaustive on purpose.
 - **A derived change must not look like an edit.** Sync stamps decisions with the time they

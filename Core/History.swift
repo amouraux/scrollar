@@ -86,7 +86,7 @@ enum Arranger {
         guard followSection else { return ([], ranked) }
         var followed: [RankedPaper] = []
         var rest: [RankedPaper] = []
-        for r in ranked { if r.paper.followed { followed.append(r) } else { rest.append(r) } }
+        for r in ranked { if r.paper.isPinned { followed.append(r) } else { rest.append(r) } }
         followed.sort {
             if $0.paper.date != $1.paper.date { return $0.paper.date > $1.paper.date }
             if $0.score != $1.score { return $0.score > $1.score }

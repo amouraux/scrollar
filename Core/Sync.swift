@@ -180,7 +180,7 @@ enum SyncProjection {
         scalar("byline", \.byline), scalar("requireAbstract", \.requireAbstract),
         scalar("openAccessOnly", \.openAccessOnly), scalar("seenExpiryDays", \.seenExpiryDays),
         scalar("showReadPapers", \.showReadPapers), scalar("languages", \.languages),
-        scalar("followSection", \.followSection),
+        scalar("followSection", \.followSection), scalar("profileFilled", \.profileFilled),
     ]
 
     /// Every decision a settings value holds, by key. An empty string is an item with no payload.
@@ -188,6 +188,7 @@ enum SyncProjection {
         var out: [String: String] = [:]
         for list in entityLists { for e in s[keyPath: list.path] { out["e/\(list.name)/\(e.id)"] = json(e) } }
         for k in s.followedKeywords { out["kw/\(k.phrase)"] = json(k) }
+        for p in s.profileOrcids { out["po/\(p.orcid)"] = json(p) }
         for w in s.mutedKeywords { out["mw/\(w)"] = "" }
         for p in s.feedback.saved { out["sv/\(p.id)"] = json(p) }
         for h in s.feedback.hidden { out["hd/\(h)"] = "" }
@@ -227,6 +228,7 @@ enum SyncProjection {
             s[keyPath: list.path] = ordered(s[keyPath: list.path], key: { $0.id }, prefix: "e/\(list.name)/", entries: entries)
         }
         s.followedKeywords = ordered(s.followedKeywords, key: { $0.phrase }, prefix: "kw/", entries: entries)
+        s.profileOrcids = Array(ordered(s.profileOrcids, key: { $0.orcid }, prefix: "po/", entries: entries).prefix(3))
         s.mutedKeywords = orderedNames(s.mutedKeywords, prefix: "mw/", entries: entries)
         s.feedback.saved = ordered(s.feedback.saved, key: { $0.id }, prefix: "sv/", entries: entries)
         s.feedback.hidden = orderedNames(s.feedback.hidden, prefix: "hd/", entries: entries)

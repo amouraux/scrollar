@@ -91,6 +91,8 @@ final class AppModel {
     private var syncing = false
     /// Set while a merge from the other device is applied, so that is not mistaken for an edit here.
     private var applyingSync = false
+    private var resuming = false
+    private var filling = false
     private var settingsSyncTask: Task<Void, Never>?
     private var historySyncTask: Task<Void, Never>?
 
@@ -447,6 +449,122 @@ final class AppModel {
             if !wrote { syncStatus = .problem("The sync file could not be written. It will be tried again."); return }
         }
         syncStatus = .idle(Date())
+    }
+
+    /// What happens when the app is opened or comes back: the other device is read, an empty
+    /// follow list is filled from the publications, and a stale feed is refreshed, in that order,
+    /// because each depends on the one before. Launch and returning both ask for this, at nearly
+    /// the same moment; the second finds the first at work and leaves it to finish, or the feed
+    /// would be built before the follows were in.
+    func resume() async {
+        guard !resuming else { return }
+        resuming = true
+        defer { resuming = false }
+        await syncNow(rearrange: true)
+        await fillFromProfileIfNeeded()
+        await refreshIfStale()
+    }
+
+    // MARK: Following what the user's publications suggest
+
+    struct ProfileSuggestions {
+        var byKind: [SuggestionKind: [ProfileSuggestion]]
+        /// Whose publications these came from.
+        var names: [String]
+        var paperCount: Int
+    }
+
+    enum ProfileError: LocalizedError {
+        case noOrcid
+        case noSource
+        var errorDescription: String? {
+            switch self {
+            case .noOrcid: return "Add your ORCID iD, or someone to learn from, first."
+            case .noSource: return "No source is on. Turn on Europe PMC, or add an OpenAlex key, in Tune."
+            }
+        }
+    }
+
+    /// Read the publications of the user and of anyone they added, and suggest what to
+    /// follow. Nothing is followed until the user chooses it.
+    func loadProfileSuggestions() async throws -> ProfileSuggestions {
+        guard canBuild else { throw ProfileError.noSource }
+        let fetcher = ProfileFetcher(openAlex: usesOpenAlex ? openAlex : nil,
+                                     europePMC: settings.useEuropePMC ? EuropePMCClient() : nil)
+        var sources: [ProfileSourceWorks] = []
+        var names: [String] = []
+        var sizes: [String: Int] = [:]
+        var failure: Error?
+        if let orcid = settings.orcid.flatMap(Orcid.normalised) {
+            do {
+                let (name, works, journalSizes) = try await fetcher.works(orcid: orcid)
+                sources.append(ProfileSourceWorks(label: "you", works: works))
+                names.append(name)
+                sizes.merge(journalSizes) { a, _ in a }
+            } catch { failure = error }
+        }
+        for extra in settings.profileOrcids {
+            do {
+                let (name, works, journalSizes) = try await fetcher.works(orcid: extra.orcid)
+                sources.append(ProfileSourceWorks(label: extra.label.isEmpty ? name : extra.label, works: works))
+                sizes.merge(journalSizes) { a, _ in a }
+                names.append(extra.label.isEmpty ? name : "\(extra.label) (\(name))")
+            } catch { failure = failure ?? error }
+        }
+        if sources.isEmpty { throw failure ?? ProfileError.noOrcid }
+        let year = Calendar.current.component(.year, from: Date())
+        return ProfileSuggestions(byKind: ProfileAnalysis.suggestions(sources, currentYear: year, journalSizes: sizes), names: names,
+                                  paperCount: sources.reduce(0) { $0 + $1.works.count })
+    }
+
+    func isFollowed(_ s: ProfileSuggestion) -> Bool {
+        switch s.kind {
+        case .topic: return settings.followedTopics.contains { $0.id == s.entity.id }
+        case .journal: return settings.followedJournals.contains { $0.id == s.entity.id }
+        case .researcher: return settings.followedAuthors.contains { $0.id == s.entity.id }
+        case .institution: return settings.followedInstitutions.contains { $0.id == s.entity.id }
+        case .funder: return settings.followedFunders.contains { $0.id == s.entity.id }
+        }
+    }
+
+    /// Add what the user chose to their follow lists, where it can be edited like anything
+    /// else. One change to the settings, so one refresh.
+    func follow(_ chosen: [ProfileSuggestion]) {
+        var s = settings
+        for item in chosen where !isFollowed(item) {
+            switch item.kind {
+            case .topic: s.followedTopics.append(item.entity)
+            case .journal: s.followedJournals.append(item.entity)
+            case .researcher: s.followedAuthors.append(item.entity)
+            case .institution: s.followedInstitutions.append(item.entity)
+            case .funder: s.followedFunders.append(item.entity)
+            }
+        }
+        s.profileFilled = true
+        settings = s
+    }
+
+    private var followListsAreEmpty: Bool {
+        settings.followedTopics.isEmpty && settings.followedJournals.isEmpty && settings.followedAuthors.isEmpty
+            && settings.followedInstitutions.isEmpty && settings.followedFunders.isEmpty && settings.followedKeywords.isEmpty
+    }
+
+    /// The first time, and only then, fill the empty follow lists from the publications: the
+    /// ticked suggestions. After that the lists are the user's; nothing the user removes comes back.
+    func fillFromProfileIfNeeded() async {
+        guard !filling else { return }
+        filling = true
+        defer { filling = false }
+        let hasSomeone = settings.orcid.flatMap(Orcid.normalised) != nil || !settings.profileOrcids.isEmpty
+        guard settings.useMyPublications, !settings.profileFilled, followListsAreEmpty, hasSomeone, canBuild else { return }
+        do {
+            let found = try await loadProfileSuggestions()
+            let chosen = SuggestionKind.allCases.flatMap { found.byKind[$0] ?? [] }.filter(\.selected)
+            follow(chosen)
+            notice = "Filled what you follow from \(found.paperCount) publications: \(chosen.count) topics, journals and researchers. They are under Follow in Tune, where you can change them."
+        } catch {
+            log.error("could not fill the follows from the publications: \(String(describing: error), privacy: .public)")
+        }
     }
 
     // MARK: What the user does with a paper

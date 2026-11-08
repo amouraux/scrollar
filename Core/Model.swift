@@ -76,6 +76,16 @@ struct Paper: Hashable, Codable {
     /// Found by something the user chose to follow (a journal, an author…), as
     /// opposed to something we inferred from their own papers.
     var followed = false
+    /// Listed in the section for what the user follows. Followed, and by something specific
+    /// (a journal, a researcher, a keyword). A topic, an institution or a funder is too broad
+    /// to list in full (each can name hundreds of papers a month, in every field), so a paper
+    /// found only by those is ranked with the rest instead.
+    static let broadReasonPrefixes = ["Topic: ", "Institution: ", "Funder: "]
+
+    var isPinned: Bool {
+        followed && (reasons.isEmpty || reasons.contains { r in !Paper.broadReasonPrefixes.contains { r.hasPrefix($0) } })
+    }
+
     /// A DOI lookup found no PubMed record, so it is not tried again on every
     /// refresh. Optional so a cache written before this field existed still loads.
     var notInPubMed: Bool? = nil

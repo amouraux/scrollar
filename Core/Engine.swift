@@ -70,38 +70,33 @@ struct FeedEngine {
         var clock = Date()
         func lap() -> String { defer { clock = Date() }; return String(format: "%.1fs", Date().timeIntervalSince(clock)) }
 
-        // 1. The user's own papers: the profile, and the seeds that come from them.
+        // 1. The user's own papers, and those of anyone they added to learn from: the profile.
         //    OpenAlex knows them best; where it is off or fails, ORCID and Europe PMC do.
         var me: AuthorProfile?
         var own: [Paper] = []
-        if settings.useMyPublications, let orcid = settings.orcid, !orcid.isEmpty {
-            var done = false
-            if let openAlex {
+        var others: [Paper] = []
+        if settings.useMyPublications {
+            if let orcid = settings.orcid, !orcid.isEmpty {
+                (me, own) = try await loadProfile(orcid: orcid)
+                log("Profile: \(own.count) papers, \(own.filter { $0.abstract != nil }.count) with abstracts  [\(lap())]")
+            }
+            // A failure for someone else must not stop the feed: it only means less to learn from.
+            for source in settings.profileOrcids {
                 do {
-                    let author = try await openAlex.author(orcid: orcid)
-                    me = author
-                    own = try await openAlex.works(filter: "author.id:\(author.id)", perPage: 100)
-                    let before = own.filter { $0.abstract != nil }.count
-                    own = await enrich(own)
-                    log("Profile: \(own.count) papers, abstracts \(before) → \(own.filter { $0.abstract != nil }.count) after PubMed  [\(lap())]")
-                    done = true
+                    let (person, papers) = try await loadProfile(orcid: source.orcid)
+                    others += papers
+                    log("Also learning from \(source.label.isEmpty ? person.name : source.label): \(papers.count) papers")
                 } catch {
-                    if europePMC == nil { throw error }
-                    log("OpenAlex could not give the profile (\(error)); using ORCID and Europe PMC")
+                    complete = false
+                    log("  could not read \(source.orcid): \(error)")
                 }
             }
-            if !done, let europePMC {
-                (me, own) = try await profileFromOrcid(orcid, europePMC: europePMC)
-                log("Profile from ORCID: \(own.count) papers, \(own.filter { $0.abstract != nil }.count) with abstracts  [\(lap())]")
-            }
         }
-        let profileTexts = FeedBuilder.profileTexts(settings, own: own)
+        let profileTexts = FeedBuilder.profileTexts(settings, own: own + others)
 
         // 2. One query per seed. A seed that fails (an id that no longer exists) is
         //    reported and skipped; it must not take the rest of the feed with it.
-        let planned = FeedBuilder.seeds(settings,
-                                        myTopics: me?.topics.map { Entity(id: $0.id, name: $0.name) } ?? [],
-                                        myWorkIDs: own.map(\.id))
+        let planned = FeedBuilder.seeds(settings, myWorkIDs: own.map(\.id))
         guard !planned.isEmpty else { throw EngineError.nothingToFollow }
 
         var found: [Paper] = []
@@ -215,25 +210,22 @@ struct FeedEngine {
                           newPapers: ranked.filter { !before.contains($0.paper.dedupeKey) }.count)
     }
 
-    /// The user's papers without OpenAlex: ORCID lists them, Europe PMC supplies the
-    /// abstracts and MeSH headings. A work Europe PMC does not have still counts by its title.
-    private func profileFromOrcid(_ orcid: String, europePMC: EuropePMCClient) async throws -> (AuthorProfile, [Paper]) {
-        let name = (try? await self.orcid.name(orcid: orcid)) ?? orcid
-        let works = try await self.orcid.works(orcid: orcid)
-        let recent = works.sorted { ($0.year ?? 0) > ($1.year ?? 0) }.prefix(100)
-        var papers = (try? await europePMC.papers(dois: recent.compactMap(\.doi))) ?? []
-        let have = Set(papers.compactMap(\.doi))
-        for work in recent where work.doi.map({ !have.contains($0) }) ?? true {
-            guard let title = work.title else { continue }
-            papers.append(Paper(id: "orcid:\(work.doi ?? title)", doi: work.doi, pmid: work.pmid, title: title,
-                                date: "\(work.year ?? 1900)-01-01"))
+    /// One person's papers: OpenAlex when it is on and answers, else ORCID's list of their
+    /// works with Europe PMC supplying the abstracts.
+    private func loadProfile(orcid: String) async throws -> (AuthorProfile, [Paper]) {
+        if let openAlex {
+            do {
+                let author = try await openAlex.author(orcid: orcid)
+                var papers = try await openAlex.works(filter: "author.id:\(author.id)", perPage: 100)
+                papers = await enrich(papers)
+                return (author, papers)
+            } catch {
+                if europePMC == nil { throw error }
+                log("OpenAlex could not give the profile (\(error)); using ORCID and Europe PMC")
+            }
         }
-        var counts: [String: Int] = [:]
-        for p in papers { for t in p.topics { counts[t, default: 0] += 1 } }
-        let topics = counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
-            .prefix(5).map { (id: "mesh:" + $0.key, name: $0.key, count: $0.value) }
-        let profile = AuthorProfile(id: "orcid:" + orcid, name: name, worksCount: works.count, citedByCount: 0, hIndex: nil, topics: topics)
-        return (profile, papers)
+        guard let europePMC else { throw EngineError.noSource }
+        return try await OrcidProfile.papers(orcid: orcid, europePMC: europePMC, orcidClient: self.orcid)
     }
 
     /// Journals' figures change slowly, so an incremental refresh reuses the ones it
