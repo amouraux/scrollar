@@ -421,22 +421,26 @@ struct KeywordListView: View {
 
     var body: some View {
         List {
-            if rules.isEmpty {
-                Text("Nothing yet. A phrase is searched in titles and abstracts.").foregroundStyle(.secondary)
-            }
-            ForEach(Array(rules.enumerated()), id: \.offset) { index, rule in
-                NavigationLink {
-                    KeywordRuleEditor(rule: $rules[index])
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(rule.phrase)
-                        if !rule.alsoRequire.isEmpty || !rule.exclude.isEmpty {
-                            Text(detail(rule)).font(.caption).foregroundStyle(.secondary)
+            Section {
+                if rules.isEmpty {
+                    Text("Nothing yet. A phrase is searched in titles and abstracts.").foregroundStyle(.secondary)
+                }
+                ForEach(Array(rules.enumerated()), id: \.offset) { index, rule in
+                    NavigationLink {
+                        KeywordRuleEditor(rule: $rules[index])
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(rule.phrase)
+                            if !detail(rule).isEmpty {
+                                Text(detail(rule)).font(.caption).foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
+                .onDelete { rules.remove(atOffsets: $0) }
+            } footer: {
+                Text("Each phrase is searched in titles and abstracts, and what it finds is listed in full under \"From what you follow\". Importance ranks your keywords against each other: a High keyword lifts its papers in the ranking and lists them first, a Low one lowers them. Open a keyword to set it, and to require or exclude other words.")
             }
-            .onDelete { rules.remove(atOffsets: $0) }
         }
         .navigationTitle("Keywords")
         .toolbar {
@@ -458,6 +462,7 @@ struct KeywordListView: View {
 
     private func detail(_ rule: KeywordRule) -> String {
         var parts: [String] = []
+        if rule.importance != .normal { parts.append("\(rule.importance.title) importance") }
         if !rule.alsoRequire.isEmpty { parts.append("also: " + rule.alsoRequire.joined(separator: ", ")) }
         if !rule.exclude.isEmpty { parts.append("not: " + rule.exclude.joined(separator: ", ")) }
         return parts.joined(separator: " · ")
@@ -471,6 +476,16 @@ struct KeywordRuleEditor: View {
         Form {
             Section("Phrase") {
                 TextField("Phrase", text: $rule.phrase)
+            }
+            Section {
+                Picker("Importance", selection: $rule.importance) {
+                    ForEach(Importance.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                Text("Importance")
+            } footer: {
+                Text("High lifts the papers this keyword finds in the ranking and lists them first under \"From what you follow\"; Low lowers them. A paper that a journal or researcher you follow also found is never listed below Normal.")
             }
             Section {
                 TextField("e.g. EEG, humans", text: Binding(

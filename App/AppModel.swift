@@ -306,7 +306,7 @@ final class AppModel {
     /// What is on screen for a ranked feed: the news about the user's work, everything
     /// their follows found (if they asked for that section), and the rest in rank order.
     private func makeLayout(citedYou: [RankedPaper], forYou: [RankedPaper], now: Date) -> Layout {
-        let split = Arranger.split(forYou, followSection: settings.followSection)
+        let split = Arranger.split(forYou, followSection: settings.followSection, keywords: settings.followedKeywords)
         return Layout(citedYou: Arranger.arrange(citedYou, history: history, settings: settings, now: now),
                       following: Arranger.arrange(split.followed, history: history, settings: settings, now: now),
                       forYou: Arranger.arrange(split.rest, history: history, settings: settings, now: now))

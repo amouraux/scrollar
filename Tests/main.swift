@@ -853,5 +853,31 @@ check(onceKeyword[.keyword]?.first?.count == 2 && onceKeyword[.keyword]?.first?.
 check(ProfileAnalysis.suggestions([ProfileSourceWorks(label: "you", works: keywordWorks)], currentYear: 2026)[.keyword]?.allSatisfy { $0.note == nil } == true, "keywords: without volumes there is no warning")
 check(ProfileAnalysis.suggestions([ProfileSourceWorks(label: "you", works: [ProfileWork(year: 2026)])], currentYear: 2026)[.keyword]?.isEmpty == true, "keywords: none from a source that has none (Europe PMC)")
 
+// MARK: keyword importance
+var kwSettings = FeedSettings()
+kwSettings.followedKeywords = [KeywordRule(phrase: "high one", importance: .high), KeywordRule(phrase: "plain one"), KeywordRule(phrase: "low one", importance: .low)]
+let kwHigh = ok("kh") { $0.reasons = ["Keyword: high one"]; $0.followed = true; $0.date = "2026-10-01" }
+let kwPlain = ok("kp") { $0.reasons = ["Keyword: plain one"]; $0.followed = true; $0.date = "2026-10-03" }
+let kwLow = ok("kl") { $0.reasons = ["Keyword: low one"]; $0.followed = true; $0.date = "2026-10-05" }
+let kwBoth = ok("kb") { $0.reasons = ["Keyword: low one", "Keyword: high one"]; $0.followed = true; $0.date = "2026-10-02" }
+let kwNone = ok("kn") { $0.date = "2026-10-01" }
+let kwRanked = Ranker.rank([kwLow, kwPlain, kwHigh, kwNone], profileTexts: profile, settings: kwSettings, today: now).map(\.paper.id)
+check(kwRanked.firstIndex(of: "kh")! < kwRanked.firstIndex(of: "kp")! && kwRanked.firstIndex(of: "kp")! < kwRanked.firstIndex(of: "kl")!, "keyword importance: high above normal above low in the ranking, all else equal")
+check(kwSettings.keywordImportance(of: kwBoth) == .high && kwSettings.keywordImportance(of: kwNone) == nil, "keyword importance: a paper two keywords found counts as the higher; none, no importance")
+check(Importance.high.bonus > Importance.normal.bonus && Importance.normal.bonus == 0 && Importance.low.bonus < 0, "keyword importance: the bonuses run the right way")
+let kwSplit = Arranger.split([kwLow, kwPlain, kwHigh, kwBoth].map { ranked($0, 1) }, followSection: true, keywords: kwSettings.followedKeywords)
+let kwOrder: [String] = kwSplit.followed.map { $0.paper.id }
+check(kwOrder == ["kb", "kh", "kp", "kl"], "keyword importance: under From what you follow, high first, then normal, then low, newest first within each")
+let kwJournal = ranked(ok("kj") { $0.reasons = ["Keyword: low one", "Journal: Pain"]; $0.followed = true; $0.date = "2026-10-04" }, 1)
+let kwMixed: [String] = Arranger.split([ranked(kwLow, 1), kwJournal], followSection: true, keywords: kwSettings.followedKeywords).followed.map { $0.paper.id }
+check(kwMixed == ["kj", "kl"], "keyword importance: a paper a journal also found is at least normal, whatever its low keyword says")
+check((try! JSONDecoder().decode(KeywordRule.self, from: Data("{\"phrase\": \"tactile\", \"alsoRequire\": [\"EEG\"]}".utf8))).importance == .normal, "keyword importance: a keyword saved before it existed is normal")
+check((try! JSONDecoder().decode(KeywordRule.self, from: Data("{\"phrase\": \"x\", \"importance\": \"nonsense\"}".utf8))).importance == .normal, "keyword importance: an unknown value is normal")
+var importanceSynced = FeedSettings(); importanceSynced.followedKeywords = [KeywordRule(phrase: "x", importance: .high)]
+check(device(importanceSynced, stamp: at(1)).apply(to: FeedSettings()).followedKeywords.first?.importance == .high, "keyword importance: it syncs")
+var importanceChanged = importanceSynced; importanceChanged.followedKeywords[0].importance = .low
+var importanceLedger = device(importanceSynced, stamp: at(1)); importanceLedger.reconcile(importanceChanged, at: at(9))
+check(importanceLedger.merged(with: device(importanceSynced, stamp: at(1))).apply(to: importanceSynced).followedKeywords.first?.importance == .low, "keyword importance: changing it on one device is a later decision than the old value")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

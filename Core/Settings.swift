@@ -18,12 +18,63 @@ struct Entity: Codable, Hashable {
     var name: String
 }
 
+/// How much a followed keyword matters to the user: it moves the papers it finds up or down
+/// the ranking, and decides their order under "From what you follow".
+enum Importance: String, Codable, CaseIterable {
+    case low, normal, high
+
+    var title: String {
+        switch self {
+        case .low: return "Low"
+        case .normal: return "Normal"
+        case .high: return "High"
+        }
+    }
+
+    /// Added to a paper's score. Normal is no change; the range is about that of the similarity term.
+    var bonus: Double {
+        switch self {
+        case .low: return -0.6
+        case .normal: return 0
+        case .high: return 1.2
+        }
+    }
+
+    /// Order under "From what you follow": high first.
+    var tier: Int {
+        switch self {
+        case .low: return 0
+        case .normal: return 1
+        case .high: return 2
+        }
+    }
+}
+
 struct KeywordRule: Codable, Hashable {
     var phrase: String
     /// Every one of these must appear in the title or abstract.
     var alsoRequire: [String] = []
     /// None of these may appear. "attention" without "deficit" is a different literature.
     var exclude: [String] = []
+    var importance = Importance.normal
+
+    init(phrase: String, alsoRequire: [String] = [], exclude: [String] = [], importance: Importance = .normal) {
+        self.phrase = phrase
+        self.alsoRequire = alsoRequire
+        self.exclude = exclude
+        self.importance = importance
+    }
+
+    enum CodingKeys: String, CodingKey { case phrase, alsoRequire, exclude, importance }
+
+    /// Tolerant like every stored type: a keyword saved before importance existed is Normal.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        phrase = try c.decode(String.self, forKey: .phrase)
+        alsoRequire = (try? c.decodeIfPresent([String].self, forKey: .alsoRequire)) ?? []
+        exclude = (try? c.decodeIfPresent([String].self, forKey: .exclude)) ?? []
+        importance = (try? c.decodeIfPresent(Importance.self, forKey: .importance)) ?? .normal
+    }
 
     /// `text` is already lowercased.
     func accepts(_ text: String) -> Bool {
@@ -176,6 +227,14 @@ struct FeedSettings: Codable, Equatable {
 
     func weight(for kind: PaperKind) -> Weight { kindWeights[kind.rawValue] ?? .normal }
 
+    /// The importance of the most important followed keyword that found this paper, or nil if
+    /// no keyword did. A paper found by a high keyword and a low one counts as high.
+    func keywordImportance(of paper: Paper) -> Importance? {
+        let byReason = Dictionary(followedKeywords.map { (Seed.keyword($0.phrase).reason, $0.importance) },
+                                  uniquingKeysWith: { first, _ in first })
+        return paper.reasons.compactMap { byReason[$0] }.max { $0.tier < $1.tier }
+    }
+
     /// Everything except what the user did with the feed. Changing a follow or a
     /// filter means fetching again; hiding one paper does not.
     var withoutFeedback: FeedSettings {
@@ -229,17 +288,6 @@ struct FeedSettings: Codable, Equatable {
 }
 
 // MARK: - Tolerant decoding
-
-extension KeywordRule {
-    enum CodingKeys: String, CodingKey { case phrase, alsoRequire, exclude }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        phrase = try c.decode(String.self, forKey: .phrase)
-        alsoRequire = (try? c.decodeIfPresent([String].self, forKey: .alsoRequire)) ?? []
-        exclude = (try? c.decodeIfPresent([String].self, forKey: .exclude)) ?? []
-    }
-}
 
 extension Weight {
     /// A typo ("lowr") means normal, not a broken file.

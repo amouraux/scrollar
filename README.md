@@ -117,6 +117,7 @@ slider; a bonus for each further seed that found the paper, for citing the user'
 for being found by something they follow (which matters for topics, institutions and funders, and for everything with the follow section off, see below); a recency term that halves every fortnight, times
 its slider; a small penalty for repository records (not for preprints); the kind adjustment
 (case reports and conference abstracts start lowered; hide removes them before ranking); and
+the importance the user gave the keyword that found it (High +1.2, Normal 0, Low −0.6; the highest of the keywords that found it); and
 two optional terms, off by default: the journal's two-year mean citedness (OpenAlex's
 open stand-in for the impact factor, which is Clarivate's) and the h-index of the first, the
 last or the higher of the two authors. Both are logarithmic, neutral for a paper with no
@@ -138,7 +139,13 @@ list; it still passes the user's mutes and filters, and the same seen, read and 
 **topic, an institution or a funder** is too broad to list in full (each names hundreds of papers a
 month, in every field), so what only those found is ranked with the rest and gets +0.8 (and +0.5 for
 each further search that found it); the ranked list shows 150 new papers, so a weak match can fall
-below that. With the section off, everything is ranked. A follow never changes the similarity
+below that. With the section off, everything is ranked.
+
+The user ranks their own keywords: each has an importance (Low, Normal, High; Normal by default),
+set in Tune under Keywords. It adds its bonus above to the papers the keyword found, and it orders the
+follow section: High keywords first, then Normal, then Low, newest first within each. A paper that a
+journal or researcher also found is at least Normal, whatever its keywords say. Journals and researchers
+are unranked and count as Normal. A follow never changes the similarity
 measure, which comes only from the user's own and saved papers. The section is a display choice
 (`Arranger.split`, `Paper.isPinned`): changing it fetches and ranks nothing again.
 
