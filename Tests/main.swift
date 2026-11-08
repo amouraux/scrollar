@@ -1352,5 +1352,56 @@ let htmlPaper = Paper(id: "W1", title: "Sequence-Activity and Integrated <i>In S
 check(htmlPaper.title == "Sequence-Activity and Integrated In Silico and In Vitro Study of Staphylococcus aureus & peptides" && htmlPaper.abstract == "We show <5% loss.", "markup: tags and entities are gone from a title and an abstract, including a cache written before they were cleaned")
 check(Paper(id: "W2", title: "Plain title", abstract: nil, date: "2026-10-01").withPlainText == Paper(id: "W2", title: "Plain title", abstract: nil, date: "2026-10-01"), "markup: a clean paper is left as it is")
 
+// MARK: dwell time and "for me"
+let dwNow = Date(timeIntervalSince1970: 1_800_000_000)
+func dwAt(_ days: Double) -> Date { dwNow.addingTimeInterval(days * 86_400) }
+var dwH = History()
+dwH.addDwell("flick", seconds: 0.6, at: dwNow)
+dwH.addDwell("glance", seconds: 2.0, at: dwNow)
+dwH.addDwell("study", seconds: 5.0, at: dwNow)
+check(dwH.status(of: "flick") == .new && dwH.status(of: "glance") == .seen && dwH.status(of: "study") == .seen, "dwell: a flick under 1.5 seconds is still new, a glance is seen")
+check(dwH.attention(of: "flick", studiedAfter: 4) == .passed && dwH.attention(of: "glance", studiedAfter: 4) == .glanced && dwH.attention(of: "study", studiedAfter: 4) == .studied && dwH.attention(of: "study", studiedAfter: 8) == .glanced, "dwell: three levels, and the studied one follows the user's number of seconds")
+dwH.addDwell("flick", seconds: 1.2, at: dwAt(0.1))
+check(dwH.status(of: "flick") == .seen && abs((dwH.states["flick"]?.dwell ?? 0) - 1.8) < 0.001, "dwell: visits add up, so two short looks make a glance")
+dwH.markSeen("legacy", at: dwNow)
+check(dwH.status(of: "legacy") == .seen && dwH.attention(of: "legacy", studiedAfter: 4) == .glanced, "dwell: a record from before dwell was measured is still seen, and counted as a glance")
+dwH.addDwell("legacy", seconds: 0.2, at: dwNow)
+check(dwH.status(of: "legacy") == .seen, "dwell: a legacy record that gets a short extra look stays seen")
+dwH.addDwell("zero", seconds: 0, at: dwNow)
+check(dwH.states["zero"] == nil, "dwell: no time, no record")
+dwH.markStudied("known", studiedAfter: 4, at: dwNow)
+check(dwH.attention(of: "known", studiedAfter: 4) == .studied && dwH.status(of: "known") == .seen, "for me: counts as having studied the paper, even if it was never on screen long")
+dwH.markStudied("study", studiedAfter: 4, at: dwNow)
+check((dwH.states["study"]?.dwell ?? 0) == 5.0, "for me: it never lowers the time already measured")
+var dwS = FeedSettings(); dwS.seenExpiryDays = 7
+func dwPaper(_ id: String) -> RankedPaper { RankedPaper(paper: ok(id), score: 1, similarity: 0.5) }
+var dwHist = History()
+dwHist.addDwell(dwPaper("a").paper.dedupeKey, seconds: 2, at: dwNow.addingTimeInterval(-3 * 86_400))   // glanced, 3 days ago
+dwHist.addDwell(dwPaper("b").paper.dedupeKey, seconds: 9, at: dwNow.addingTimeInterval(-1 * 86_400))   // studied, 1 day ago
+dwHist.addDwell(dwPaper("c").paper.dedupeKey, seconds: 9, at: dwNow.addingTimeInterval(-3 * 86_400))   // studied, 3 days ago
+dwHist.addDwell(dwPaper("d").paper.dedupeKey, seconds: 0.5, at: dwNow.addingTimeInterval(-3 * 86_400)) // flicked
+let dwOut = Arranger.arrange(["b", "a", "c", "d", "e"].map(dwPaper), history: dwHist, settings: dwS, now: dwNow)
+check(dwOut.fresh.map { $0.paper.id } == ["d", "e"], "arrange: a flicked post and an unseen one are both new")
+check(dwOut.earlier.map { $0.paper.id } == ["a", "b"], "arrange: a studied post goes below a glanced one, whatever it scored")
+check(!dwOut.earlier.contains { $0.paper.id == "c" }, "arrange: a studied post leaves after two days, while a glanced one stays for the week")
+var dwShort = dwS; dwShort.seenExpiryDays = 1
+check(!Arranger.arrange(["b"].map(dwPaper), history: { var h = History(); h.addDwell(dwPaper("b").paper.dedupeKey, seconds: 9, at: dwNow.addingTimeInterval(-1.5 * 86_400)); return h }(), settings: dwShort, now: dwNow).earlier.contains { $0.paper.id == "b" }, "arrange: a short seen-expiry setting still wins over the studied one")
+check(FeedSettings().dwellSeconds == 4 && (try? FeedSettings.decode(Data(#"{"dwellSeconds":99}"#.utf8)))?.dwellSeconds == 15 && (try? FeedSettings.decode(Data(#"{"dwellSeconds":0}"#.utf8)))?.dwellSeconds == 2, "dwell: four seconds by default, between two and fifteen")
+var dwChanged = FeedSettings(); dwChanged.dwellSeconds = 9
+check(dwChanged.forFetching == FeedSettings().forFetching && dwChanged.forRanking == FeedSettings().forRanking && device(dwChanged, stamp: at(1)).apply(to: FeedSettings()).dwellSeconds == 9, "dwell: it only changes how what is held is arranged, so it fetches and re-ranks nothing, and it syncs")
+let dwMerged = PaperState.merge(PaperState(firstSeen: at(1), lastSeen: at(2), seenCount: 1, dwell: 3), PaperState(firstSeen: at(1), lastSeen: at(3), seenCount: 1, dwell: 7))
+check(dwMerged.dwell == 7 && PaperState.merge(PaperState(firstSeen: at(1), lastSeen: at(2), seenCount: 1), PaperState(firstSeen: at(1), lastSeen: at(2), seenCount: 1)).dwell == nil, "dwell: devices merge to the larger time, and nothing stays nothing")
+check((try? JSONDecoder().decode(PaperState.self, from: Data(#"{"firstSeen":0,"lastSeen":0,"seenCount":2}"#.utf8)))?.dwell == nil, "dwell: a history file from before it still loads")
+var fmFeedback = Feedback()
+let fmPaper = ok("fm") { $0.title = "A paper I already know"; $0.abstract = "About nociception." }
+fmFeedback.like(fmPaper); fmFeedback.like(fmPaper)
+check(fmFeedback.liked.count == 1 && fmFeedback.isLiked(fmPaper) && fmFeedback.saved.isEmpty, "for me: it is kept once, and it does not save the paper")
+var fmSettings = FeedSettings(); fmSettings.feedback = fmFeedback
+check(FeedBuilder.profileTexts(fmSettings, own: []).contains { $0.hasPrefix("A paper I already know") }, "for me: the paper joins the profile like a saved one")
+check(device(fmSettings, stamp: at(1)).apply(to: FeedSettings()).feedback.liked.map(\.id) == [fmPaper.dedupeKey], "for me: it syncs")
+fmFeedback.unlike(fmPaper.dedupeKey)
+check(!fmFeedback.isLiked(fmPaper) && (try? JSONDecoder().decode(Feedback.self, from: Data(#"{"saved":[],"hidden":[]}"#.utf8)))?.liked.isEmpty == true, "for me: it can be taken back, and a settings file from before it still loads")
+check(SyncDocument.currentFormat == 2, "sync: the format is raised, so an app that does not know the newer entries leaves the file alone instead of erasing them")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

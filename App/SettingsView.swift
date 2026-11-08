@@ -193,11 +193,13 @@ struct SettingsView: View {
                     Picker("Forget unread papers after", selection: $model.settings.seenExpiryDays) {
                         ForEach([3, 7, 14, 30], id: \.self) { Text("\($0) days").tag($0) }
                     }
+                    Stepper("Studied after \(Int(model.settings.dwellSeconds)) seconds",
+                            value: $model.settings.dwellSeconds, in: 2...15, step: 1)
                     Toggle("Show papers I have read", isOn: $model.settings.showReadPapers)
                 } header: {
                     Text("Seen and read")
                 } footer: {
-                    Text("A paper you scrolled past sinks below the new ones, then drops out. A paper you open or read in full leaves the feed and is kept under Saved, Read.")
+                    Text("A post is seen once it has been on screen for a moment (about a second and a half, at least half of it showing): one you only flick past stays new. A paper you scrolled past sinks below the new ones, then drops out. One that stayed on screen for the number of seconds above, or that you marked For me, counts as studied: it sinks further and drops out after two days at most. The order changes when the feed is refreshed or reopened, never while you scroll. A paper you open or read in full leaves the feed and is kept under Saved, Read.")
                 }
 
                 Section {

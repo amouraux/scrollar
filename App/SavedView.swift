@@ -4,7 +4,7 @@ struct SavedView: View {
     @Environment(AppModel.self) private var model
     @State private var list: Tab = .saved
 
-    enum Tab: String, CaseIterable { case saved = "Saved", read = "Read" }
+    enum Tab: String, CaseIterable { case saved = "Saved", liked = "For me", read = "Read" }
 
     var body: some View {
         NavigationStack {
@@ -17,6 +17,7 @@ struct SavedView: View {
 
                 switch list {
                 case .saved: savedList
+                case .liked: likedList
                 case .read: readList
                 }
             }
@@ -28,10 +29,14 @@ struct SavedView: View {
     /// Every paper on the list as one `.ris` file for a reference manager. Papers saved before
     /// authors were kept are filled in from the feed where it still holds them.
     @ViewBuilder private var exportButton: some View {
-        let items = list == .saved ? model.settings.feedback.saved : model.history.read.map(\.paper)
+        let items: [SavedPaper] = switch list {
+        case .saved: model.settings.feedback.saved
+        case .liked: model.settings.feedback.liked
+        case .read: model.history.read.map(\.paper)
+        }
         if !items.isEmpty {
             let layout = model.layout
-            let name = list == .saved ? "Scrollar saved papers.ris" : "Scrollar read papers.ris"
+            let name = "Scrollar \(list.rawValue.lowercased()) papers.ris"
             ShareLink(item: ReferenceFile(name: name, make: { RIS.references(items, known: layout.all.map(\.paper)) }),
                       preview: SharePreview(name, image: Image(systemName: "books.vertical"))) {
                 Label("Export for a reference manager", systemImage: "square.and.arrow.up")
@@ -51,6 +56,23 @@ struct SavedView: View {
                             Button("Remove", role: .destructive) {
                                 model.settings.feedback.saved.removeAll { $0.id == paper.id }
                             }
+                        }
+                }
+            }
+        }
+    }
+
+    /// Papers marked For me. The only place to take that back once the post has left the feed.
+    @ViewBuilder private var likedList: some View {
+        if model.settings.feedback.liked.isEmpty {
+            ContentUnavailableView("Nothing marked for you", systemImage: "hand.thumbsup",
+                                   description: Text("Use For me on a paper you know and like. It teaches the feed what you want without saving the paper."))
+        } else {
+            List {
+                ForEach(model.settings.feedback.liked.reversed(), id: \.id) { paper in
+                    row(title: Html.plain(paper.title), subtitle: paper.date, abstract: paper.abstract, url: paper.link)
+                        .swipeActions {
+                            Button("Take back", role: .destructive) { model.settings.feedback.unlike(paper.id) }
                         }
                 }
             }

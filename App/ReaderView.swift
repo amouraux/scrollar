@@ -255,6 +255,11 @@ private struct PaperReader: View {
             let saved = model.isSaved(paper)
             actionButton(saved ? "Saved" : "Save", saved ? "bookmark.fill" : "bookmark",
                          hint: "Saves it, and finds more like it") { model.toggleSaved(paper) }
+            let liked = model.isLiked(paper)
+            actionButton("For me", liked ? "hand.thumbsup.fill" : "hand.thumbsup",
+                         hint: liked ? "Takes back that this is for you"
+                                     : "Tells the feed this is the kind of paper you want, without saving it",
+                         tint: liked ? Color.accentColor : nil) { model.toggleLiked(paper) }
             actionButton("Not for me", "hand.thumbsdown", hint: "Hides this paper for good") {
                 withAnimation { model.hide(paper) }
             }
@@ -268,9 +273,9 @@ private struct PaperReader: View {
         }
     }
 
-    private func actionButton(_ title: String, _ image: String, hint: String,
+    private func actionButton(_ title: String, _ image: String, hint: String, tint: Color? = nil,
                               action: @escaping () -> Void) -> some View {
-        Button(action: action) { actionLabel(title, image) }
+        Button(action: action) { actionLabel(title, image).foregroundStyle(tint ?? .secondary) }
             .buttonStyle(.plain)
             .accessibilityLabel(title)
             .accessibilityHint(hint)

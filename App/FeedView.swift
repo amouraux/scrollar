@@ -351,7 +351,6 @@ struct PaperCard: View {
     /// Set for a highlight: why it is one, in words.
     var highlight: String? = nil
     @State private var expanded = false
-    @State private var seenTimer: Task<Void, Never>?
 
     private var paper: Paper { ranked.paper }
     /// With the reader pane on screen a tap shows the paper there instead of unfolding the post.
@@ -395,15 +394,9 @@ struct PaperCard: View {
         .id(paper.dedupeKey)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        // Counts as seen once it has stayed on screen for a second: a card flicked
-        // past is not read, and one that scrolls out cancels the wait.
-        .onAppear {
-            seenTimer = Task {
-                try? await Task.sleep(for: .seconds(1))
-                if !Task.isCancelled { model.markSeen(paper) }
-            }
-        }
-        .onDisappear { seenTimer?.cancel() }
+        // The time it is in front of the reader is what makes it seen (a flick does not) and,
+        // past the user's number of seconds, studied.
+        .trackingDwell { model.addDwell(paper, seconds: $0) }
         // The on-device model writes the takeaway for a post that stays on screen.
         .task {
             try? await Task.sleep(for: .milliseconds(700))
@@ -680,6 +673,13 @@ struct PaperCard: View {
                       hint: "Saves it, and finds more like it") {
                 model.toggleSaved(paper)
             }
+            let liked = model.isLiked(paper)
+            barButton("For me", liked ? "hand.thumbsup.fill" : "hand.thumbsup",
+                      hint: liked ? "Takes back that this is for you"
+                                  : "Tells the feed this is the kind of paper you want, without saving it",
+                      tint: liked ? Color.accentColor : nil) {
+                model.toggleLiked(paper)
+            }
             barButton("Not for me", "hand.thumbsdown", hint: "Hides this paper for good") {
                 withAnimation { model.hide(paper) }
             }
@@ -697,9 +697,9 @@ struct PaperCard: View {
         }
     }
 
-    private func barButton(_ title: String, _ image: String, hint: String,
+    private func barButton(_ title: String, _ image: String, hint: String, tint: Color? = nil,
                            action: @escaping () -> Void) -> some View {
-        Button(action: action) { barLabel(title, image) }
+        Button(action: action) { barLabel(title, image).foregroundStyle(tint ?? .secondary) }
             .buttonStyle(.plain)
             .accessibilityLabel(title)
             .accessibilityHint(hint)

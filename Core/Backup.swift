@@ -58,6 +58,7 @@ enum Backup {
             count(s.followedKeywords.count, "keyword", "keywords"),
             count(s.mutedJournals.count + s.mutedAuthors.count + s.mutedTopics.count + s.mutedKeywords.count, "mute", "mutes"),
             count(s.feedback.saved.count, "saved paper", "saved papers"),
+            count(s.feedback.liked.count, "paper marked for me", "papers marked for me"),
             count(s.feedback.hidden.count, "hidden paper", "hidden papers"),
         ].compactMap { $0 }
     }

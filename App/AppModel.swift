@@ -37,6 +37,7 @@ final class AppModel {
                 || settings.highlightCloseness != oldValue.highlightCloseness
                 || settings.highlightImpact != oldValue.highlightImpact
                 || settings.highlightAuthorH != oldValue.highlightAuthorH
+                || settings.dwellSeconds != oldValue.dwellSeconds
             if layoutChanged { rearrange() }
         }
     }
@@ -835,13 +836,29 @@ final class AppModel {
 
     func status(of p: Paper) -> History.Status { history.status(of: p.dedupeKey) }
 
-    /// Called when a card has been on screen long enough to count as seen. The
-    /// layout is deliberately not rearranged: that waits for the next refresh.
-    func markSeen(_ p: Paper) {
-        history.markSeen(p.dedupeKey, at: Date())
+    /// The time a post was in front of the reader. The layout is not rearranged: that waits for the next
+    /// refresh or the next launch, as for seen.
+    func addDwell(_ p: Paper, seconds: Double) {
+        history.addDwell(p.dedupeKey, seconds: seconds, at: Date())
         saveHistorySoon()
-        // Scrolling changes history all the time; the file is only rewritten now and then.
         syncHistorySoon(after: 45)
+    }
+
+    func isLiked(_ p: Paper) -> Bool { settings.feedback.isLiked(p) }
+
+    /// "For me": teaches the feed without saving. It also counts the paper as studied, so it leaves the top
+    /// at the next refresh. Taking it back removes it from the profile, not from the history.
+    func toggleLiked(_ p: Paper) {
+        if isLiked(p) {
+            settings.feedback.unlike(p.dedupeKey)
+            show("Taken back")
+        } else {
+            settings.feedback.like(p)
+            history.markStudied(p.dedupeKey, studiedAfter: settings.dwellSeconds, at: Date())
+            saveHistorySoon()
+            syncHistorySoon(after: 8)
+            show("Noted: more papers like this. Not saved.")
+        }
     }
 
     /// Opened the paper or read its abstract in full.

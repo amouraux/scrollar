@@ -30,7 +30,7 @@ struct SyncEntry: Codable, Equatable {
 struct SyncDocument: Codable, Equatable {
     /// Raise for any change an older app would misread, and never remove the guard
     /// in the storage: an app writes only a format it knows.
-    static let currentFormat = 1
+    static let currentFormat = 2
 
     var format = SyncDocument.currentFormat
     var entries: [String: SyncEntry] = [:]
@@ -125,7 +125,9 @@ extension PaperState {
                 : (x.title >= y.title ? x : y)
         }
         return PaperState(firstSeen: min(a.firstSeen, b.firstSeen), lastSeen: max(a.lastSeen, b.lastSeen),
-                          seenCount: max(a.seenCount, b.seenCount), opened: opened, snapshot: snapshot)
+                          seenCount: max(a.seenCount, b.seenCount), opened: opened, snapshot: snapshot,
+                          // The larger, as with the count: each device measured its own time on screen.
+                          dwell: [a.dwell, b.dwell].compactMap { $0 }.max())
     }
 }
 
@@ -183,7 +185,7 @@ enum SyncProjection {
         scalar("feedOrder", \.feedOrder), scalar("highlightCount", \.highlightCount),
         scalar("highlightCloseness", \.highlightCloseness), scalar("highlightImpact", \.highlightImpact),
         scalar("highlightAuthorH", \.highlightAuthorH), scalar("profileFilled", \.profileFilled),
-        scalar("useZotero", \.useZotero), scalar("useLibraryFile", \.useLibraryFile), scalar("zoteroRecent", \.zoteroRecent),
+        scalar("dwellSeconds", \.dwellSeconds), scalar("useZotero", \.useZotero), scalar("useLibraryFile", \.useLibraryFile), scalar("zoteroRecent", \.zoteroRecent),
     ]
 
     /// Every decision a settings value holds, by key. An empty string is an item with no payload.
@@ -194,6 +196,7 @@ enum SyncProjection {
         for p in s.profileOrcids { out["po/\(p.orcid)"] = json(p) }
         for w in s.mutedKeywords { out["mw/\(w)"] = "" }
         for p in s.feedback.saved { out["sv/\(p.id)"] = json(p) }
+        for p in s.feedback.liked { out["lk/\(p.id)"] = json(p) }
         for h in s.feedback.hidden { out["hd/\(h)"] = "" }
         for sc in scalars { out["v/\(sc.name)"] = sc.read(s) }
         return out
@@ -234,6 +237,7 @@ enum SyncProjection {
         s.profileOrcids = Array(ordered(s.profileOrcids, key: { $0.orcid }, prefix: "po/", entries: entries).prefix(3))
         s.mutedKeywords = orderedNames(s.mutedKeywords, prefix: "mw/", entries: entries)
         s.feedback.saved = ordered(s.feedback.saved, key: { $0.id }, prefix: "sv/", entries: entries)
+        s.feedback.liked = ordered(s.feedback.liked, key: { $0.id }, prefix: "lk/", entries: entries)
         s.feedback.hidden = orderedNames(s.feedback.hidden, prefix: "hd/", entries: entries)
         for sc in scalars {
             if let e = entries["v/\(sc.name)"], e.present, let text = e.value { sc.write(&s, text) }

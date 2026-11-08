@@ -46,6 +46,8 @@ enum FeedBuilder {
     static func profileTexts(_ s: FeedSettings, own: [Paper], library: [String] = []) -> [String] {
         var texts = s.useMyPublications ? own.map { $0.title + ". " + ($0.abstract ?? "") } : []
         texts += s.feedback.saved.map { $0.title + ". " + ($0.abstract ?? "") }
+        // "For me" says the same as saving, for a paper the user already knows.
+        texts += s.feedback.liked.map { $0.title + ". " + ($0.abstract ?? "") }
         // The reference library, already chosen and turned to text; empty unless the user connected one.
         if s.useZotero || s.useLibraryFile { texts += library }
         return texts

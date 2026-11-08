@@ -232,11 +232,29 @@ per follow, up to three pages, for each 30 days.
 
 ## Reading state
 
-A post is *seen* after a second on screen and *read* when opened. The feed is sorted into new,
-earlier and read only when it is loaded or refreshed, never while scrolling, so nothing moves
-under a finger; an unrequested refresh waits behind an "N new papers" pill. Seen papers sink
-below the new ones and drop out after a week (a setting); read papers leave the feed and are
-kept under Saved, Read. `Why.main` picks the one reason shown above a post, the most
+A post is *seen* once it has been in front of the reader long enough, *studied* if it was looked at
+for the user's own number of seconds (4 by default, 2 to 15, Tune: Studied after), and *read* when opened.
+Time is counted only while at least half the post is on screen and the app is active, and adds up over visits
+(`DwellTracking`, `History.addDwell`); from iOS 18 the scroll view reports the visible share, earlier the
+post's appearance stands in for it. Under 1.5 seconds a post was passing through: it stays **new**. Between
+that and the studied threshold it is **glanced**: it sinks below the new ones and drops out after a week
+(a setting). **Studied** sinks below the glanced ones and drops out after two days at most
+(`Dwell.studiedExpiryDays`), since the user has looked at it properly. A history file from before dwell was
+measured is read as glanced. None of this reads a post as *read*: that stays the user's act of opening it,
+and read papers leave the feed and are kept under Saved, Read. The feed is sorted only when it is loaded
+or refreshed, never while scrolling, so nothing moves under a finger; an unrequested refresh waits behind an
+"N new papers" pill. The seconds are display-only like the highlights: changing them fetches and ranks nothing.
+
+**For me.** Beside Save and Not for me, For me says "this is the kind of paper I want" without saving it, for a
+paper the user knows already. It adds the paper to the profile exactly as saving does (`Feedback.liked`,
+synced as `lk/` entries), counts the paper as studied so it leaves the top at the next refresh, and shows a
+short confirmation. It is a toggle on the post and in the pane; taking it back removes it from the profile
+(not from the history). The Saved tab has a "For me" list, the only place to take it back once the post has
+left the feed, and exports it as RIS like the others. It teaches similarity only: it does not yet favour that
+paper's journal or authors.
+
+Sync format is now 2: an older app leaves the file alone instead of erasing the entries it does not know
+(it would otherwise mark `lk/` and the Zotero and dwell settings as removed). Update every device that syncs. `Why.main` picks the one reason shown above a post, the most
 specific choice of the user's first (a citation of their work, then a followed author,
 keyword, journal, institution, funder, then a topic).
 

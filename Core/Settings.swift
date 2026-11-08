@@ -161,6 +161,9 @@ extension SavedPaper {
 struct Feedback: Codable, Equatable {
     /// Saved papers join the profile: more like these.
     var saved: [SavedPaper] = []
+    /// "For me": papers the user said are the kind they want, without saving them (they may know them
+    /// already). They join the profile as saved papers do, and leave the top of the feed.
+    var liked: [SavedPaper] = []
     /// Hidden papers (dedupeKeys) never come back.
     var hidden: [String] = []
 
@@ -170,6 +173,15 @@ struct Feedback: Codable, Equatable {
     }
 
     mutating func unsave(_ p: Paper) { saved.removeAll { $0.id == p.dedupeKey } }
+
+    func isLiked(_ p: Paper) -> Bool { liked.contains { $0.id == p.dedupeKey } }
+
+    mutating func like(_ p: Paper) {
+        guard !isLiked(p) else { return }
+        liked.append(SavedPaper(p))
+    }
+
+    mutating func unlike(_ id: String) { liked.removeAll { $0.id == id } }
 
     mutating func hide(_ p: Paper) {
         if !hidden.contains(p.dedupeKey) { hidden.append(p.dedupeKey) }
@@ -231,6 +243,9 @@ struct FeedSettings: Codable, Equatable {
     /// or keyword they follow behind it.
     var highlightImpact = 5.0
     var highlightAuthorH = 40
+    /// Seconds on screen after which a post counts as studied: it sinks below the ones only glanced at
+    /// and leaves the feed sooner. Display only, like the highlights.
+    var dwellSeconds = 4.0
 
     // MARK: Mute
     var mutedJournals: [Entity] = []
@@ -317,6 +332,7 @@ struct FeedSettings: Codable, Equatable {
         s.highlightCloseness = d.highlightCloseness
         s.highlightImpact = d.highlightImpact
         s.highlightAuthorH = d.highlightAuthorH
+        s.dwellSeconds = d.dwellSeconds
         s.profileFilled = d.profileFilled
         // The library only changes how what is held is ranked, like a slider.
         s.useZotero = d.useZotero
@@ -337,6 +353,7 @@ struct FeedSettings: Codable, Equatable {
         s.highlightCloseness = d.highlightCloseness
         s.highlightImpact = d.highlightImpact
         s.highlightAuthorH = d.highlightAuthorH
+        s.dwellSeconds = d.dwellSeconds
         s.profileFilled = d.profileFilled
         return s
     }
@@ -369,11 +386,12 @@ extension Weight {
 }
 
 extension Feedback {
-    enum CodingKeys: String, CodingKey { case saved, hidden }
+    enum CodingKeys: String, CodingKey { case saved, hidden, liked }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         saved = (try? c.decodeIfPresent([SavedPaper].self, forKey: .saved)) ?? []
+        liked = (try? c.decodeIfPresent([SavedPaper].self, forKey: .liked)) ?? []
         hidden = (try? c.decodeIfPresent([String].self, forKey: .hidden)) ?? []
     }
 }
@@ -383,7 +401,7 @@ extension FeedSettings {
         case formatVersion, orcid, profileOrcids, profileFilled, useMyPublications, useOpenAlex, useEuropePMC
         case useZotero, useLibraryFile, zoteroRecent
         case followedTopics, followedJournals, followedAuthors, followedInstitutions
-        case followedFunders, followedKeywords, trackedPapers, feedOrder, highlightCount, highlightCloseness, highlightImpact, highlightAuthorH
+        case followedFunders, followedKeywords, trackedPapers, feedOrder, highlightCount, highlightCloseness, highlightImpact, highlightAuthorH, dwellSeconds
         case mutedJournals, mutedAuthors, mutedTopics, mutedKeywords
         case kindWeights, daysBack, recency, closeness, impactWeight, authorWeight, byline
         case requireAbstract, openAccessOnly, seenExpiryDays, showReadPapers, languages, feedback
@@ -417,6 +435,7 @@ extension FeedSettings {
         highlightCloseness = min(max(get(.highlightCloseness, highlightCloseness), 0.5), 1)
         highlightImpact = min(max(get(.highlightImpact, highlightImpact), 0), 50)
         highlightAuthorH = min(max(get(.highlightAuthorH, highlightAuthorH), 0), 200)
+        dwellSeconds = min(max(get(.dwellSeconds, dwellSeconds), 2), 15)
         mutedJournals = get(.mutedJournals, mutedJournals)
         mutedAuthors = get(.mutedAuthors, mutedAuthors)
         mutedTopics = get(.mutedTopics, mutedTopics)

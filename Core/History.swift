@@ -13,6 +13,28 @@ struct PaperState: Codable, Equatable {
     /// Kept only for read papers, so a list of them can show titles without
     /// the paper still being in any feed.
     var snapshot: SavedPaper?
+    /// Seconds the post was on screen (at least half of it, with the app in front), added up over
+    /// every visit. nil for a state written before this was measured, or made by `markSeen`, which
+    /// stands for "it was looked at" as it always did.
+    var dwell: Double? = nil
+}
+
+/// How long a post was looked at, in the three levels the feed acts on.
+enum Attention: Equatable {
+    /// Under `Dwell.glance`: flicked past, still new.
+    case passed
+    /// Looked at: it sinks below what is new.
+    case glanced
+    /// Looked at for the user's own number of seconds, or marked "for me": it sinks further and expires sooner.
+    case studied
+}
+
+enum Dwell {
+    /// Below this a post was passing through the screen, not looked at.
+    static let glance = 1.5
+    /// A studied post expires after this many days at most, whatever the seen-expiry setting says: the user
+    /// has looked at it properly, so it need not wait a week to leave the top.
+    static let studiedExpiryDays = 2
 }
 
 struct History: Codable, Equatable {
@@ -27,7 +49,36 @@ struct History: Codable, Equatable {
 
     func status(of key: String) -> Status {
         guard let s = states[key] else { return .new }
-        return s.opened == nil ? .seen : .read
+        if s.opened != nil { return .read }
+        // Measured: under the glance threshold it is still new. Not measured (an older record): seen.
+        if let d = s.dwell { return d >= Dwell.glance ? .seen : .new }
+        return .seen
+    }
+
+    /// How closely the post was looked at, for one that has been seen. `studiedAfter` is the user's setting.
+    func attention(of key: String, studiedAfter: Double) -> Attention {
+        guard let d = states[key]?.dwell else { return states[key] == nil ? .passed : .glanced }
+        return d >= studiedAfter ? .studied : d >= Dwell.glance ? .glanced : .passed
+    }
+
+    /// Add the seconds a post was on screen. The first sighting is the first time it was on screen at all,
+    /// so a flick is remembered even though it does not make the post seen.
+    mutating func addDwell(_ key: String, seconds: Double, at now: Date) {
+        guard seconds > 0 else { return }
+        var s = states[key] ?? PaperState(firstSeen: now, lastSeen: now, seenCount: 0)
+        s.lastSeen = now
+        s.dwell = (s.dwell ?? (s.seenCount > 0 ? Dwell.glance : 0)) + seconds
+        if s.dwell! >= Dwell.glance { s.seenCount = max(s.seenCount, 1) }
+        states[key] = s
+    }
+
+    /// "This is for me" counts as having studied it: it was recognised as worth the user's attention.
+    mutating func markStudied(_ key: String, studiedAfter: Double, at now: Date) {
+        var s = states[key] ?? PaperState(firstSeen: now, lastSeen: now, seenCount: 1)
+        s.lastSeen = now
+        s.seenCount = max(s.seenCount, 1)
+        s.dwell = max(s.dwell ?? 0, studiedAfter)
+        states[key] = s
     }
 
     mutating func markSeen(_ key: String, at now: Date) {
@@ -111,6 +162,8 @@ enum Arranger {
     /// the moment it was seen would jump away under their finger.
     static func arrange(_ ranked: [RankedPaper], history: History, settings: FeedSettings, now: Date) -> Arranged {
         var out = Arranged()
+        // Papers the user looked at properly go below those they only glanced at.
+        var studied: [RankedPaper] = []
         for r in ranked {
             let key = r.paper.dedupeKey
             switch history.status(of: key) {
@@ -120,11 +173,16 @@ enum Arranger {
                 // Measured from the first sighting: scrolling back to an old card
                 // must not keep it alive for ever.
                 let age = history.states[key].map { now.timeIntervalSince($0.firstSeen) / 86_400 } ?? 0
-                if age <= Double(settings.seenExpiryDays) { out.earlier.append(r) }
+                if history.attention(of: key, studiedAfter: settings.dwellSeconds) == .studied {
+                    if age <= Double(min(settings.seenExpiryDays, Dwell.studiedExpiryDays)) { studied.append(r) }
+                } else if age <= Double(settings.seenExpiryDays) {
+                    out.earlier.append(r)
+                }
             case .read:
                 out.read.append(r)
             }
         }
+        out.earlier += studied
         return out
     }
 }
