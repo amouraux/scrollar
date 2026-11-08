@@ -184,9 +184,9 @@ keyword, journal, institution, funder, then a topic).
 
 ## What a post shows
 
-In this order, the title leading: a thin bar of the journal's colour (the same colour for a journal
-everywhere; a setting turns it off), the journal and when in small type above the title, the whole
-title as the biggest thing on the card, one or two sentences of what the paper shows, the first
+In this order: a compact banner in the journal's colour (the same colour for a journal everywhere,
+with its full name, its subject, when, and a symbol; a setting turns it into a plain line), then the whole
+title as the biggest type on the card, one or two sentences of what the paper shows, the first
 and/or last author with their institution (and the impact and h-index while those options are on), and
 the reason it is there, then the buttons. Those sentences are written on the device by Apple's language model where
 there is one (`App/Summarizer.swift`: on-device only, one paper at a time, started when a post

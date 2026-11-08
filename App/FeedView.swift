@@ -181,24 +181,6 @@ struct BylineBadge: View {
     }
 }
 
-/// A thin bar in the journal's colour along the top of the card: the same colour for a journal
-/// everywhere, so a journal is recognised at a glance without taking the room the title needs.
-struct JournalAccent: View {
-    @Environment(\.colorScheme) private var scheme
-    let paper: Paper
-
-    var body: some View {
-        let spec = Cover.spec(for: paper, byJournal: true)
-        let brightness = scheme == .dark ? 0.62 : 0.56
-        LinearGradient(
-            colors: [Color(hue: spec.hueA, saturation: 0.6, brightness: brightness),
-                     Color(hue: spec.hueB, saturation: 0.6, brightness: brightness - 0.12)],
-            startPoint: .leading, endPoint: .trailing)
-            .frame(height: 5)
-            .accessibilityHidden(true)
-    }
-}
-
 /// A post in the stream, laid out like a headline: the journal and when, the whole title as the
 /// biggest thing on it, what the paper shows, who wrote it, why it is here, and buttons to tell
 /// the feed what you think.
@@ -217,12 +199,12 @@ struct PaperCard: View {
     private var people: [Byline] { Byline.people(of: paper, choice: choice) }
 
     var body: some View {
-        // The title leads: a thin bar of the journal's colour, the journal and when in small type
-        // above it, then the title, what it says, who wrote it and why it is here.
+        // A compact banner in the journal's colour (its name, its subject, when), then the title as
+        // the biggest thing on the card, what the paper shows, who wrote it and why it is here.
         VStack(alignment: .leading, spacing: 0) {
-            if showCovers { JournalAccent(paper: paper) }
+            if showCovers { banner }
             VStack(alignment: .leading, spacing: 10) {
-                eyebrow
+                if !showCovers { eyebrow }
                 post
                 if !people.isEmpty { byline }
                 if let why = Why.main(for: paper) { whyLine(why) }
@@ -231,7 +213,7 @@ struct PaperCard: View {
                 actionBar
             }
             .padding(.horizontal, 12)
-            .padding(.top, 10)
+            .padding(.top, showCovers ? 12 : 10)
             .padding(.bottom, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -275,41 +257,78 @@ struct PaperCard: View {
         if expanded { model.markOpened(paper) }
     }
 
-    // MARK: Eyebrow
+    // MARK: Banner
 
     /// The journal's own colour, dark enough to read on the card in either mode.
     private var journalColor: Color {
-        guard showCovers else { return .secondary }
         let hue = Cover.spec(for: paper, byJournal: true).hueA
         return Color(hue: hue, saturation: 0.7, brightness: scheme == .dark ? 0.9 : 0.5)
     }
 
-    /// The journal and when, small, above the title; the age is never the part that gets cut.
-    private var eyebrow: some View {
-        HStack(spacing: 6) {
-            if let journal = paper.journal {
-                Text(journal)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(journalColor)
-                    .lineLimit(1)
+    /// The journal's name, in full, over a gradient that is the same for that journal everywhere,
+    /// with its subject and when under it. It runs to the card's edges, kept low so the title
+    /// below is what the eye lands on.
+    private var banner: some View {
+        let spec = Cover.spec(for: paper, byJournal: true)
+        let top = scheme == .dark ? 0.45 : 0.56
+        return ZStack(alignment: .topLeading) {
+            LinearGradient(
+                colors: [Color(hue: spec.hueA, saturation: 0.6, brightness: top),
+                         Color(hue: spec.hueB, saturation: 0.6, brightness: top - 0.14)],
+                startPoint: .topLeading, endPoint: .bottomTrailing)
+            Image(systemName: spec.symbol)
+                .font(.system(size: 36))
+                .foregroundStyle(.white.opacity(0.22))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                .padding(.trailing, 48)
+                .accessibilityHidden(true)
+            HStack(alignment: .top, spacing: 6) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(paper.journal ?? paper.topics.first ?? "Unpublished")
+                        .font(.subheadline.weight(.bold))
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(bannerSubline)
+                        .font(.caption)
+                        .opacity(0.9)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(.white)
+                .padding(.trailing, 56)
+                Spacer(minLength: 0)
             }
-            Text((paper.journal == nil ? "" : "· ") + eyebrowRest)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .fixedSize()
-                .layoutPriority(1)
-            statusMark
-            Spacer(minLength: 0)
-            moreMenu
+            .padding(.leading, 12)
+            .padding(.vertical, 9)
+            HStack(spacing: 2) {
+                Spacer(minLength: 0)
+                statusMark(onColor: true)
+                moreMenu(tint: .white)
+            }
+            .padding(.trailing, 4)
+            .padding(.top, 3)
         }
-        .frame(minHeight: 24)
+        .frame(maxWidth: .infinity, minHeight: 56, alignment: .topLeading)
     }
 
-    private var eyebrowRest: String {
-        var parts = [ageLabel(paper.date)]
+    /// The subject, when, and what kind of paper, under the journal's name.
+    private var bannerSubline: String {
+        var parts: [String] = []
+        if paper.journal != nil, let topic = paper.topics.first { parts.append(topic) }
+        parts.append(ageLabel(paper.date))
         if paper.kind != .research { parts.append(paper.kind.label) }
         return parts.joined(separator: " · ")
+    }
+
+    /// The same, as a plain line, for when the colour is switched off.
+    private var eyebrow: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(paper.journal ?? "Unpublished").font(.caption.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+            Text("· " + bannerSubline).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            statusMark(onColor: false)
+            Spacer(minLength: 0)
+            moreMenu(tint: .secondary)
+        }
+        .frame(minHeight: 24)
     }
 
     // MARK: Byline
@@ -347,15 +366,16 @@ struct PaperCard: View {
         }
     }
 
-    @ViewBuilder private var statusMark: some View {
+    @ViewBuilder private func statusMark(onColor: Bool) -> some View {
         if status == .new {
             Text("NEW")
                 .font(.system(size: 9, weight: .heavy))
                 .padding(.horizontal, 5).padding(.vertical, 2)
-                .background(Color.accentColor, in: Capsule())
-                .foregroundStyle(.white)
+                .background(onColor ? Color.white : Color.accentColor, in: Capsule())
+                .foregroundStyle(onColor ? journalColor : Color.white)
         } else if status == .read {
-            Image(systemName: "checkmark").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+            Image(systemName: "checkmark").font(.caption2.weight(.bold))
+                .foregroundStyle(onColor ? Color.white.opacity(0.85) : Color.secondary)
         }
     }
 
@@ -381,7 +401,7 @@ struct PaperCard: View {
     }
 
     /// Tuning the feed from the post itself: each choice mutes one thing.
-    private var moreMenu: some View {
+    private func moreMenu(tint: Color) -> some View {
         Menu {
             if paper.journalID != nil, let name = paper.journal {
                 Button("Show less from \(name)", systemImage: "newspaper") { model.muteJournal(of: paper) }
@@ -399,7 +419,7 @@ struct PaperCard: View {
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }
-        .foregroundStyle(.secondary)
+        .foregroundStyle(tint)
         .accessibilityLabel("Show less of this")
     }
 
