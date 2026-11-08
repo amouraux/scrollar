@@ -31,7 +31,7 @@ struct OpenAlexClient {
     private static let workFields = [
         "id", "doi", "title", "publication_date", "primary_location", "authorships",
         "cited_by_count", "abstract_inverted_index", "ids", "topics", "type",
-        "open_access", "language",
+        "open_access", "best_oa_location", "language",
     ].joined(separator: ",")
 
     // MARK: Requests
@@ -341,9 +341,10 @@ private struct WorkDTO: Decodable {
     let topics: [Topic]?
     let type: String?
     let open_access: OpenAccess?
+    let best_oa_location: Location?
     let language: String?
 
-    struct Location: Decodable { let source: Source? }
+    struct Location: Decodable { let source: Source?; let pdf_url: String? }
     struct Source: Decodable { let id: String?; let display_name: String?; let type: String? }
     struct Authorship: Decodable { let author: Author?; let institutions: [Institution]? }
     struct Institution: Decodable { let display_name: String? }
@@ -376,6 +377,7 @@ private struct WorkDTO: Decodable {
             topicIDs: (topics ?? []).compactMap(\.id).map(Identifiers.openAlexID),
             journalID: source?.id.map(Identifiers.openAlexID),
             isOpenAccess: open_access?.is_oa ?? false,
+            pdfURL: PDFLink.openAlex(best: best_oa_location?.pdf_url, primary: primary_location?.pdf_url),
             language: language
         )
     }

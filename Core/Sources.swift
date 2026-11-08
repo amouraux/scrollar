@@ -155,6 +155,7 @@ enum EuropePMCParser {
             citedBy: (r["citedByCount"] as? Int) ?? 0,
             topics: Array(mesh.compactMap { $0["descriptorName"] as? String }.filter { !MeSH.isGeneric($0) }.prefix(6)),
             isOpenAccess: (r["isOpenAccess"] as? String) == "Y",
+            pdfURL: PDFLink.europePMC(r),
             language: Languages.iso1(r["language"] as? String),
             sources: [SourceKind.europePMC.rawValue]
         )

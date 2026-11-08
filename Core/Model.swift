@@ -26,6 +26,30 @@ enum Identifiers {
     }
 }
 
+enum PDFLink {
+    /// A link worth trying to show in the reader: https only (the system refuses plain http),
+    /// and one that can be parsed. Anything else is no link.
+    static func clean(_ s: String?) -> String? {
+        guard let s = s?.trimmingCharacters(in: .whitespacesAndNewlines),
+              let url = URL(string: s), url.scheme?.lowercased() == "https", url.host != nil else { return nil }
+        return s
+    }
+
+    /// OpenAlex: the best open-access location's PDF, else the one the paper is published at.
+    static func openAlex(best: String?, primary: String?) -> String? { clean(best) ?? clean(primary) }
+
+    /// Europe PMC `fullTextUrlList`: the first PDF it calls open access or free.
+    static func europePMC(_ record: [String: Any]) -> String? {
+        let list = ((record["fullTextUrlList"] as? [String: Any])?["fullTextUrl"] as? [[String: Any]]) ?? []
+        let free: Set<String> = ["open access", "free"]
+        return list
+            .filter { ($0["documentStyle"] as? String)?.lowercased() == "pdf"
+                      && free.contains(($0["availability"] as? String)?.lowercased() ?? "") }
+            .compactMap { clean($0["url"] as? String) }
+            .first
+    }
+}
+
 struct Paper: Hashable, Codable {
     var id: String
     var doi: String? = nil
@@ -67,6 +91,10 @@ struct Paper: Hashable, Codable {
     /// cache written before this existed still loads.
     var journalImpact: Double? = nil
     var isOpenAccess = false
+    /// A PDF the source says may be read for free (OpenAlex's best open-access location, or a
+    /// Europe PMC full-text link). Optional so a cache written before this existed still loads;
+    /// such papers get one at the next full build.
+    var pdfURL: String? = nil
     /// ISO 639-1 code as OpenAlex detected it; nil when it did not.
     var language: String? = nil
     /// Why the paper is in the feed, one entry per seed that found it.
@@ -233,6 +261,7 @@ enum Merge {
             if kept.lastInstitution == nil { kept.lastInstitution = p.lastInstitution }
             if kept.firstAuthorH == nil { kept.firstAuthorH = p.firstAuthorH }
             if kept.lastAuthorH == nil { kept.lastAuthorH = p.lastAuthorH }
+            if kept.pdfURL == nil { kept.pdfURL = p.pdfURL }
             if kept.language == nil { kept.language = p.language }
             if kept.pubmedTypes.isEmpty { kept.pubmedTypes = p.pubmedTypes }
             if kept.openAlexType == nil { kept.openAlexType = p.openAlexType }

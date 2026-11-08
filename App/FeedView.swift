@@ -3,21 +3,53 @@ import SwiftUI
 struct FeedView: View {
     @Environment(AppModel.self) private var model
 
+    /// The proportion of the window the feed column takes, as last dragged; 0 is the default.
+    @AppStorage("feedColumnFraction") private var storedFraction = 0.0
+    /// Where the column was when a drag began, so the drag moves it relative to that.
+    @State private var dragStart: Double?
+
     var body: some View {
         // Wide enough, and the feed becomes a column with the reader beside it. The column stays
         // in the same place in the view tree either way, so resizing a window keeps the scroll position.
         GeometryReader { geo in
-            let wide = Reader.isWide(width: geo.size.width)
+            let total = geo.size.width
+            let wide = Reader.isWide(width: total)
+            let feedWidth = Reader.feedColumnWidth(total: total, fraction: storedFraction)
             HStack(spacing: 0) {
                 feedColumn
-                    .frame(width: wide ? Reader.feedColumnWidth(total: geo.size.width) : nil)
+                    .frame(width: wide ? feedWidth : nil)
                 if wide {
-                    Divider()
+                    handle(feedWidth: feedWidth, total: total)
                     ReaderPane()
                 }
             }
             .onChange(of: wide, initial: true) { _, now in model.readerShown = now }
         }
+    }
+
+    /// The line between the columns, with a wider strip to grab. Dragging resizes; a double tap
+    /// goes back to the default. The width is remembered as a fraction of the window.
+    private func handle(feedWidth: Double, total: Double) -> some View {
+        Color.clear
+            .frame(width: Reader.handleWidth)
+            .overlay { Rectangle().fill(Color(.separator)).frame(width: 1) }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        let start = dragStart ?? feedWidth
+                        dragStart = start
+                        storedFraction = Reader.fraction(forFeedWidth: start + value.translation.width, total: total)
+                    }
+                    .onEnded { _ in dragStart = nil }
+            )
+            .onTapGesture(count: 2) { storedFraction = 0 }
+            .accessibilityElement()
+            .accessibilityLabel("Width of the feed and the reader")
+            .accessibilityAdjustableAction { direction in
+                let step = direction == .increment ? 40.0 : -40.0
+                storedFraction = Reader.fraction(forFeedWidth: feedWidth + step, total: total)
+            }
     }
 
     private var feedColumn: some View {

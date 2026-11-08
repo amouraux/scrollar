@@ -1,4 +1,5 @@
 import SwiftUI
+import PDFKit
 
 /// The paper open beside the feed on a wide window: everything a post leaves out, in one place.
 /// It shows whatever `AppModel.readerPaper` is; the feed column sets it by a tap.
@@ -28,10 +29,42 @@ private struct PaperReader: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
     let paper: Paper
+    private enum Mode: String, CaseIterable { case details = "Details", pdf = "PDF" }
+    @State private var mode = Mode.details
+    /// Owned here, not by the PDF view, so going to Details and back does not fetch the file again.
+    @State private var pdf = PDFLoader()
+
+    private var pdfLink: URL? { PDFLink.clean(paper.pdfURL).flatMap(URL.init(string:)) }
 
     private var authors: Reader.AuthorList { Reader.authors(of: paper) }
 
     var body: some View {
+        VStack(spacing: 0) {
+            if pdfLink != nil {
+                Picker("View", selection: $mode) {
+                    ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 240)
+                .padding(.vertical, 8)
+            }
+            if mode == .pdf, let link = pdfLink {
+                PDFPane(loader: pdf, url: link)
+            } else {
+                details
+            }
+        }
+        // The buttons stay in reach however long the abstract is.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                Divider()
+                actions.padding(.horizontal, 24).frame(maxWidth: 720).frame(maxWidth: .infinity)
+            }
+            .background(.bar)
+        }
+    }
+
+    private var details: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
@@ -49,14 +82,6 @@ private struct PaperReader: View {
             .padding(.vertical, 20)
             .frame(maxWidth: 720, alignment: .leading)
             .frame(maxWidth: .infinity)
-        }
-        // The buttons stay in reach however long the abstract is.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
-                Divider()
-                actions.padding(.horizontal, 24).frame(maxWidth: 720).frame(maxWidth: .infinity)
-            }
-            .background(.bar)
         }
     }
 
@@ -215,6 +240,11 @@ private struct PaperReader: View {
                 Text(url.absoluteString).font(.footnote).multilineTextAlignment(.leading)
             }
             .simultaneousGesture(TapGesture().onEnded { model.markOpened(paper) })
+            if let pdf = pdfLink {
+                Link(destination: pdf) {
+                    Label("Free PDF", systemImage: "doc.richtext").font(.footnote)
+                }
+            }
         }
     }
 
@@ -263,5 +293,84 @@ private struct PaperReader: View {
         Text(text).font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
             .textCase(.uppercase)
             .accessibilityAddTraits(.isHeader)
+    }
+}
+
+
+/// Fetches a paper's PDF and holds it. A site that answers with a web page (a paywall, a cookie
+/// notice, a "are you a robot" check) is not a PDF, and the pane says so instead of showing nothing.
+@MainActor @Observable
+final class PDFLoader {
+    enum State { case idle, loading, ready(PDFDocument), failed(String) }
+    private(set) var state = State.idle
+    /// Files this large are left to the browser: they would be held in memory in full.
+    private static let largest = 80_000_000
+
+    func load(_ url: URL) async {
+        switch state { case .idle, .failed: break; default: return }
+        state = .loading
+        var request = URLRequest(url: url, timeoutInterval: 30)
+        request.setValue("application/pdf,*/*;q=0.5", forHTTPHeaderField: "Accept")
+        do {
+            let (file, response) = try await URLSession.shared.download(for: request)
+            let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            guard size <= Self.largest else { state = .failed("This PDF is too large to show here."); return }
+            let data = try Data(contentsOf: file)
+            guard data.prefix(5) == Data("%PDF-".utf8), let document = PDFDocument(data: data) else {
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                state = .failed(status >= 400 ? "The site refused the download (error \(status))."
+                                              : "The site sent a web page, not a PDF.")
+                return
+            }
+            state = .ready(document)
+        } catch {
+            state = .failed("The PDF could not be loaded. Check the connection.")
+        }
+    }
+}
+
+private struct PDFPane: View {
+    @Environment(\.openURL) private var openURL
+    let loader: PDFLoader
+    let url: URL
+
+    var body: some View {
+        Group {
+            switch loader.state {
+            case .idle, .loading:
+                VStack(spacing: 10) { ProgressView(); Text("Loading the PDF…").font(.subheadline).foregroundStyle(.secondary) }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .ready(let document):
+                PDFKitView(document: document)
+            case .failed(let message):
+                ContentUnavailableView {
+                    Label("Could not show the PDF", systemImage: "doc.badge.ellipsis")
+                } description: {
+                    Text(message)
+                } actions: {
+                    Button("Try again") { Task { await loader.load(url) } }
+                    Button("Open in browser") { openURL(url) }
+                }
+            }
+        }
+        .task(id: url) { await loader.load(url) }
+    }
+}
+
+private struct PDFKitView: UIViewRepresentable {
+    let document: PDFDocument
+
+    func makeUIView(context: Context) -> PDFView {
+        let view = PDFView()
+        view.autoScales = true
+        view.displayMode = .singlePageContinuous
+        view.displayDirection = .vertical
+        view.backgroundColor = .secondarySystemBackground
+        view.document = document
+        return view
+    }
+
+    func updateUIView(_ view: PDFView, context: Context) {
+        if view.document !== document { view.document = document }
     }
 }

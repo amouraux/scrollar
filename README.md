@@ -256,7 +256,12 @@ labelled as such when the post is opened.
 ## The reader pane
 
 A window at least 780 points wide (a Mac window, an iPad in landscape or portrait; `Reader.isWide`) puts
-the feed in a column of about 38% of the width, 340 to 460 points, with a reader pane to its right. A
+the feed in a column of about 38% of the width, 340 to 460 points, with a reader pane to its right.
+The line between them is a handle: drag it to move the split, double-tap it to go back to the default
+(VoiceOver can adjust it too). The width is remembered as a fraction of the window, so resizing the
+window keeps the proportion, and it cannot be dragged so far that the feed falls under 320 points, the
+pane under 380, or the feed past 700 (`Reader.feedColumnWidth`). There is no resize cursor on the Mac:
+SwiftUI's `pointerStyle` is not available to Mac Catalyst. A
 narrower window (an iPhone, an iPad mini, a thin split) is the single column it always was: tapping a
 post unfolds its abstract in place and nothing else changes. The same view tree serves both, so
 resizing a window keeps the feed's scroll position.
@@ -276,6 +281,18 @@ the one that took its place. Cmd-] and Cmd-[ step through the feed in the order 
 (`FeedLayout.displayOrder`, tested against the layout) and scroll the post into view; they are off
 while the pane is not on screen, so no paper is marked read where nobody could see it. The pane shows
 the open data's figures, not pictures: there are still no article figures (see Not built).
+
+**PDF.** A paper with a free PDF gets a Details | PDF switch above the pane, and a "Free PDF" link
+under Link. The address comes from the sources, never guessed: OpenAlex's best open-access location
+(else the publisher's own PDF link) and Europe PMC's full-text list, taking only a PDF marked open
+access or free, and only https (`PDFLink`, `Paper.pdfURL`). The file is downloaded when the PDF side
+is opened (not before), checked to begin `%PDF-` and to be under 80 MB, and shown with PDFKit; a
+site that answers with a web page or an error (a paywall, a cookie wall, a bot check) gets a message
+with Try again and Open in browser rather than a blank pane. Many publisher links do that, so the PDF
+side shows what the open-access copy allows, not every paper. Papers cached before the field existed
+have no link until the next full build (every three days, or when a follow changes). The PDF is held
+in memory only while that paper is open and is not saved. There is no pane on a phone, so there is no
+PDF view there; Open still sends it to the browser.
 
 ## Tune
 

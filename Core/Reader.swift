@@ -12,11 +12,29 @@ enum Reader {
 
     static func isWide(width: Double) -> Bool { width >= minimumWidth }
 
-    /// The feed column's width in a window `total` points wide: a third of it, kept within what
-    /// a post reads well at, so the reader gets the rest. A post is never wider than the old
-    /// single column (700), and not narrower than the banner and buttons can hold.
-    static func feedColumnWidth(total: Double) -> Double {
-        min(max(total * 0.38, 340), 460)
+    /// The narrowest the feed column may be dragged: the post's banner and buttons need it.
+    static let minimumFeedWidth: Double = 320
+    /// The narrowest the pane may be dragged: below it the abstract is a thin ribbon.
+    static let minimumReaderWidth: Double = 380
+    /// A post is never wider than the old single column (700).
+    static let maximumFeedWidth: Double = 700
+    /// Room taken by the drag handle between the two.
+    static let handleWidth: Double = 9
+
+    /// The feed column's width in a window `total` points wide. Without a choice, a third of it
+    /// kept within what a post reads well at, so the reader gets the rest; with one (a fraction
+    /// of the window, set by dragging) that fraction, kept so neither side falls below its minimum.
+    static func feedColumnWidth(total: Double, fraction: Double? = nil) -> Double {
+        let widest = max(minimumFeedWidth, min(maximumFeedWidth, total - minimumReaderWidth - handleWidth))
+        guard let fraction, fraction > 0 else { return min(max(total * 0.38, 340), 460, widest) }
+        return min(max(total * fraction, minimumFeedWidth), widest)
+    }
+
+    /// The fraction to remember for a column dragged to `width`, so a resized window keeps the
+    /// proportion the user chose.
+    static func fraction(forFeedWidth width: Double, total: Double) -> Double {
+        guard total > 0 else { return 0 }
+        return feedColumnWidth(total: total, fraction: width / total) / total
     }
 
     /// One author on the pane, with the institution where it is known. The open data lists an

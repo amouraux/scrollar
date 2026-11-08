@@ -1032,8 +1032,27 @@ let pvMore = Previews.make(pvMany, seed: .keyword("x"), settings: FeedSettings()
 check(pvMore.papers.count == Previews.shown && pvMore.matched == 80, "preview: it shows a screenful and counts the rest")
 check(Seed.forTopic(Entity(id: "T1", name: "Pain")) == .topic(id: "T1", name: "Pain") && Seed.forTopic(Entity(id: "mesh:Pain", name: "Pain")) == .mesh("Pain") && Seed.forTopic(Entity(id: "mesh:Humans", name: "Humans")) == nil, "preview: a topic is the search the feed would run, and a heading too general to follow is none")
 
+// MARK: pdf links
+check(PDFLink.clean("https://x.org/a.pdf") == "https://x.org/a.pdf" && PDFLink.clean("http://x.org/a.pdf") == nil && PDFLink.clean("  ") == nil && PDFLink.clean(nil) == nil && PDFLink.clean("not a url") == nil, "pdf: only an https link is worth showing")
+check(PDFLink.openAlex(best: nil, primary: "https://p.org/1.pdf") == "https://p.org/1.pdf" && PDFLink.openAlex(best: "https://b.org/1.pdf", primary: "https://p.org/1.pdf") == "https://b.org/1.pdf" && PDFLink.openAlex(best: "http://b.org", primary: nil) == nil, "pdf: OpenAlex's best open-access copy wins over the publisher's page")
+let pdfFixture = Data("""
+{"resultList":{"result":[{"source":"MED","id":"1","title":"A paper.","firstPublicationDate":"2026-10-01","fullTextUrlList":{"fullTextUrl":[
+ {"availability":"Subscription required","documentStyle":"pdf","url":"https://pub.org/locked.pdf"},
+ {"availability":"Open access","documentStyle":"html","url":"https://europepmc.org/articles/PMC1"},
+ {"availability":"Open access","documentStyle":"pdf","url":"https://europepmc.org/articles/PMC1?pdf=render"}]}},
+ {"source":"MED","id":"2","title":"Another.","firstPublicationDate":"2026-10-02"}]}}
+""".utf8)
+let pdfPapers = EuropePMCParser.papers(from: pdfFixture)
+check(pdfPapers.first?.pdfURL == "https://europepmc.org/articles/PMC1?pdf=render" && pdfPapers.last?.pdfURL == nil, "pdf: Europe PMC's free PDF is taken, a locked one and a web page are not")
+check({ var a = Paper(id: "a", title: "t", date: "2026-10-01"); a.doi = "10.1/p"; var b = a; b.id = "b"; b.pdfURL = "https://x.org/p.pdf"; return Merge.combine([a, b]).first?.pdfURL == "https://x.org/p.pdf" }(), "pdf: a copy that has a PDF link lends it to the one that does not")
+let oldPaperJSON = Data(#"{"id":"W1","title":"T","date":"2026-01-01","isRepository":false,"pubmedTypes":[],"abstractFromPubMed":false,"authors":[],"authorIDs":[],"citedBy":0,"topics":[],"topicIDs":[],"isOpenAccess":false,"reasons":[],"citesYou":false,"followed":false}"#.utf8)
+check((try? JSONDecoder().decode(Paper.self, from: oldPaperJSON))?.pdfURL == nil, "pdf: a cache written before there was a link still loads")
+
 // MARK: reader pane
 check(Reader.isWide(width: 834) && Reader.isWide(width: 1100) && !Reader.isWide(width: 744) && !Reader.isWide(width: 393), "reader: a portrait iPad and a Mac window get a column; a phone and an iPad mini do not")
+check(Reader.feedColumnWidth(total: 800, fraction: 0.5) == 400 && Reader.feedColumnWidth(total: 800, fraction: 0.6) == 411 && Reader.feedColumnWidth(total: 800, fraction: 0.2) == 320, "reader: a dragged width is kept, but the reader never gets under 380 points nor the feed under 320")
+check(Reader.feedColumnWidth(total: 1600, fraction: 0.9) == 700 && Reader.feedColumnWidth(total: 1000, fraction: 0) == 380 && Reader.feedColumnWidth(total: 1000, fraction: nil) == 380, "reader: the feed column stops at the old column's width, and no choice means the default")
+check(Reader.fraction(forFeedWidth: 500, total: 1000) == 0.5 && Reader.fraction(forFeedWidth: 100, total: 1000) == 0.32 && Reader.fraction(forFeedWidth: 900, total: 1000) == 0.611, "reader: the remembered proportion is the clamped one, so the handle cannot be dragged to a width that would be refused")
 check(Reader.feedColumnWidth(total: 800) == 340 && Reader.feedColumnWidth(total: 1000) == 380 && Reader.feedColumnWidth(total: 2000) == 460, "reader: the feed column keeps to what a post reads well at, and the reader gets the rest")
 var rdPaper = ok("rd") { $0.authors = ["Ada One", "Bo Two", "Cy Three"]; $0.firstInstitution = "Ghent University"; $0.lastInstitution = "UCLouvain" }
 let rdAuthors = Reader.authors(of: rdPaper)
