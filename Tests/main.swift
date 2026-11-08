@@ -626,7 +626,7 @@ check(Html.plain("<p>One</p><p>Two &lt;3</p>") == "One Two <3", "html: block tag
 check(Affiliation.institution(from: "Department of Physiology, Faculty of Medicine, Karolinska Institutet, Stockholm, Sweden.") == "Karolinska Institutet", "affiliation: department and faculty are skipped")
 check(Affiliation.institution(from: "Max Planck Institute for Brain Research, Frankfurt, Germany") == "Max Planck Institute for Brain Research", "affiliation: an institute")
 check(Affiliation.institution(from: "Somewhere, Nowhere") == nil, "affiliation: nothing that names an institution")
-check(Languages.iso1("eng") == "en" && Languages.iso1("fr") == "fr" && Languages.iso1("xyz") == nil && Languages.iso1(nil) == nil, "language codes")
+check(Languages.iso1("eng") == "en" && Languages.iso1("fr") == "fr" && Languages.iso1("xyz") == nil && Languages.iso1("ara") == "ar" && Languages.iso1(nil) == nil, "language codes")
 
 let byOrcidJSON = """
 {"hitCount": 174, "resultList": {"result": [

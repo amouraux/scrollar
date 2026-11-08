@@ -198,14 +198,21 @@ struct SettingsView: View {
                     Text("Badges show initials: open scholarly data has no author photographs. Which end of the author list leads depends on your field. The h-index option below follows this choice: the higher of the two when both are shown. A journal always has the same colour: a banner with its name and subject above the title. Off, the journal is a plain line.")
                 }
 
-                Section("Content") {
+                Section {
                     Toggle("Only papers with an abstract", isOn: $model.settings.requireAbstract)
                     Toggle("Only open access", isOn: $model.settings.openAccessOnly)
+                    Toggle("English only", isOn: Binding(
+                        get: { model.settings.languages == ["en"] },
+                        set: { model.settings.languages = $0 ? ["en"] : [] }))
                     TextField("Languages, e.g. en, fr (empty for any)", text: Binding(
                         get: { model.settings.languages.joined(separator: ", ") },
                         set: { model.settings.languages = splitList($0) }))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                } header: {
+                    Text("Content")
+                } footer: {
+                    Text("English only is the same as typing en below. A paper whose language the source does not state is kept, because most do not say and dropping them would empty the feed.")
                 }
 
                 Section {

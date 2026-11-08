@@ -217,7 +217,11 @@ enum Affiliation {
 enum Languages {
     private static let table = ["eng": "en", "fre": "fr", "fra": "fr", "ger": "de", "deu": "de", "spa": "es",
                                 "ita": "it", "por": "pt", "dut": "nl", "nld": "nl", "rus": "ru", "chi": "zh",
-                                "zho": "zh", "jpn": "ja", "pol": "pl", "tur": "tr", "kor": "ko"]
+                                "zho": "zh", "jpn": "ja", "pol": "pl", "tur": "tr", "kor": "ko", "ara": "ar", "hin": "hi",
+                                "swe": "sv", "dan": "da", "nor": "no", "fin": "fi", "cze": "cs", "ces": "cs",
+                                "hun": "hu", "gre": "el", "ell": "el", "heb": "he", "ind": "id", "vie": "vi",
+                                "tha": "th", "ukr": "uk", "rum": "ro", "ron": "ro", "cat": "ca", "per": "fa",
+                                "fas": "fa", "hrv": "hr", "srp": "sr", "slv": "sl", "bul": "bg"]
 
     /// Europe PMC uses three-letter codes; the language filter uses two.
     static func iso1(_ code: String?) -> String? {

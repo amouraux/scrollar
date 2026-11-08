@@ -222,7 +222,7 @@ to learn from publications; sources; follows (topics, journals, researchers, ins
 funders, keywords with their own must-also and must-not conditions) and tracked papers; mutes
 (journals, researchers, topics, words); a weight (hide, lower, normal, boost) for each kind of
 paper; look-back days; the three ranking sliders and which author counts; only papers with an
-abstract, only open access, languages; how long to keep unread papers and whether to show read
+abstract, only open access, languages (an "English only" switch, or a list of codes); how long to keep unread papers and whether to show read
 ones; which author heads a post and whether to show the journal banner. Settings are decoded
 tolerantly: a missing, unknown or mistyped key falls back to its default and only a file that is
 not JSON fails, in which case it is copied aside and never silently replaced.
