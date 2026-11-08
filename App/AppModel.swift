@@ -25,6 +25,10 @@ final class AppModel {
     var settings: FeedSettings {
         didSet {
             store.saveSettings(settings)
+            // Whatever differs from what was recorded was decided here, just now.
+            ledger.reconcile(settings, at: Date())
+            store.saveLedger(ledger)
+            if !applyingSync { syncSoon(after: 3) }
             // Following something new or muting something means fetching again;
             // hiding one paper does not.
             if settings.forRanking != oldValue.forRanking { needsRefresh = true }
@@ -69,6 +73,25 @@ final class AppModel {
     private var saveHistoryTask: Task<Void, Never>?
     private let store = Store()
 
+    // MARK: Sync state
+    enum SyncStatus: Equatable {
+        case off
+        case syncing
+        case idle(Date?)
+        case problem(String)
+    }
+
+    private(set) var syncStatus: SyncStatus = .off
+    private(set) var syncFileName: String?
+    private var syncFile: SyncFile?
+    /// What this device has decided and when: the half of the sync that is not the file.
+    private var ledger = SyncDocument()
+    private var syncing = false
+    /// Set while a merge from the other device is applied, so that is not mistaken for an edit here.
+    private var applyingSync = false
+    private var settingsSyncTask: Task<Void, Never>?
+    private var historySyncTask: Task<Void, Never>?
+
     init() {
         switch store.loadSettings() {
         case .loaded(let s):
@@ -108,6 +131,18 @@ final class AppModel {
             }
             UserDefaults.standard.removeObject(forKey: "byline")
         }
+        if let saved = store.loadLedger() {
+            ledger = saved
+            ledger.reconcile(settings, at: Date())
+        } else {
+            // A first run: the settings are as old as their file, so a device that was
+            // edited later, anywhere, outranks them, and a fresh install's defaults never do.
+            ledger.reconcile(settings, at: store.settingsModified ?? .distantPast)
+        }
+        store.saveLedger(ledger)
+        syncFile = SyncFile.stored()
+        syncFileName = syncFile?.name
+        syncStatus = syncFile == nil ? .off : .idle(nil)
         rearrange()
     }
 
@@ -305,6 +340,107 @@ final class AppModel {
         }
     }
 
+    // MARK: Sync between devices
+
+    /// What the "create the sync file" dialog saves: everything, as it is now.
+    func initialSyncData() -> Data {
+        var doc = ledger
+        doc.history = history
+        return (try? doc.encoded()) ?? Data()
+    }
+
+    /// Use this file from now on, and merge what is in it with what is here: nothing
+    /// is replaced, so a second device that joins a file loses nothing of its own.
+    func adoptSyncFile(_ url: URL) async {
+        guard let file = SyncFile.adopt(url) else {
+            syncStatus = .problem("That file could not be used for syncing.")
+            return
+        }
+        syncFile = file
+        syncFileName = file.name
+        await syncNow(rearrange: true)
+    }
+
+    func stopSyncing() {
+        settingsSyncTask?.cancel()
+        historySyncTask?.cancel()
+        SyncFile.forget()
+        syncFile = nil
+        syncFileName = nil
+        syncStatus = .off
+    }
+
+    private func syncSoon(after seconds: Double) {
+        guard syncFile != nil else { return }
+        settingsSyncTask?.cancel()
+        settingsSyncTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled else { return }
+            await self?.syncNow()
+        }
+    }
+
+    private func syncHistorySoon(after seconds: Double) {
+        guard syncFile != nil else { return }
+        historySyncTask?.cancel()
+        historySyncTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled else { return }
+            await self?.syncNow()
+        }
+    }
+
+    /// Read the shared file, merge it with this device's decisions, apply what is new
+    /// here and write the result back if it differs. `rearrange` re-sorts the feed
+    /// into new, earlier and read, which is only done when the user has just come back.
+    func syncNow(rearrange sort: Bool = false) async {
+        guard let file = syncFile, !syncing else { return }
+        syncing = true
+        syncStatus = .syncing
+        defer { syncing = false }
+
+        let outcome = await Task.detached(priority: .utility) { file.read() }.value
+        if let problem = outcome.problem {
+            syncStatus = .problem(problem.message)
+            return
+        }
+
+        // Merge against the state as it is now: the user may have edited while the file was read.
+        ledger.reconcile(settings, at: Date())
+        var merged = ledger
+        for doc in [outcome.main].compactMap({ $0 }) + outcome.conflicts { merged = merged.merged(with: doc) }
+        var mergedHistory = history.merged(with: merged.history)
+        mergedHistory.prune(now: Date())
+
+        // What goes back into the file. The record kept here holds settings only; history is its own file.
+        var document = merged
+        document.history = mergedHistory
+        merged.history = History()
+        // Record first, then apply: settings that came from the other device are then
+        // already in the record and are not stamped as edits made here.
+        let newSettings = merged.apply(to: settings)
+        ledger = merged
+        store.saveLedger(ledger)
+        if newSettings != settings {
+            applyingSync = true
+            settings = newSettings        // saves, and asks for a refresh if a follow changed
+            applyingSync = false
+        }
+        if mergedHistory != history {
+            history = mergedHistory
+            store.saveHistory(history)
+            if sort { rearrange() }
+        }
+
+        if outcome.main != document || outcome.hadConflictVersions {
+            guard let data = try? document.encoded() else { syncStatus = .problem("Could not prepare the sync file."); return }
+            let conflicts = outcome.hadConflictVersions
+            let wrote = await Task.detached(priority: .utility) { file.write(data, resolvingConflicts: conflicts) }.value
+            if !wrote { syncStatus = .problem("The sync file could not be written. It will be tried again."); return }
+        }
+        syncStatus = .idle(Date())
+    }
+
     // MARK: What the user does with a paper
 
     func status(of p: Paper) -> History.Status { history.status(of: p.dedupeKey) }
@@ -314,12 +450,15 @@ final class AppModel {
     func markSeen(_ p: Paper) {
         history.markSeen(p.dedupeKey, at: Date())
         saveHistorySoon()
+        // Scrolling changes history all the time; the file is only rewritten now and then.
+        syncHistorySoon(after: 45)
     }
 
     /// Opened the paper or read its abstract in full.
     func markOpened(_ p: Paper) {
         history.markOpened(p, at: Date())
         saveHistoryNow()
+        syncHistorySoon(after: 8)
     }
 
     private func saveHistorySoon() {

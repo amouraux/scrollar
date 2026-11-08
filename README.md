@@ -55,6 +55,32 @@ the article it became, the same title and first author within eighteen months.
 The article, then the OpenAlex copy, is the base, so ids and the DOI history is
 keyed on do not change when a preprint is published.
 
+## Sync between devices
+
+One JSON file, chosen once on each device (Tune, Sync between devices), in iCloud Drive.
+`Core/Sync.swift` is the whole idea and is tested without a cloud; `App/SyncFile.swift`
+is only the file (a bookmark, file coordination, iCloud placeholders, conflict versions).
+
+The unit is a decision: "follow this journal", "save this paper", "daily window = 14".
+Each is an entry with the time of its last change and whether it is still there (a
+removal is a tombstone, or the other device would put it back). Two files merge entry by
+entry, the later change winning, so edits to different things never conflict. Seen and
+read only move forward (read beats seen, earliest first sighting, latest last sighting),
+so history merges with no conflicts at all.
+
+Shared: follows, mutes, keywords, tracked papers, every setting, saved and hidden
+papers, what has been seen and read. Not shared: the OpenAlex key, and the feed, summaries
+and embeddings, which each device rebuilds.
+
+How it behaves: the ledger of local decisions (`sync-ledger.json`) is kept beside the
+settings; settings that arrive from the other device are recorded before they are applied,
+so they are never mistaken for edits made here. A first run stamps existing settings with
+the time of the settings file, so a fresh install's defaults never outrank an edited
+device. The file is read at launch and on returning to the app, and written a few
+seconds after a settings change (a minute after reading, so scrolling does not rewrite
+it). A file written by a newer version is neither read nor written, and a file that is
+not a sync file is never overwritten.
+
 ## Key
 
 OpenAlex needs a free key (<https://openalex.org/settings/api>). Copy

@@ -23,7 +23,11 @@ struct ScrollarApp: App {
                     .tag(Tab.settings)
             }
             .environment(model)
-            .task { await model.refreshIfStale() }
+            .task {
+                // The other device's follows come first, so the refresh builds for them.
+                await model.syncNow(rearrange: true)
+                await model.refreshIfStale()
+            }
             #if targetEnvironment(macCatalyst)
             // A window that is too small to hold a post is no use; keep it readable.
             .onAppear {
@@ -34,10 +38,18 @@ struct ScrollarApp: App {
             #endif
             // What has been seen is written out when the app leaves the screen.
             .onChange(of: scenePhase) { _, new in
-                if new != .active { model.saveHistoryNow() }
-                // The app is often resumed, not launched: a feed more than six hours
-                // old is refreshed then too, behind the "new papers" pill.
-                if new == .active { Task { await model.refreshIfStale() } }
+                if new != .active {
+                    model.saveHistoryNow()
+                    Task { await model.syncNow() }
+                }
+                // The app is often resumed, not launched: the other device is read, and a
+                // feed more than six hours old is refreshed, behind the "new papers" pill.
+                if new == .active {
+                    Task {
+                        await model.syncNow(rearrange: true)
+                        await model.refreshIfStale()
+                    }
+                }
             }
             // Changes made in Tune are applied when the user goes back to the feed,
             // not on every tap.

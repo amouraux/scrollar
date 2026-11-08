@@ -61,6 +61,7 @@ struct Store {
     private var settingsURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("settings.json") }
     private var feedURL: URL { folder(.cachesDirectory).appendingPathComponent("feed.json") }
     private var historyURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("history.json") }
+    private var ledgerURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("sync-ledger.json") }
     private var summariesURL: URL { folder(.cachesDirectory).appendingPathComponent("summaries.json") }
     private var embeddingsURL: URL { folder(.cachesDirectory).appendingPathComponent("embeddings.plist") }
 
@@ -126,6 +127,23 @@ struct Store {
 
     func saveSummaries(_ summaries: [String: String]) {
         if let data = try? JSONEncoder().encode(summaries) { try? data.write(to: summariesURL, options: .atomic) }
+    }
+
+    /// When the settings were last written: the best guess at when the user last changed
+    /// anything, which a first sync stamps the existing settings with.
+    var settingsModified: Date? {
+        (try? fm.attributesOfItem(atPath: settingsURL.path))?[.modificationDate] as? Date
+    }
+
+    /// What this device has decided, and when, for syncing. Without it a restart would
+    /// forget which changes were made here and which came from elsewhere.
+    func loadLedger() -> SyncDocument? {
+        guard let data = try? Data(contentsOf: ledgerURL), case .document(let doc) = SyncDocument.read(data) else { return nil }
+        return doc
+    }
+
+    func saveLedger(_ ledger: SyncDocument) {
+        if let data = try? ledger.encoded() { try? data.write(to: ledgerURL, options: .atomic) }
     }
 
     func loadEmbeddings() -> Data? { try? Data(contentsOf: embeddingsURL) }

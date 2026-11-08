@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 extension PaperKind {
     var pickerTitle: String {
@@ -27,6 +28,8 @@ extension Weight {
 struct SettingsView: View {
     @Environment(AppModel.self) private var appModel
     @AppStorage("showCovers") private var showCovers = true
+    @State private var creatingSyncFile = false
+    @State private var joiningSyncFile = false
 
     var body: some View {
         @Bindable var model = appModel
@@ -171,6 +174,25 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    if let name = model.syncFileName {
+                        LabeledContent("File", value: name)
+                        LabeledContent("Status", value: syncStatusText)
+                        Button("Sync now") { Task { await model.syncNow(rearrange: true) } }
+                        Button("Stop syncing", role: .destructive) { model.stopSyncing() }
+                    } else {
+                        Button("Start syncing, creating the file…") { creatingSyncFile = true }
+                        Button("Join a file made on another device…") { joiningSyncFile = true }
+                    }
+                    if case .problem(let message) = model.syncStatus {
+                        Text(message).font(.footnote).foregroundStyle(.orange)
+                    }
+                } header: {
+                    Text("Sync between devices")
+                } footer: {
+                    Text("Make the file in iCloud Drive on one device, then on each other device join that same file. Follows, mutes, keywords, sliders, saved and hidden papers and what you have read are shared and merged, so nothing is lost if you change things on two devices. The OpenAlex key and the feed itself stay on each device.")
+                }
+
+                Section {
                     Toggle("Europe PMC and PubMed", isOn: $model.settings.useEuropePMC)
                     Toggle("OpenAlex", isOn: $model.settings.useOpenAlex)
                     if model.settings.useOpenAlex {
@@ -186,6 +208,14 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Tune")
+            .fileExporter(isPresented: $creatingSyncFile,
+                          document: SyncFileDocument(data: creatingSyncFile ? model.initialSyncData() : Data()),
+                          contentType: .json, defaultFilename: "Scrollar sync") { result in
+                if case .success(let url) = result { Task { await model.adoptSyncFile(url) } }
+            }
+            .fileImporter(isPresented: $joiningSyncFile, allowedContentTypes: [.json]) { result in
+                if case .success(let url) = result { Task { await model.adoptSyncFile(url) } }
+            }
         }
     }
 
@@ -195,6 +225,15 @@ struct SettingsView: View {
             EntityListView(title: title, kind: kind, items: items, byName: byName)
         } label: {
             LabeledContent(title, value: count(items.wrappedValue.count))
+        }
+    }
+
+    private var syncStatusText: String {
+        switch appModel.syncStatus {
+        case .off: return "Off"
+        case .syncing: return "Syncing…"
+        case .idle(let date): return date.map { "Synced " + $0.formatted(.relative(presentation: .named)) } ?? "Ready"
+        case .problem: return "Problem"
         }
     }
 

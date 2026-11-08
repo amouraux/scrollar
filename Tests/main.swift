@@ -667,5 +667,88 @@ check(FeedBuilder.seeds(FeedSettings(), myTopics: [Entity(id: "mesh:Pain", name:
 var mutedByName = FeedSettings(); mutedByName.mutedJournals = [Entity(id: "name:Pain", name: "Pain")]
 check(FeedBuilder.keep([fromEPMC, Paper(id: "z", title: "Other", journal: "Brain", date: "2026-10-05")], settings: mutedByName).map(\.id) == ["z"], "a journal muted by name is muted by name")
 
+// MARK: sync between devices
+func at(_ minutes: Double) -> Date { t0.addingTimeInterval(minutes * 60) }
+func device(_ settings: FeedSettings, stamp: Date = .distantPast) -> SyncDocument {
+    var d = SyncDocument(); d.reconcile(settings, at: stamp); return d
+}
+func journal(_ id: String) -> Entity { Entity(id: id, name: "Journal \(id)") }
+
+// Two devices each follow a different journal: both are followed on both.
+var phone = FeedSettings(); phone.followedJournals = [journal("S1")]
+var mac = FeedSettings(); mac.followedJournals = [journal("S2")]
+let phoneDoc = device(phone, stamp: at(1)), macDoc = device(mac, stamp: at(2))
+let together = phoneDoc.merged(with: macDoc)
+check(Set(together.apply(to: phone).followedJournals.map(\.id)) == ["S1", "S2"], "sync: different follows on two devices are both kept")
+check(phoneDoc.merged(with: macDoc) == macDoc.merged(with: phoneDoc), "sync: merging is the same whichever file is read first")
+check(together.merged(with: macDoc) == together && together.merged(with: together) == together, "sync: merging again changes nothing")
+check(together.apply(to: phone).followedJournals.map(\.id).first == "S1", "sync: what a device already had keeps its place, what is new follows")
+
+// A removal on one device beats an older copy on the other, and a later re-add beats the removal.
+var phoneAfter = phone; phoneAfter.followedJournals = []
+var phoneLedger = phoneDoc; phoneLedger.reconcile(phoneAfter, at: at(10))
+check(phoneLedger.entries["e/followedJournals/S1"]?.present == false, "sync: a removal is recorded as a tombstone")
+let afterRemoval = phoneLedger.merged(with: phoneDoc)
+check(afterRemoval.apply(to: phone).followedJournals.isEmpty, "sync: the removal wins over the older copy")
+var readded = phoneLedger; readded.reconcile(phone, at: at(20))
+check(readded.merged(with: phoneLedger).apply(to: phoneAfter).followedJournals.map(\.id) == ["S1"], "sync: following it again later brings it back")
+
+// Defaults on a new device never outrank another device's edit.
+var editedSettings = FeedSettings(); editedSettings.daysBack = 14; editedSettings.byline = .both
+let newInstall = device(FeedSettings())                    // a new install: stamped as the oldest
+let editedDoc = device(editedSettings, stamp: at(5))
+let adopted = newInstall.merged(with: editedDoc).apply(to: FeedSettings())
+check(adopted.daysBack == 14 && adopted.byline == .both, "sync: a new device takes the settings of the one that was edited")
+check(editedDoc.merged(with: newInstall).apply(to: editedSettings).daysBack == 14, "sync: and the edited device is not reset by it")
+
+// Scalars: the later change wins.
+var phoneEdit = editedSettings; phoneEdit.daysBack = 7
+var macEdit = editedSettings; macEdit.daysBack = 60
+var pl = editedDoc; pl.reconcile(phoneEdit, at: at(30))
+var ml = editedDoc; ml.reconcile(macEdit, at: at(40))
+check(pl.merged(with: ml).apply(to: editedSettings).daysBack == 60 && ml.merged(with: pl).apply(to: editedSettings).daysBack == 60, "sync: the later change to one setting wins on both devices")
+
+// Saved, hidden, muted words, keywords.
+var devA = FeedSettings(); devA.feedback.save(ok("sv1") { $0.doi = "10.1/saved" }); devA.feedback.hide(ok("hd1") { $0.doi = "10.1/hidden" })
+devA.mutedKeywords = ["homeopathy"]; devA.followedKeywords = [KeywordRule(phrase: "tactile", alsoRequire: ["EEG"], exclude: [])]
+var devB = FeedSettings()
+let arrived = device(devA, stamp: at(1)).merged(with: device(devB)).apply(to: devB)
+check(arrived.feedback.saved.map(\.id) == ["doi:10.1/saved"] && arrived.feedback.hidden == ["doi:10.1/hidden"], "sync: saved and hidden papers travel")
+check(arrived.mutedKeywords == ["homeopathy"] && arrived.followedKeywords.first?.alsoRequire == ["EEG"], "sync: muted words and a keyword's own conditions travel")
+var unsaved = device(devA, stamp: at(1)); var aNo = devA; aNo.feedback.unsave(ok("sv1") { $0.doi = "10.1/saved" }); unsaved.reconcile(aNo, at: at(9))
+check(unsaved.merged(with: device(devA, stamp: at(1))).apply(to: devA).feedback.saved.isEmpty, "sync: unsaving on one device unsaves on the other")
+
+// Seen and read only move forward.
+let seenOnly = PaperState(firstSeen: at(5), lastSeen: at(6), seenCount: 2, opened: nil, snapshot: nil)
+let readLater = PaperState(firstSeen: at(8), lastSeen: at(20), seenCount: 5, opened: at(19), snapshot: SavedPaper(ok("rd")))
+let mergedState = PaperState.merge(seenOnly, readLater)
+check(mergedState.opened == at(19) && mergedState.firstSeen == at(5) && mergedState.lastSeen == at(20) && mergedState.seenCount == 5, "sync: seen on one, read on the other is read, first seen earliest")
+check(PaperState.merge(seenOnly, readLater) == PaperState.merge(readLater, seenOnly) && PaperState.merge(mergedState, mergedState) == mergedState, "sync: history merging is symmetric and does not inflate")
+var h1 = SyncDocument(); h1.history.states["k"] = seenOnly
+var h2 = SyncDocument(); h2.history.states["k"] = readLater; h2.history.states["z"] = seenOnly
+check(h1.merged(with: h2).history.status(of: "k") == .read && h1.merged(with: h2).history.states.count == 2, "sync: history is merged paper by paper")
+
+// The file.
+let wire = try! together.encoded()
+check(SyncDocument.read(wire) == .document(together), "sync file: a document survives a round trip, milliseconds and all")
+check(SyncDocument.read(Data()) == .empty && SyncDocument.read(Data("  \n".utf8)) == .empty, "sync file: a new empty file is empty, not unreadable")
+check(SyncDocument.read(Data("{\"settings\": 3}".utf8)) == .unreadable && SyncDocument.read(Data("not json".utf8)) == .unreadable, "sync file: something else is unreadable, so it is never overwritten")
+check(SyncDocument.read(Data("{\"format\": 99, \"entries\": {}}".utf8)) == .newerFormat(99), "sync file: a newer format is not touched")
+check({ if case .document = SyncDocument.read(Data("{\"format\": 1, \"entries\": {}, \"somethingNew\": 1}".utf8)) { return true } else { return false } }(), "sync file: unknown extra fields are ignored")
+var millis = SyncDocument(); millis.entries["x"] = SyncEntry(at: Date(timeIntervalSince1970: 1_800_000_000.123), present: true, value: nil)
+check({ if case .document(let d) = SyncDocument.read(try! millis.encoded()) { return d.entries["x"]?.at == millis.entries["x"]?.at } else { return false } }(), "sync file: timestamps keep their milliseconds")
+check(SyncEntry.later(SyncEntry(at: at(1), present: true, value: "a"), SyncEntry(at: at(1), present: false, value: nil)).present, "sync: a tie between a change and a removal is settled the same way everywhere")
+
+// Applying what came from elsewhere must not look like a local edit.
+var ledger = device(phone, stamp: at(1)); let merged2 = ledger.merged(with: macDoc)
+let applied = merged2.apply(to: phone)
+var after = merged2; after.reconcile(applied, at: at(99))
+check(after == merged2, "sync: settings applied from the merge are already in the record, so they are not stamped as new edits")
+ledger.reconcile(phone, at: at(50))
+check(ledger == device(phone, stamp: at(1)), "sync: reconciling unchanged settings changes nothing")
+check(SyncProjection.items(of: FeedSettings()).keys.contains("v/orcid") && (try? FeedSettings.decode(Data("{}".utf8))) != nil, "sync: every scalar setting is covered")
+var every = FeedSettings(); every.orcid = "0000-0001-2345-6789"; every.languages = ["en", "fr"]; every.kindWeights = ["caseReport": .hide]; every.impactWeight = 0.7; every.authorWeight = 0.3; every.byline = .first
+check(device(every, stamp: at(1)).apply(to: FeedSettings()) == every, "sync: every kind of setting survives the record and back")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)
