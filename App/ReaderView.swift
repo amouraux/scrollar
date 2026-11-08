@@ -263,11 +263,8 @@ private struct PaperReader: View {
                     model.markOpened(paper)
                     openURL(url)
                 }
-                ShareLink(item: url, subject: Text(paper.title)) {
-                    actionLabel("Share", "square.and.arrow.up")
-                }
-                .buttonStyle(.plain)
             }
+            ShareMenu(paper: paper) { actionLabel("Share", "square.and.arrow.up") }
         }
     }
 

@@ -131,12 +131,19 @@ struct SavedPaper: Codable, Hashable {
     var title: String
     var abstract: String?
     var date: String
+    /// What a reference manager needs and a saved paper used to drop. Optional, so entries saved
+    /// before these existed still load, sync and export (with what they have). An older app that
+    /// reads one simply ignores them.
+    var authors: [String]?
+    var journal: String?
 
     init(_ p: Paper) {
         id = p.dedupeKey
         title = p.title
         abstract = p.abstract
         date = p.date
+        authors = p.authors.isEmpty ? nil : p.authors
+        journal = p.journal
     }
 }
 

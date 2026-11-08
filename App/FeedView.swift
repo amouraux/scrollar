@@ -678,11 +678,8 @@ struct PaperCard: View {
                     model.markOpened(paper)
                     openURL(url)
                 }
-                ShareLink(item: url, subject: Text(paper.title)) {
-                    barLabel("Share", "square.and.arrow.up")
-                }
-                .buttonStyle(.plain)
             }
+            ShareMenu(paper: paper) { barLabel("Share", "square.and.arrow.up") }
         }
     }
 

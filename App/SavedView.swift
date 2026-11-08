@@ -21,6 +21,21 @@ struct SavedView: View {
                 }
             }
             .navigationTitle(list.rawValue)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { exportButton } }
+        }
+    }
+
+    /// Every paper on the list as one `.ris` file for a reference manager. Papers saved before
+    /// authors were kept are filled in from the feed where it still holds them.
+    @ViewBuilder private var exportButton: some View {
+        let items = list == .saved ? model.settings.feedback.saved : model.history.read.map(\.paper)
+        if !items.isEmpty {
+            let layout = model.layout
+            let name = list == .saved ? "Scrollar saved papers.ris" : "Scrollar read papers.ris"
+            ShareLink(item: ReferenceFile(name: name, make: { RIS.references(items, known: layout.all.map(\.paper)) }),
+                      preview: SharePreview(name, image: Image(systemName: "books.vertical"))) {
+                Label("Export for a reference manager", systemImage: "square.and.arrow.up")
+            }
         }
     }
 

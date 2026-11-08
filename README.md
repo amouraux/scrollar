@@ -294,6 +294,31 @@ have no link until the next full build (every three days, or when a follow chang
 in memory only while that paper is open and is not saved. There is no pane on a phone, so there is no
 PDF view there; Open still sends it to the browser.
 
+## Reference managers
+
+Share on a post or in the pane is a menu: **Share link**, or **Share reference (.ris)**. The second
+sends a `.ris` file (named for who, when and what: `Legrain-2026-Cortical-gamma-responses.ris`),
+which Zotero, EndNote, Mendeley, Papers and Citavi all import; from the share sheet that is Save to
+Files, or Open in the manager's own app. RIS is the one format all of them read, which is why this
+needs no account, key or network, and nothing is sent anywhere by Scrollar itself. The file is made at
+the moment of sharing (`ReferenceFile`), not when the button is drawn.
+
+The record (`Core/RIS.swift`, tested) has the type (journal article, or conference paper), authors as
+"Last, First", title, journal, year and date, abstract, DOI, PMID, the link, the topics as keywords
+and the language, one value per line with CRLF line ends. Names arrive two ways, "Valéry Legrain"
+(OpenAlex) and "Legrain V" (Europe PMC: surname, then initials); both are read, and a particle stays
+with the surname ("van der Berg, Ludwig"). It is a guess for names that follow no pattern, and the
+manager lets the user correct one. A preprint is written as a journal article with the server as
+the journal, because RIS has no preprint type that every manager reads.
+
+Saved and Read each have an **Export** button for the whole list. A paper saved before authors and
+the journal were kept (`SavedPaper.authors`, `.journal`, optional, so older entries and older apps
+are unaffected) has only a title, abstract, date and DOI; the export fills the rest from the feed
+where the paper is still held, and otherwise leaves them out. Papers saved from now on keep them.
+The EndNote desktop app and the mobile apps open the file by tapping it; I could not test any of the
+managers here (the simulator has none), only the file itself, which is checked in `Tests/main.swift`
+and by reading what the app wrote.
+
 ## Tune
 
 Everything the user can enter is in `Core/Settings.swift`, with what each does: ORCID, up to three others to learn from, and whether
