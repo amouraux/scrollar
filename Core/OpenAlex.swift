@@ -170,7 +170,8 @@ private struct WorkDTO: Decodable {
 
     struct Location: Decodable { let source: Source? }
     struct Source: Decodable { let id: String?; let display_name: String?; let type: String? }
-    struct Authorship: Decodable { let author: Author? }
+    struct Authorship: Decodable { let author: Author?; let institutions: [Institution]? }
+    struct Institution: Decodable { let display_name: String? }
     struct Author: Decodable { let id: String?; let display_name: String? }
     struct IDs: Decodable { let pmid: String? }
     struct Topic: Decodable { let id: String?; let display_name: String? }
@@ -193,6 +194,8 @@ private struct WorkDTO: Decodable {
             date: publication_date,
             authors: (authorships ?? []).compactMap { $0.author?.display_name },
             authorIDs: (authorships ?? []).compactMap { $0.author?.id }.map(Identifiers.openAlexID),
+            firstInstitution: authorships?.first?.institutions?.first?.display_name,
+            lastInstitution: authorships?.last?.institutions?.first?.display_name,
             citedBy: cited_by_count ?? 0,
             topics: (topics ?? []).compactMap(\.display_name),
             topicIDs: (topics ?? []).compactMap(\.id).map(Identifiers.openAlexID),

@@ -48,6 +48,10 @@ struct Paper: Hashable, Codable {
     var date: String
     var authors: [String] = []
     var authorIDs: [String] = []
+    /// The institution OpenAlex lists for the first and for the last author.
+    /// Optional, so a feed cached before these existed still loads.
+    var firstInstitution: String? = nil
+    var lastInstitution: String? = nil
     var citedBy = 0
     var topics: [String] = []
     /// Short OpenAlex ids. Names can be spelled two ways; muting needs the id.
@@ -116,6 +120,8 @@ enum Merge {
             if kept.abstract == nil { kept.abstract = p.abstract }
             if kept.pmid == nil { kept.pmid = p.pmid }
             if kept.doi == nil { kept.doi = p.doi }
+            if kept.firstInstitution == nil { kept.firstInstitution = p.firstInstitution }
+            if kept.lastInstitution == nil { kept.lastInstitution = p.lastInstitution }
             byKey[key] = kept
         }
         return order.compactMap { byKey[$0] }

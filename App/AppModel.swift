@@ -279,11 +279,39 @@ final class AppModel {
 
     func hide(_ p: Paper) {
         settings.feedback.hide(p)
-        let key = p.dedupeKey
+        dropExcluded()
+    }
+
+    /// "Show less from…": mute the paper's journal, an author or a topic. The
+    /// feed is fetched again for it later; until then it is only taken off the screen.
+    func muteJournal(of p: Paper) {
+        guard let id = p.journalID, let name = p.journal,
+              !settings.mutedJournals.contains(where: { $0.id == id }) else { return }
+        settings.mutedJournals.append(Entity(id: id, name: name))
+        dropExcluded()
+    }
+
+    func muteAuthor(id: String, name: String) {
+        guard !settings.mutedAuthors.contains(where: { $0.id == id }) else { return }
+        settings.mutedAuthors.append(Entity(id: id, name: name))
+        dropExcluded()
+    }
+
+    func muteTopic(id: String, name: String) {
+        guard !settings.mutedTopics.contains(where: { $0.id == id }) else { return }
+        settings.mutedTopics.append(Entity(id: id, name: name))
+        dropExcluded()
+    }
+
+    /// Take from the screen whatever the settings now exclude, using the same
+    /// rule as a rebuild so the two cannot disagree.
+    private func dropExcluded() {
+        let settings = self.settings
         func drop(_ a: inout Arranged) {
-            a.fresh.removeAll { $0.paper.dedupeKey == key }
-            a.earlier.removeAll { $0.paper.dedupeKey == key }
-            a.read.removeAll { $0.paper.dedupeKey == key }
+            func kept(_ r: RankedPaper) -> Bool { !FeedBuilder.keep([r.paper], settings: settings).isEmpty }
+            a.fresh.removeAll { !kept($0) }
+            a.earlier.removeAll { !kept($0) }
+            a.read.removeAll { !kept($0) }
         }
         drop(&layout.citedYou)
         drop(&layout.forYou)

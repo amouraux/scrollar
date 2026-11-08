@@ -441,5 +441,27 @@ check(clipped.count <= 81 && clipped.hasSuffix("…") && !clipped.contains("  ")
 check(Summary.clip("short one", to: 80) == "short one", "a short sentence is not clipped")
 check(Summary.sentence(from: "Fig. 2 shows e.g. the mean of 3.5 units. We found that cold relieved pain significantly in treated mice.")?.hasPrefix("We found") == true, "abbreviations and decimals do not split a sentence")
 
+
+// MARK: byline
+check(Byline.initials("Valéry Legrain") == "VL", "initials: first and last name")
+check(Byline.initials("Ludwig van der Berg") == "LB", "initials: particles are skipped by taking the last word")
+check(Byline.initials("Jean-Pierre Dupont") == "JD", "initials: a hyphenated first name gives one letter")
+check(Byline.initials("Madonna") == "MA", "initials: a single name gives two letters")
+check(Byline.initials("") == "?", "initials: no name, no letters")
+check(Byline.hue(for: "Valéry Legrain") == Byline.hue(for: "valéry legrain"), "the colour does not depend on case")
+check(Byline.hue(for: "Valéry Legrain") != Byline.hue(for: "André Mouraux"), "two people get different colours")
+let bylined = ok("by1") { $0.authors = ["Ada First", "Mid Author", "Zoe Last"]; $0.firstInstitution = "Ghent University"; $0.lastInstitution = "UCLouvain" }
+check(Byline.of(bylined, choice: .last)?.name == "Zoe Last" && Byline.of(bylined, choice: .last)?.institution == "UCLouvain", "last author leads with their own institution")
+check(Byline.of(bylined, choice: .first)?.name == "Ada First" && Byline.of(bylined, choice: .first)?.institution == "Ghent University", "first author leads with their own institution")
+check(Byline.of(ok("by2") { $0.authors = [] }, choice: .last) == nil, "a paper with no authors has no byline")
+let withInstitution = ok("by3") { $0.firstInstitution = "X" }
+let withoutInstitution = ok("by3")
+check(Merge.combine([withoutInstitution, withInstitution]).first?.firstInstitution == "X", "an institution one copy lacks is filled from the other")
+let staleCache = PreviousFeed(papers: [ok("old")], fetchedThrough: tNow.addingTimeInterval(-day), fullBuildAt: tNow.addingTimeInterval(-day), builtWith: baseSettings.withoutFeedback)
+check(!Incremental.mode(previous: staleCache, settings: baseSettings, now: tNow).isIncremental, "papers cached without institutions are rebuilt once")
+var freshCache = staleCache
+freshCache.papers = [ok("new") { $0.lastInstitution = "UCLouvain" }]
+check(Incremental.mode(previous: freshCache, settings: baseSettings, now: tNow).isIncremental, "and an up-to-date cache is not")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

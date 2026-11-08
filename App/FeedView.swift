@@ -152,62 +152,95 @@ private struct StatusBanner: View {
     }
 }
 
-/// A small picture made from the paper's topic: always there, offline, and nobody's figure.
-struct CoverView: View {
+/// The round badge at the head of a post: the lead author's initials. There is
+/// no photograph to show (see `Byline`), so the colour does the recognising.
+struct BylineBadge: View {
+    @Environment(\.colorScheme) private var scheme
+    let initials: String
+    let hue: Double
+    var size: CGFloat = 44
+
+    var body: some View {
+        Text(initials)
+            .font(.system(size: size * 0.38, weight: .semibold, design: .rounded))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(Color(hue: hue, saturation: 0.55, brightness: scheme == .dark ? 0.50 : 0.58), in: Circle())
+            .accessibilityHidden(true)
+    }
+}
+
+/// The post's picture. For now this is made from the paper's topic and not
+/// fetched: it needs no network, works offline and raises no question about
+/// whose figure it is. A real figure would go in the same place.
+struct CoverBanner: View {
     @Environment(\.colorScheme) private var scheme
     let paper: Paper
-    var size: CGFloat = 56
 
     var body: some View {
         let spec = Cover.spec(for: paper)
-        let brightness = scheme == .dark ? 0.50 : 0.88
-        ZStack {
+        // Dark enough that the white label stays readable on every hue.
+        let top = scheme == .dark ? 0.45 : 0.56
+        ZStack(alignment: .bottomLeading) {
             LinearGradient(
-                colors: [Color(hue: spec.hueA, saturation: 0.55, brightness: brightness),
-                         Color(hue: spec.hueB, saturation: 0.55, brightness: brightness - 0.14)],
+                colors: [Color(hue: spec.hueA, saturation: 0.6, brightness: top),
+                         Color(hue: spec.hueB, saturation: 0.6, brightness: top - 0.14)],
                 startPoint: .topLeading, endPoint: .bottomTrailing)
             Image(systemName: spec.symbol)
-                .font(.system(size: size * 0.42, weight: .regular))
-                .foregroundStyle(.white.opacity(0.9))
+                .font(.system(size: 46))
+                .foregroundStyle(.white.opacity(0.30))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                .padding(.trailing, 18)
+            if let topic = paper.topics.first {
+                Text(topic)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .padding(12)
+            }
         }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.22))
+        .frame(height: 84)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .accessibilityHidden(true)
     }
 }
 
-/// A row in the stream: thumbnail, title, where and when, and one sentence. A tap
-/// opens it to the full abstract and the actions, so the stream itself stays dense
-/// enough to skim several papers to a screen.
+/// A post in the stream, laid out like one on LinkedIn: who (a badge, a name,
+/// where they work, where it was published), then what (the title and one line
+/// of the abstract), then a picture, then buttons to tell the feed what you
+/// think. A tap on the text opens the full abstract in place.
 struct PaperCard: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
+    @AppStorage("byline") private var bylineRaw = BylineChoice.last.rawValue
+    @AppStorage("showCovers") private var showCovers = true
     let ranked: RankedPaper
     @State private var expanded = false
     @State private var seenTimer: Task<Void, Never>?
 
     private var paper: Paper { ranked.paper }
     private var status: History.Status { model.status(of: paper) }
+    private var choice: BylineChoice { BylineChoice(rawValue: bylineRaw) ?? .last }
+    private var byline: Byline? { Byline.of(paper, choice: choice) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 8) {
-                Button(action: toggle) { row }
-                    .buttonStyle(.plain)
-                    .accessibilityHint(expanded ? "Hides the abstract" : "Shows the abstract")
-                Button {
-                    model.toggleSaved(paper)
-                } label: {
-                    Image(systemName: model.isSaved(paper) ? "bookmark.fill" : "bookmark")
-                        .font(.body)
-                        .frame(width: 32, height: 32)
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel(model.isSaved(paper) ? "Remove from saved" : "Save")
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            Button(action: toggle) { post }
+                .buttonStyle(.plain)
+                .accessibilityHint(expanded ? "Hides the abstract" : "Shows the abstract")
+            // Out of the way once the reader is into the abstract.
+            if showCovers && !expanded {
+                CoverBanner(paper: paper)
+                    .onTapGesture(perform: toggle)
             }
-            if expanded { details.padding(.top, 10).transition(.opacity) }
+            if expanded { details.transition(.opacity) }
+            Divider()
+            actionBar
         }
-        .padding(12)
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -231,58 +264,105 @@ struct PaperCard: View {
         if expanded { model.markOpened(paper) }
     }
 
-    // MARK: Collapsed
+    // MARK: Header
 
-    private var row: some View {
-        HStack(alignment: .top, spacing: 12) {
-            CoverView(paper: paper)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(paper.title)
-                    .font(.subheadline.weight(.semibold))
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(expanded ? nil : 2)
-                    .fixedSize(horizontal: false, vertical: true)
-                meta
-                if !expanded, let line = Summary.sentence(from: paper.abstract, maxLength: 150) {
-                    Text(line)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.leading)
-                        .lineLimit(2)
-                }
+    private var header: some View {
+        HStack(alignment: .center, spacing: 10) {
+            if let byline {
+                BylineBadge(initials: byline.initials, hue: byline.hue)
+            } else {
+                BylineBadge(initials: Byline.initials(paper.journal ?? "?"), hue: Byline.hue(for: paper.journal ?? paper.title))
             }
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(byline?.name ?? paper.journal ?? "Unknown authors")
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    statusMark
+                }
+                if let place = byline?.institution {
+                    Text(place).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Text(metaLine).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            moreMenu
         }
-        .contentShape(Rectangle())
     }
 
-    private var meta: some View {
-        HStack(spacing: 6) {
-            if status == .new {
-                Text("NEW")
-                    .font(.system(size: 9, weight: .heavy))
-                    .padding(.horizontal, 5).padding(.vertical, 2)
-                    .background(Color.accentColor, in: Capsule())
-                    .foregroundStyle(.white)
-            }
-            if status == .read {
-                Image(systemName: "checkmark").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
-            }
-            Text(metaLine)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+    @ViewBuilder private var statusMark: some View {
+        if status == .new {
+            Text("NEW")
+                .font(.system(size: 9, weight: .heavy))
+                .padding(.horizontal, 5).padding(.vertical, 2)
+                .background(Color.accentColor, in: Capsule())
+                .foregroundStyle(.white)
+        } else if status == .read {
+            Image(systemName: "checkmark").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
         }
     }
 
     private var metaLine: String {
-        var parts: [String] = []
+        // The age comes first: a long journal name is what gets cut, not the date.
+        var parts = [ageLabel(paper.date)]
         if let journal = paper.journal { parts.append(journal) }
-        parts.append(ageLabel(paper.date))
         if paper.kind != .research { parts.append(paper.kind.label) }
         return parts.joined(separator: " · ")
     }
 
-    // MARK: Expanded
+    /// Tuning the feed from the post itself: each choice mutes one thing.
+    private var moreMenu: some View {
+        Menu {
+            if paper.journalID != nil, let name = paper.journal {
+                Button("Show less from \(name)", systemImage: "newspaper") { model.muteJournal(of: paper) }
+            }
+            if let author = mutableAuthor {
+                Button("Show less from \(author.name)", systemImage: "person") {
+                    model.muteAuthor(id: author.id, name: author.name)
+                }
+            }
+            if paper.topics.count == paper.topicIDs.count, let topic = paper.topics.first, let id = paper.topicIDs.first {
+                Button("Show less about \(topic)", systemImage: "tag") { model.muteTopic(id: id, name: topic) }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .foregroundStyle(.secondary)
+        .accessibilityLabel("Show less of this")
+    }
+
+    /// The author on the badge, if their id can be told for certain. The names and
+    /// the ids are filled separately, so they are only trusted where they line up.
+    private var mutableAuthor: (id: String, name: String)? {
+        guard paper.authors.count == paper.authorIDs.count, !paper.authors.isEmpty else { return nil }
+        let index = choice == .last ? paper.authors.count - 1 : 0
+        return (paper.authorIDs[index], paper.authors[index])
+    }
+
+    // MARK: Post
+
+    private var post: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(paper.title)
+                .font(.body.weight(.semibold))
+                .multilineTextAlignment(.leading)
+                .lineLimit(expanded ? nil : 3)
+                .fixedSize(horizontal: false, vertical: true)
+            if !expanded, let line = Summary.sentence(from: paper.abstract, maxLength: 105) {
+                (Text(line) + Text(" more").foregroundStyle(.tertiary))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(3)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    // MARK: Opened
 
     private var details: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -306,7 +386,6 @@ struct PaperCard: View {
                     .font(.caption).foregroundStyle(.secondary)
                     .lineLimit(2)
             }
-            actions
         }
     }
 
@@ -316,29 +395,47 @@ struct PaperCard: View {
         return names.prefix(3).joined(separator: ", ") + " … " + (names.last ?? "")
     }
 
-    private var actions: some View {
-        HStack(spacing: 10) {
+    // MARK: Feedback
+
+    private var actionBar: some View {
+        HStack(spacing: 0) {
+            let saved = model.isSaved(paper)
+            barButton(saved ? "Saved" : "Save", saved ? "bookmark.fill" : "bookmark",
+                      hint: "Saves it, and finds more like it") {
+                model.toggleSaved(paper)
+            }
+            barButton("Not for me", "hand.thumbsdown", hint: "Hides this paper for good") {
+                withAnimation { model.hide(paper) }
+            }
             if let url = paper.link {
-                Button {
+                barButton("Open", "arrow.up.right.square", hint: "Opens the paper in your browser") {
                     model.markOpened(paper)
                     openURL(url)
-                } label: {
-                    Label("Open", systemImage: "arrow.up.right.square")
                 }
                 ShareLink(item: url, subject: Text(paper.title)) {
-                    Label("Share", systemImage: "square.and.arrow.up")
+                    barLabel("Share", "square.and.arrow.up")
                 }
+                .buttonStyle(.plain)
             }
-            Spacer()
-            Button(role: .destructive) {
-                withAnimation { model.hide(paper) }
-            } label: {
-                Label("Hide", systemImage: "eye.slash")
-            }
-            .accessibilityLabel("Hide, don't show this again")
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+    }
+
+    private func barButton(_ title: String, _ image: String, hint: String,
+                           action: @escaping () -> Void) -> some View {
+        Button(action: action) { barLabel(title, image) }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title)
+            .accessibilityHint(hint)
+    }
+
+    private func barLabel(_ title: String, _ image: String) -> some View {
+        VStack(spacing: 2) {
+            Image(systemName: image).font(.system(size: 17))
+            Text(title).font(.caption2)
+        }
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .contentShape(Rectangle())
     }
 }
 

@@ -43,6 +43,11 @@ enum Incremental {
         // Different follows or mutes make the kept papers' reasons wrong. Feedback
         // is excluded: hiding a paper is applied to the kept set, not by refetching.
         if p.builtWith != settings.withoutFeedback { return .full(reason: "settings changed") }
+        // Kept papers from before authors' institutions were recorded would show
+        // no affiliation until the next scheduled rebuild.
+        if !p.papers.isEmpty, p.papers.allSatisfy({ $0.firstInstitution == nil && $0.lastInstitution == nil }) {
+            return .full(reason: "adding authors' institutions to the cached papers")
+        }
         if now.timeIntervalSince(p.fullBuildAt) / 86_400 > fullRebuildDays {
             return .full(reason: "rebuilding everything, as every \(Int(fullRebuildDays)) days")
         }

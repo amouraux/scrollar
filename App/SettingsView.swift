@@ -26,6 +26,8 @@ extension Weight {
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var appModel
+    @AppStorage("byline") private var bylineRaw = BylineChoice.last.rawValue
+    @AppStorage("showCovers") private var showCovers = true
 
     var body: some View {
         @Bindable var model = appModel
@@ -112,6 +114,17 @@ struct SettingsView: View {
                     Text("Seen and read")
                 } footer: {
                     Text("A paper you scrolled past sinks below the new ones, then drops out. A paper you open or read in full leaves the feed and is kept under Saved, Read.")
+                }
+
+                Section {
+                    Picker("Post is headed by", selection: $bylineRaw) {
+                        ForEach(BylineChoice.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
+                    }
+                    Toggle("Show a picture on each post", isOn: $showCovers)
+                } header: {
+                    Text("Posts")
+                } footer: {
+                    Text("The badge shows the initials of that author: open scholarly data has no photographs. The picture is drawn from the paper's topic.")
                 }
 
                 Section("Content") {
