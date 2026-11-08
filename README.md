@@ -3,26 +3,44 @@
 A feed for researchers: scroll through new papers from the journals, topics,
 people and keywords you follow, ranked by how close they are to your own work.
 
-Status: prototype. An iPhone and iPad app (feed, saved papers, and a Tune screen
-for everything that shapes the feed) on top of a tested core that also runs from
-the command line.
+Status: working prototype, used daily on an iPhone. One SwiftUI app for iPhone, iPad and
+Mac (Mac Catalyst), on top of a tested core that also runs from the command line. Screens:
+Feed, Saved (and Read), and Tune, which holds everything that shapes the feed.
+
+## Commands
 
 ```sh
-Tests/run.sh                                    # pure functions, no network, no key
-./run.sh 0000-0000-0000-0000                    # ORCID in, ranked feed out (needs a key)
-./run.sh 0000-0000-0000-0000 --init-settings s.json   # write settings to edit
+Tests/run.sh                                    # the pure core: no network, no key, a second
+./run.sh 0000-0000-0000-0000                    # ORCID in, ranked feed out
+./run.sh 0000-0000-0000-0000 --init-settings s.json   # write the settings to edit
 ./run.sh --settings s.json                      # feed from a settings file
-
-# The app. The simulator destination must be generic: named devices do not resolve here.
-xcodebuild -project Scrollar.xcodeproj -scheme Scrollar \
-  -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/derived build
+# more flags: --days N  --top N  --no-embeddings  --compare  --no-openalex  --no-europepmc
 ```
 
-In a debug build the simulator can be started without typing a key:
-`SIMCTL_CHILD_SCROLLAR_OPENALEX_KEY=… SIMCTL_CHILD_SCROLLAR_ORCID=… xcrun simctl launch <device> com.andremouraux.scrollar`.
-The iOS Simulator has no Apple sentence-embedding model, so it ranks by word
-counts only and the feed says so; check embeddings on a real device or with the
-command line on a Mac.
+Build, all three; the simulator destination must be generic (named devices do not resolve):
+
+```sh
+xcodebuild -project Scrollar.xcodeproj -scheme Scrollar \
+  -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/derived build
+xcodebuild -project Scrollar.xcodeproj -scheme Scrollar \
+  -destination 'platform=macOS,variant=Mac Catalyst' -derivedDataPath .build/derived-mac \
+  -allowProvisioningUpdates DEVELOPMENT_TEAM=<your team id> build
+xcodebuild -project Scrollar.xcodeproj -scheme Scrollar -destination 'id=<iPhone UDID>' \
+  -derivedDataPath .build/derived-device -allowProvisioningUpdates DEVELOPMENT_TEAM=<your team id> build
+xcrun devicectl device install app --device <iPhone UDID> \
+  .build/derived-device/Build/Products/Debug-iphoneos/Scrollar.app
+```
+
+The project has no team set, so the team goes on the command line and nothing about signing
+is committed. `xcodebuild` can say SUCCEEDED without relinking: when a change does not show,
+compare the binary's timestamp with the edit before debugging the code.
+
+In a debug build the simulator can be started without typing anything in:
+`SIMCTL_CHILD_SCROLLAR_OPENALEX_KEY=… SIMCTL_CHILD_SCROLLAR_ORCID=… xcrun simctl launch <device> com.andremouraux.scrollar`
+(the ORCID only applies when there are no saved settings). The iOS Simulator has no Apple
+sentence-embedding model, so it ranks by word counts only and the feed says so; check
+embeddings on a real device or with the command line on a Mac. Apple's on-device language
+model (summaries) does run in the simulator, through the host Mac.
 
 ## Refreshing
 
@@ -83,27 +101,109 @@ not a sync file is never overwritten.
 
 ## Key
 
-OpenAlex needs a free key (<https://openalex.org/settings/api>). Copy
-`Secrets.example` to `Secrets.local` and put the key in it. `Secrets.local` is
-gitignored; do not compile a key into the app. In the app, each user will paste
-their own into Settings and it will live in the Keychain.
+OpenAlex is optional. For the command line, copy `Secrets.example` to `Secrets.local` and put
+a free key (<https://openalex.org/settings/api>) in it; `Secrets.local` is gitignored and was
+never committed. In the app each user pastes their own into Tune, Sources; it lives in the
+Keychain, never in the settings file, the sync file or the binary, and is sent only to
+OpenAlex. Do not compile a key in.
+
+## Ranking
+
+`Ranker.rank` scores every candidate; the constants and their reasons are in
+`Core/Ranking.swift`. In short: similarity to the user's own and saved papers (a percentile
+blend, 0.6 Apple embeddings and 0.4 word statistics, against the three nearest papers, so a
+researcher with several themes is not averaged into one) times the "stay close to my work"
+slider; a bonus for each further seed that found the paper, for citing the user's work and
+for being found by something they follow; a recency term that halves every fortnight, times
+its slider; a small penalty for repository records (not for preprints); the kind adjustment
+(case reports and conference abstracts start lowered; hide removes them before ranking); and
+two optional terms, off by default: the journal's two-year mean citedness (OpenAlex's
+open stand-in for the impact factor, which is Clarivate's) and the h-index of the first, the
+last or the higher of the two authors. Both are logarithmic, neutral for a paper with no
+figure, and capped. The three ranking sliders only reorder what is held, so moving one costs an
+incremental refresh, not a rebuild.
+
+## Reading state
+
+A post is *seen* after a second on screen and *read* when opened. The feed is sorted into new,
+earlier and read only when it is loaded or refreshed, never while scrolling, so nothing moves
+under a finger; an unrequested refresh waits behind an "N new papers" pill. Seen papers sink
+below the new ones and drop out after a week (a setting); read papers leave the feed and are
+kept under Saved, Read. `Why.main` picks the one reason shown above a post, the most
+specific choice of the user's first (a citation of their work, then a followed author,
+keyword, journal, institution, funder, then a topic).
+
+## What a post shows
+
+The journal on a coloured banner (the same colour for a journal everywhere), the reason, the
+first and/or last author with their institution, the whole title, and one or two sentences of
+what the paper shows. Those sentences are written on the device by Apple's language model where
+there is one (`App/Summarizer.swift`: on-device only, one paper at a time, started when a post
+has stayed on screen and cancelled when it leaves, cached in `summaries.json`, held to two
+sentences in code because the model sometimes writes five); otherwise they are chosen from the
+abstract's own sentences (`Summary.takeaway`), never cut mid-sentence. A model-written line is
+labelled as such when the post is opened.
+
+## Tune
+
+Everything the user can enter is in `Core/Settings.swift`, with what each does: ORCID and whether
+to learn from their papers; sources; follows (topics, journals, researchers, institutions,
+funders, keywords with their own must-also and must-not conditions) and tracked papers; mutes
+(journals, researchers, topics, words); a weight (hide, lower, normal, boost) for each kind of
+paper; look-back days; the three ranking sliders and which author counts; only papers with an
+abstract, only open access, languages; how long to keep unread papers and whether to show read
+ones; which author heads a post and whether to show the journal banner. Settings are decoded
+tolerantly: a missing, unknown or mistyped key falls back to its default and only a file that is
+not JSON fails, in which case it is copied aside and never silently replaced.
+
+## The Mac build
+
+Mac Catalyst, sandboxed (`Scrollar-Mac.entitlements`, applied to the Mac SDK only): network
+client, and user-selected read-write files with app-scoped bookmarks for the sync file. Commands:
+Cmd-R refreshes, Cmd-1/2/3 switch tabs. Its data lives in its own container, so nothing is shared
+with the phone except through sync. It builds, is signed and runs; its window has not been
+checked on screen, and saving the key to the Keychain from the sandbox is untested.
+
+## Not built, and why
+
+- **Real article figures on posts**: measured on a 1,453-paper feed, only about 3% of papers had a
+  figure that could be shown (open-access full text, large enough, CC BY or similar, no credit
+  line), under 1% if limited to graphical abstracts and schematics. Europe PMC's full text
+  failed most requests and refused its image files to scripts; the one reliable route was the
+  PMC open-access dataset on AWS. Not worth the machinery. The journal banner stays.
+- **PubMed searched directly**: Europe PMC returns the same MEDLINE records with abstracts,
+  publication types and MeSH in one request, and the preprint servers too. PubMed itself is used
+  to fill missing abstracts and types.
+- **Author photographs and institution logos**: open scholarly data has none that can be reused;
+  initials on a colour stand in.
+- **Background refresh and notifications**, a three-column layout for Mac and iPad (feed, a
+  reader pane, a sidebar of follows with counts), and Crossref or arXiv as sources for fields
+  outside biomedicine are proposed and not started.
+
+## Known gaps
+
+Citations of your work are thin without OpenAlex (Europe PMC knows far fewer). Sync has been
+checked with a local file standing in for iCloud Drive, not with iCloud itself. Pull-to-refresh once
+failed to start in the simulator and was not reproduced. The summary sentence chosen without the
+model is a heuristic and is sometimes background, not a finding.
 
 ## Layout
 
-- `Core/Model.swift`, `Seed.swift`, `Ranking.swift`: Foundation only, tested.
-- `Core/Settings.swift`, `FeedBuilder.swift`: everything the user can tune, and what it does.
-- `Core/OpenAlex.swift`, `EuropePMCClient.swift` (and ORCID), `PubMedClient.swift`, `Embedding.swift`: the network and
-  Apple's NaturalLanguage; nothing else touches either.
-- `Core/History.swift`: what was seen and read, and how a feed is sorted into new, earlier and read.
-- `Core/Incremental.swift`: refreshing by asking only for what was published since the last fetch, and keeping the rest.
-- `Core/Summary.swift`: the one sentence on a collapsed post, chosen from the abstract's own sentences.
-- `Core/Byline.swift`: who heads a post (first or last author, a setting): their name, institution, and the initials and colour of the round badge. Open scholarly data has no author photographs or reusable logos, so initials stand in.
-- `Core/Why.swift`: the one reason shown above a post (a citation of your work, a followed author or journal, a topic).
-- `Core/Cover.swift`: the generated picture on each post (colour and symbol from the topic); a real figure would go in the same place.
-- `Core/Engine.swift`: settings in, ranked feed out. The app and the command line both call it.
-- `App/`: SwiftUI. The OpenAlex key is in the Keychain, never in the settings file or the binary.
-- `CLI/main.swift`: prototype driver.
+- `Core/`: Foundation only except where noted, and tested by `Tests/run.sh`, which compiles
+  these files (not the network files) with `Tests/main.swift`. Anything worth testing belongs
+  here, not in a view.
+  - `Model.swift` (`Paper`, identifiers, `Merge.combine`, the deduplication), `Kind.swift`
+    (article, review, case report, conference abstract, preprint, commentary), `Seed.swift`,
+    `Ranking.swift`, `FeedBuilder.swift` (what to ask for, and what to keep), `Engine.swift`
+    (settings in, ranked feed out; the app and the command line both call it).
+  - `Settings.swift`, `History.swift`, `Incremental.swift`, `Sync.swift`, `Sources.swift`
+    (routing, Europe PMC and ORCID parsing), `Summary.swift`, `Byline.swift`, `Why.swift`,
+    `Cover.swift`, `PubMed.swift`.
+  - Network and Apple frameworks, each in one place: `OpenAlex.swift`, `EuropePMCClient.swift`
+    (with ORCID), `PubMedClient.swift`, `Embedding.swift` (NaturalLanguage).
+- `App/`: SwiftUI. `AppModel` holds the state, `Store` the files and the Keychain,
+  `SyncFile` the sync file, `Summarizer` the on-device model, `FeedView`, `SavedView`, `SettingsView`.
+- `CLI/main.swift`: the command-line driver. `Tests/`: the checks and their runner.
 
-Every seed (a topic, journal, author, keyword, or "cites my work") becomes one
-query per source that can answer it. Results are merged by DOI, ranked, and each card keeps the
-reasons it appeared.
+Every seed (a topic, journal, author, keyword, or "cites my work") becomes one query per source
+that can answer it. Results are merged, ranked, and each post keeps the reasons it appeared.
