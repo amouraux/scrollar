@@ -60,6 +60,14 @@ struct ScrollarApp: App {
                 Button("Refresh Feed") { Task { await model.refresh() } }
                     .keyboardShortcut("r")
                 Divider()
+                // Step through the feed with the reader pane open.
+                Button("Next Paper") { model.stepReader(1) }
+                    .keyboardShortcut("]")
+                    .disabled(tab != .feed || !model.readerShown)
+                Button("Previous Paper") { model.stepReader(-1) }
+                    .keyboardShortcut("[")
+                    .disabled(tab != .feed || !model.readerShown)
+                Divider()
                 Button("Feed") { tab = .feed }.keyboardShortcut("1")
                 Button("Saved") { tab = .saved }.keyboardShortcut("2")
                 Button("Tune") { tab = .settings }.keyboardShortcut("3")

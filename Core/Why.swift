@@ -25,6 +25,16 @@ struct Why: Equatable {
         return Why(text: best.text, symbol: best.symbol, others: described.count - 1, isCitation: best.rank <= 1)
     }
 
+    /// Every reason the paper has, the user's most specific first, for the reader pane, which has
+    /// room to say all of them where a post shows one.
+    static func all(for paper: Paper) -> [Why] {
+        paper.reasons
+            .map { describe($0, followed: paper.followed) }
+            .enumerated()
+            .sorted { $0.element.rank != $1.element.rank ? $0.element.rank < $1.element.rank : $0.offset < $1.offset }
+            .map { Why(text: $0.element.text, symbol: $0.element.symbol, others: 0, isCitation: $0.element.rank <= 1) }
+    }
+
     private static func describe(_ reason: String, followed: Bool) -> (rank: Int, text: String, symbol: String) {
         func after(_ prefix: String) -> String? {
             reason.hasPrefix(prefix) ? String(reason.dropFirst(prefix.count)) : nil

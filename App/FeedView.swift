@@ -4,6 +4,23 @@ struct FeedView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
+        // Wide enough, and the feed becomes a column with the reader beside it. The column stays
+        // in the same place in the view tree either way, so resizing a window keeps the scroll position.
+        GeometryReader { geo in
+            let wide = Reader.isWide(width: geo.size.width)
+            HStack(spacing: 0) {
+                feedColumn
+                    .frame(width: wide ? Reader.feedColumnWidth(total: geo.size.width) : nil)
+                if wide {
+                    Divider()
+                    ReaderPane()
+                }
+            }
+            .onChange(of: wide, initial: true) { _, now in model.readerShown = now }
+        }
+    }
+
+    private var feedColumn: some View {
         NavigationStack {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -37,6 +54,11 @@ struct FeedView: View {
                     }
                 }
                 .animation(.default, value: model.pendingNew)
+                // Stepping with the keyboard brings the paper into view. Centred: with no anchor the
+                // scroll view also slid the column sideways to align the post's edge.
+                .onChange(of: model.readerScroll) { _, request in
+                    if let request { withAnimation { proxy.scrollTo(request.key, anchor: .center) } }
+                }
             }
             // No title bar: the stream starts at the top of the screen. Progress is
             // shown by the banner at the head of the list.
@@ -229,6 +251,30 @@ private struct StatusBanner: View {
     }
 }
 
+/// The journal's colours and symbol, the same for that journal everywhere: behind the banner of a
+/// post and the head of the reader pane. Dark enough for white text in either mode.
+struct JournalBackdrop: View {
+    @Environment(\.colorScheme) private var scheme
+    let paper: Paper
+
+    var body: some View {
+        let spec = Cover.spec(for: paper, byJournal: true)
+        let top = scheme == .dark ? 0.45 : 0.56
+        ZStack {
+            LinearGradient(
+                colors: [Color(hue: spec.hueA, saturation: 0.6, brightness: top),
+                         Color(hue: spec.hueB, saturation: 0.6, brightness: top - 0.14)],
+                startPoint: .topLeading, endPoint: .bottomTrailing)
+            Image(systemName: spec.symbol)
+                .font(.system(size: 36))
+                .foregroundStyle(.white.opacity(0.22))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                .padding(.trailing, 48)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
 /// The round badge at the head of a post: an author's initials. There is no
 /// photograph to show (see `Byline`), so the colour does the recognising.
 struct BylineBadge: View {
@@ -262,6 +308,9 @@ struct PaperCard: View {
     @State private var seenTimer: Task<Void, Never>?
 
     private var paper: Paper { ranked.paper }
+    /// With the reader pane on screen a tap shows the paper there instead of unfolding the post.
+    private var inReader: Bool { model.readerShown }
+    private var isSelected: Bool { inReader && model.readerPaper?.dedupeKey == paper.dedupeKey }
     private var status: History.Status { model.status(of: paper) }
     private var choice: BylineChoice { model.settings.byline }
     private var people: [Byline] { Byline.people(of: paper, choice: choice) }
@@ -277,7 +326,7 @@ struct PaperCard: View {
                 if !people.isEmpty { byline }
                 if let highlight { highlightLine(highlight) }
                 if let why = Why.main(for: paper) { whyLine(why) }
-                if expanded { details.transition(.opacity) }
+                if expanded && !inReader { details.transition(.opacity) }
                 Divider()
                 actionBar
             }
@@ -289,13 +338,17 @@ struct PaperCard: View {
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay {
-            if highlight != nil {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 14).stroke(Color.accentColor, lineWidth: 2.5)
+            } else if highlight != nil {
                 RoundedRectangle(cornerRadius: 14).stroke(Color.orange.opacity(0.7), lineWidth: 1.5)
             }
         }
         // Dimmed once read, but never while it is open in front of the reader.
-        .opacity(status == .read && !expanded ? 0.6 : 1)
+        .opacity(status == .read && !expanded && !isSelected ? 0.6 : 1)
+        .id(paper.dedupeKey)
         .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         // Counts as seen once it has stayed on screen for a second: a card flicked
         // past is not read, and one that scrolls out cancels the wait.
         .onAppear {
@@ -351,19 +404,8 @@ struct PaperCard: View {
     /// with its subject and when under it. It runs to the card's edges, kept low so the title
     /// below is what the eye lands on.
     private var banner: some View {
-        let spec = Cover.spec(for: paper, byJournal: true)
-        let top = scheme == .dark ? 0.45 : 0.56
         return ZStack(alignment: .topLeading) {
-            LinearGradient(
-                colors: [Color(hue: spec.hueA, saturation: 0.6, brightness: top),
-                         Color(hue: spec.hueB, saturation: 0.6, brightness: top - 0.14)],
-                startPoint: .topLeading, endPoint: .bottomTrailing)
-            Image(systemName: spec.symbol)
-                .font(.system(size: 36))
-                .foregroundStyle(.white.opacity(0.22))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-                .padding(.trailing, 48)
-                .accessibilityHidden(true)
+            JournalBackdrop(paper: paper)
             HStack(alignment: .top, spacing: 6) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(paper.journal ?? paper.topics.first ?? "Unpublished")
@@ -516,7 +558,7 @@ struct PaperCard: View {
 
     /// The whole title, the biggest thing on the card, then what the paper shows. A tap opens the abstract.
     private var post: some View {
-        Button(action: toggle) {
+        Button(action: tapPost) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(paper.title)
                     .font(.title3.weight(.bold))
@@ -534,7 +576,11 @@ struct PaperCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityHint(expanded ? "Hides the abstract" : "Shows the abstract")
+        .accessibilityHint(inReader ? "Shows the paper beside the feed" : expanded ? "Hides the abstract" : "Shows the abstract")
+    }
+
+    private func tapPost() {
+        if inReader { model.openInReader(paper) } else { toggle() }
     }
 
     // MARK: Opened
@@ -591,8 +637,10 @@ struct PaperCard: View {
             barButton("Not for me", "hand.thumbsdown", hint: "Hides this paper for good") {
                 withAnimation { model.hide(paper) }
             }
-            barButton("Abstract", expanded ? "chevron.up" : "text.alignleft",
-                      hint: expanded ? "Hides the abstract" : "Shows the abstract", action: toggle)
+            if !inReader {
+                barButton("Abstract", expanded ? "chevron.up" : "text.alignleft",
+                          hint: expanded ? "Hides the abstract" : "Shows the abstract", action: toggle)
+            }
             if let url = paper.link {
                 barButton("Open", "arrow.up.right.square", hint: "Opens the paper in your browser") {
                     model.markOpened(paper)

@@ -1032,5 +1032,32 @@ let pvMore = Previews.make(pvMany, seed: .keyword("x"), settings: FeedSettings()
 check(pvMore.papers.count == Previews.shown && pvMore.matched == 80, "preview: it shows a screenful and counts the rest")
 check(Seed.forTopic(Entity(id: "T1", name: "Pain")) == .topic(id: "T1", name: "Pain") && Seed.forTopic(Entity(id: "mesh:Pain", name: "Pain")) == .mesh("Pain") && Seed.forTopic(Entity(id: "mesh:Humans", name: "Humans")) == nil, "preview: a topic is the search the feed would run, and a heading too general to follow is none")
 
+// MARK: reader pane
+check(Reader.isWide(width: 834) && Reader.isWide(width: 1100) && !Reader.isWide(width: 744) && !Reader.isWide(width: 393), "reader: a portrait iPad and a Mac window get a column; a phone and an iPad mini do not")
+check(Reader.feedColumnWidth(total: 800) == 340 && Reader.feedColumnWidth(total: 1000) == 380 && Reader.feedColumnWidth(total: 2000) == 460, "reader: the feed column keeps to what a post reads well at, and the reader gets the rest")
+var rdPaper = ok("rd") { $0.authors = ["Ada One", "Bo Two", "Cy Three"]; $0.firstInstitution = "Ghent University"; $0.lastInstitution = "UCLouvain" }
+let rdAuthors = Reader.authors(of: rdPaper)
+check(rdAuthors.head.map(\.name) == ["Ada One", "Bo Two", "Cy Three"] && rdAuthors.omitted == 0 && rdAuthors.tail == nil, "reader: a short author list is shown whole")
+check(rdAuthors.head.map(\.institution) == ["Ghent University", nil, "UCLouvain"] && rdAuthors.head.map(\.role) == [.first, .middle, .last], "reader: the institutions known go to the first and the last author, and nobody else")
+check(Reader.authors(of: ok("h") { $0.authors = ["A", "B", "C"]; $0.firstAuthorH = 12; $0.lastAuthorH = 51 }).head.map(\.hIndex) == [12, nil, 51], "reader: the h-index is shown for the authors it is known for")
+rdPaper.authors = (1...40).map { "Author \($0)" }
+let rdLong = Reader.authors(of: rdPaper, limit: 12)
+check(rdLong.head.count == 11 && rdLong.omitted == 28 && rdLong.tail?.name == "Author 40" && rdLong.tail?.institution == "UCLouvain", "reader: a long list shows the first authors, how many are left out and always the last author")
+check(Reader.authors(of: ok("none")).isEmpty, "reader: no authors, no list")
+rdPaper.authors = ["Solo"]
+check(Reader.authors(of: rdPaper).head.map(\.role) == [.first] && Reader.authors(of: rdPaper).head[0].institution == "Ghent University", "reader: a single author is the first")
+check(Reader.selection(afterRemoving: "b", from: ["a", "b", "c"]) == "c" && Reader.selection(afterRemoving: "c", from: ["a", "b", "c"]) == "b" && Reader.selection(afterRemoving: "a", from: ["a"]) == nil && Reader.selection(afterRemoving: "x", from: ["a"]) == nil, "reader: after a paper is hidden the pane moves to the one that took its place, else the one above, else empties")
+check(Reader.neighbour(of: "b", offset: 1, in: ["a", "b", "c"]) == "c" && Reader.neighbour(of: "c", offset: 1, in: ["a", "b", "c"]) == "c" && Reader.neighbour(of: "a", offset: -1, in: ["a", "b", "c"]) == "a", "reader: the arrow keys stop at either end")
+check(Reader.neighbour(of: nil, offset: 1, in: ["a", "b"]) == "a" && Reader.neighbour(of: "gone", offset: -1, in: ["a", "b"]) == "b" && Reader.neighbour(of: "a", offset: 1, in: []) == nil, "reader: with nothing selected a step down starts at the top")
+let rdOrder = withOld.displayOrder(settings: layoutSettings)
+check(rdOrder.first == "oa:star" && rdOrder.count == withOld.highlights.count + withOld.feed.fresh.count + withOld.older.count + withOld.feed.earlier.count, "reader: the on-screen order starts with the highlights and holds every paper once")
+check(Array(rdOrder.suffix(3)) == withOld.older.suffix(3).map { $0.paper.dedupeKey } || rdOrder.firstIndex(of: "oa:recentOld")! > rdOrder.firstIndex(of: "oa:lowFollow")!, "reader: further back comes after the look-back")
+var rdSections = layoutSettings; rdSections.feedOrder = .sections
+let rdSecLayout = FeedLayout.make(citedYou: layoutCited, forYou: layoutOthers, history: History(), settings: rdSections, now: layoutNow)
+check(Set(rdSecLayout.displayOrder(settings: rdSections)).count == rdSecLayout.displayOrder(settings: rdSections).count && rdSecLayout.displayOrder(settings: rdSections).first == "oa:star", "reader: in sections the order is the highlights, then cited you, what is followed, and the rest")
+var rdMulti = ok("multi") { $0.reasons = ["Topic: Pain", "Author: Ada One", "Cites your work"]; $0.followed = true }
+check(Why.all(for: rdMulti).map(\.text) == ["Cites your work", "Author you follow: Ada One", "Topic you follow: Pain"], "reader: every reason is listed, the user's most specific first")
+check(Why.all(for: ok("noreason")).isEmpty && Why.all(for: rdMulti).first?.isCitation == true, "reader: no reasons, no list; a citation is marked")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

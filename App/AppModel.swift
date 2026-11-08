@@ -50,6 +50,14 @@ final class AppModel {
     }
 
     private(set) var layout = Layout()
+    /// The paper open in the reader pane, if the window is wide enough to have one.
+    private(set) var readerPaper: Paper?
+    /// Set by the feed while it has room for the pane; a card taps through to the pane only then.
+    var readerShown = false
+    /// Asked of the feed column after a keyboard step, so the paper comes into view. A tap never
+    /// sets it: the post under the pointer is already where the reader wants it.
+    private(set) var readerScroll: ScrollRequest?
+    struct ScrollRequest: Equatable { let key: String; let id = UUID() }
     private(set) var history: History
     private(set) var authorName: String?
     private(set) var updated: Date?
@@ -669,8 +677,37 @@ final class AppModel {
     }
 
     func hide(_ p: Paper) {
+        // Taken off the list under the reader's nose: the pane moves on to the next paper.
+        let wasOpen = readerPaper?.dedupeKey == p.dedupeKey
+        let order = wasOpen ? layout.displayOrder(settings: settings) : []
         settings.feedback.hide(p)
         dropExcluded()
+        if wasOpen {
+            let next = Reader.selection(afterRemoving: p.dedupeKey, from: order)
+                .flatMap { key in layout.all.first { $0.paper.dedupeKey == key }?.paper }
+            if let next { openInReader(next) } else { readerPaper = nil }
+        }
+    }
+
+    // MARK: The reader pane
+
+    /// Show a paper in the pane beside the feed. Opening it there is reading it, as opening its
+    /// abstract in the post is on a phone.
+    func openInReader(_ p: Paper) {
+        readerPaper = p
+        markOpened(p)
+    }
+
+    /// Next or previous paper in the order on screen (the menu commands). Does nothing while the
+    /// pane is not on screen, so a paper is never marked read where nobody could see it.
+    func stepReader(_ offset: Int) {
+        guard readerShown else { return }
+        let keys = layout.displayOrder(settings: settings)
+        guard let key = Reader.neighbour(of: readerPaper?.dedupeKey, offset: offset, in: keys),
+              key != readerPaper?.dedupeKey,
+              let next = layout.all.first(where: { $0.paper.dedupeKey == key })?.paper else { return }
+        openInReader(next)
+        readerScroll = ScrollRequest(key: key)
     }
 
     /// "Show less from…": mute the paper's journal, an author or a topic. The

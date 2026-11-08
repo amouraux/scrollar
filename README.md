@@ -253,6 +253,30 @@ sentences in code because the model sometimes writes five); otherwise they are c
 abstract's own sentences (`Summary.takeaway`), never cut mid-sentence. A model-written line is
 labelled as such when the post is opened.
 
+## The reader pane
+
+A window at least 780 points wide (a Mac window, an iPad in landscape or portrait; `Reader.isWide`) puts
+the feed in a column of about 38% of the width, 340 to 460 points, with a reader pane to its right. A
+narrower window (an iPhone, an iPad mini, a thin split) is the single column it always was: tapping a
+post unfolds its abstract in place and nothing else changes. The same view tree serves both, so
+resizing a window keeps the feed's scroll position.
+
+Tapping a post in the wide layout shows the paper in the pane instead of unfolding it, and the post
+is outlined in the accent colour. The pane has the journal in its colours, the whole title, every
+author up to twelve (more shows the first eleven, how many are left out, and always the last author)
+with the first and last marked and their institution and h-index where the open data has them, every
+reason it is in the feed (and why it is a highlight), the abstract, the journal's impact, how often it
+is cited, open access, topics, the DOI link, and Save, Not for me, Open and Share in a bar that stays
+in view. The posts lose their Abstract button there, since the pane is the abstract.
+
+Opening a paper in the pane counts as read, exactly as opening its abstract does on a phone
+(`AppModel.openInReader` calls `markOpened`), and nothing else does: the feed is still only
+re-sorted on a refresh, so the post stays where it was. Not for me on the open paper moves the pane to
+the one that took its place. Cmd-] and Cmd-[ step through the feed in the order it is drawn
+(`FeedLayout.displayOrder`, tested against the layout) and scroll the post into view; they are off
+while the pane is not on screen, so no paper is marked read where nobody could see it. The pane shows
+the open data's figures, not pictures: there are still no article figures (see Not built).
+
 ## Tune
 
 Everything the user can enter is in `Core/Settings.swift`, with what each does: ORCID, up to three others to learn from, and whether
@@ -269,7 +293,7 @@ not JSON fails, in which case it is copied aside and never silently replaced.
 
 Mac Catalyst, sandboxed (`Scrollar-Mac.entitlements`, applied to the Mac SDK only): network
 client, and user-selected read-write files with app-scoped bookmarks for the sync file. Commands:
-Cmd-R refreshes, Cmd-1/2/3 switch tabs. Its data lives in its own container, so nothing is shared
+Cmd-R refreshes, Cmd-1/2/3 switch tabs, Cmd-] and Cmd-[ open the next and previous paper in the reader pane. Its data lives in its own container, so nothing is shared
 with the phone except through sync. It builds, is signed and runs; its window has not been
 checked on screen, and saving the key to the Keychain from the sandbox is untested.
 
@@ -285,8 +309,9 @@ checked on screen, and saving the key to the Keychain from the sandbox is untest
   to fill missing abstracts and types.
 - **Author photographs and institution logos**: open scholarly data has none that can be reused;
   initials on a colour stand in.
-- **Background refresh and notifications**, a three-column layout for Mac and iPad (feed, a
-  reader pane, a sidebar of follows with counts), and Crossref or arXiv as sources for fields
+- **A left column** for the wide window (Saved, Read, Tune, or a list of what is followed, with
+  counts): the feed and the reader pane were what was asked for, and the tabs still do the rest.
+- **Background refresh and notifications**, and Crossref or arXiv as sources for fields
   outside biomedicine are proposed and not started.
 
 ## Known gaps
@@ -309,11 +334,11 @@ model is a heuristic and is sometimes background, not a finding.
     (settings in, ranked feed out; the app and the command line both call it).
   - `Settings.swift`, `History.swift`, `Incremental.swift`, `Sync.swift`, `Sources.swift`
     (routing, Europe PMC parsing), `Summary.swift`, `Byline.swift`, `Why.swift`,
-    `Cover.swift`, `Layout.swift` (the single ranked list and the highlights), `PubMed.swift`, `Profile.swift` (the ORCID check, and suggestions from publications).
+    `Cover.swift`, `Layout.swift` (the single ranked list and the highlights), `Reader.swift` (when there is room for the pane, what it lists, and which paper comes next), `PubMed.swift`, `Profile.swift` (the ORCID check, and suggestions from publications).
   - Network and Apple frameworks, each in one place: `OpenAlex.swift`, `EuropePMCClient.swift`,
     `PubMedClient.swift`, `ProfileFetcher.swift` (a person's papers, for the profile and its suggestions), `Embedding.swift` (NaturalLanguage).
 - `App/`: SwiftUI. `AppModel` holds the state, `Store` the files and the Keychain,
-  `SyncFile` the sync file, `Summarizer` the on-device model, `FeedView`, `SavedView`, `SettingsView`, `ProfileViews` (others to learn from, and the suggestions sheet).
+  `SyncFile` the sync file, `Summarizer` the on-device model, `FeedView`, `ReaderView` (the pane), `SavedView`, `SettingsView`, `ProfileViews` (others to learn from, and the suggestions sheet).
 - `Design/`: the icon. `AppIcon-source.webp` is the artwork (a transparent background); `make-icon.swift`
   puts it, enlarged and centred, on an opaque background and writes the 1024-pixel PNG in
   `App/Assets.xcassets/AppIcon.appiconset` (`swiftc Design/make-icon.swift -o /tmp/icon && /tmp/icon Design/AppIcon-source.webp App/Assets.xcassets/AppIcon.appiconset/AppIcon.png`).
