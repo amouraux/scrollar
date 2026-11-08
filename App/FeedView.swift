@@ -101,9 +101,9 @@ private struct EmptyFeed: View {
         ContentUnavailableView {
             Label("Nothing here yet", systemImage: "text.magnifyingglass")
         } description: {
-            Text(model.hasKey
+            Text(model.canBuild
                  ? "Pull down to load papers, or add what you follow in Tune."
-                 : "Add your free OpenAlex key in Tune to start.")
+                 : "Turn on a source in Tune to start.")
         }
         .padding(.top, 60)
     }
@@ -131,7 +131,7 @@ private struct StatusBanner: View {
                 banner(icon: "arrow.triangle.2.circlepath", tint: .accentColor, text: "Building your feed. \(message)") { EmptyView() }
             case .failed(let message):
                 banner(icon: "exclamationmark.triangle", tint: .orange, text: message) {
-                    if model.hasKey { Button("Try again") { Task { await model.refresh() } } }
+                    if model.canBuild { Button("Try again") { Task { await model.refresh() } } }
                 }
             }
         }
@@ -444,6 +444,10 @@ struct PaperCard: View {
                 Label(paper.reasons.joined(separator: " · "), systemImage: "arrow.turn.down.right")
                     .font(.caption).foregroundStyle(.secondary)
                     .lineLimit(2)
+            }
+            if !paper.sourceNames.isEmpty {
+                Label("Found in " + paper.sourceNames.joined(separator: " and "), systemImage: "magnifyingglass")
+                    .font(.caption2).foregroundStyle(.tertiary)
             }
             if model.takeaway(for: paper)?.writtenByModel == true {
                 Label("The sentences above were written on this device by Apple's language model. The abstract is the authors' own.",

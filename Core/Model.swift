@@ -79,6 +79,10 @@ struct Paper: Hashable, Codable {
     /// A DOI lookup found no PubMed record, so it is not tried again on every
     /// refresh. Optional so a cache written before this field existed still loads.
     var notInPubMed: Bool? = nil
+    /// Which sources returned it ("OpenAlex", "Europe PMC"). Empty in a cache written
+    /// before there was more than one, when every paper came from OpenAlex.
+    var sources: [String]? = nil
+    var sourceNames: [String] { sources ?? [] }
 
     /// The first and last author's OpenAlex ids, when they can be told for certain:
     /// names and ids are filled separately, so a missing id would shift the list.
@@ -97,6 +101,10 @@ struct Paper: Hashable, Codable {
     }
 
     var link: URL? {
+        if id.hasPrefix("epmc:"), doi == nil, pmid == nil {
+            let parts = id.split(separator: ":")
+            if parts.count == 3 { return URL(string: "https://europepmc.org/article/\(parts[1])/\(parts[2])") }
+        }
         if let doi { return URL(string: "https://doi.org/" + doi) }
         if let pmid { return URL(string: "https://pubmed.ncbi.nlm.nih.gov/" + pmid) }
         return URL(string: "https://openalex.org/" + id)
@@ -119,31 +127,111 @@ enum Abstract {
 }
 
 enum Merge {
-    /// Collapse duplicates, keeping first-seen order. The reasons add up; a
-    /// field one copy lacks (usually the abstract) is filled from the other.
+    /// Collapse the copies of one paper that different sources (and different
+    /// seeds) returned, keeping first-seen order. Two copies are the same paper if
+    /// they share a DOI, a PMID or an id, or, for a preprint and the article it
+    /// became (which have different DOIs), the same title and first author within
+    /// about eighteen months. The reasons add up; a field one copy lacks is filled
+    /// from another.
     static func combine(_ papers: [Paper]) -> [Paper] {
-        var byKey: [String: Paper] = [:]
-        var order: [String] = []
-        for p in papers {
-            let key = p.dedupeKey
-            guard var kept = byKey[key] else {
-                byKey[key] = p
-                order.append(key)
-                continue
+        var parent = Array(papers.indices)
+        func find(_ i: Int) -> Int {
+            var i = i
+            while parent[i] != i { parent[i] = parent[parent[i]]; i = parent[i] }
+            return i
+        }
+        func union(_ a: Int, _ b: Int) {
+            let ra = find(a), rb = find(b)
+            if ra != rb { parent[max(ra, rb)] = min(ra, rb) }
+        }
+        var seen: [String: Int] = [:]
+        for (i, p) in papers.enumerated() {
+            for key in identityKeys(p) {
+                guard let j = seen[key] else { seen[key] = i; continue }
+                if key.hasPrefix("t:") && !withinPreprintLag(papers[i].date, papers[j].date) { continue }
+                union(i, j)
             }
+        }
+        var groups: [Int: [Int]] = [:]
+        var order: [Int] = []
+        for i in papers.indices {
+            let root = find(i)
+            if groups[root] == nil { order.append(root) }
+            groups[root, default: []].append(i)
+        }
+        return order.map { fold(groups[$0]!.map { papers[$0] }) }
+    }
+
+    private static func identityKeys(_ p: Paper) -> [String] {
+        var keys = ["id:" + p.id]
+        if let doi = p.doi { keys.append("doi:" + doi) }
+        if let pmid = p.pmid { keys.append("pmid:" + pmid) }
+        if let surname = firstSurname(p), normalisedTitle(p.title).count >= 25 {
+            keys.append("t:" + normalisedTitle(p.title) + "|" + surname)
+        }
+        return keys
+    }
+
+    /// Lower case letters and digits only, so punctuation, case and spacing differences vanish.
+    static func normalisedTitle(_ title: String) -> String {
+        title.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+            .filter { $0.isLetter || $0.isNumber }
+    }
+
+    /// "Gazerani P" and "Parisa Gazerani" both give "gazerani": a surname first
+    /// with initials after, or last.
+    static func firstSurname(_ p: Paper) -> String? {
+        guard let name = p.authors.first else { return nil }
+        let words = name.split(separator: " ").map(String.init)
+        guard let first = words.first, let last = words.last else { return nil }
+        // Initials only ("P", "PM") mark the surname-first form.
+        let surname = (words.count > 1 && last.count <= 2 && last == last.uppercased()) ? first : last
+        let folded = surname.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).filter(\.isLetter)
+        return folded.isEmpty ? nil : folded
+    }
+
+    private static func withinPreprintLag(_ a: String, _ b: String) -> Bool {
+        guard let x = Ranker.ageInDays(a, today: Date()), let y = Ranker.ageInDays(b, today: Date()) else { return true }
+        return abs(x - y) <= 548
+    }
+
+    private static func priority(_ p: Paper) -> Int {
+        // The article beats its preprint, so the identity (and the DOI the user's
+        // history is keyed on) does not change when a preprint gets published.
+        (p.isRepository ? 0 : 2) + (p.sourceNames.isEmpty || p.sourceNames.contains(SourceKind.openAlex.rawValue) ? 1 : 0)
+    }
+
+    private static func fold(_ group: [Paper]) -> Paper {
+        guard group.count > 1 else { return group[0] }
+        // max(by:) keeps the first of equals, so the earliest copy wins a tie.
+        let baseIndex = group.indices.max { priority(group[$0]) < priority(group[$1]) }!
+        var kept = group[baseIndex]
+        for (i, p) in group.enumerated() where i != baseIndex {
             for r in p.reasons where !kept.reasons.contains(r) { kept.reasons.append(r) }
+            for s in p.sourceNames where !kept.sourceNames.contains(s) { kept.sources = kept.sourceNames + [s] }
             kept.citesYou = kept.citesYou || p.citesYou
             kept.followed = kept.followed || p.followed
-            if kept.abstract == nil { kept.abstract = p.abstract }
-            if kept.journalImpact == nil { kept.journalImpact = p.journalImpact }
-            if kept.firstAuthorH == nil { kept.firstAuthorH = p.firstAuthorH }
-            if kept.lastAuthorH == nil { kept.lastAuthorH = p.lastAuthorH }
-            if kept.pmid == nil { kept.pmid = p.pmid }
+            kept.isOpenAccess = kept.isOpenAccess || p.isOpenAccess
+            kept.citedBy = max(kept.citedBy, p.citedBy)
+            if kept.abstract == nil, let a = p.abstract { kept.abstract = a; kept.abstractFromPubMed = p.abstractFromPubMed }
             if kept.doi == nil { kept.doi = p.doi }
+            if kept.pmid == nil { kept.pmid = p.pmid }
+            if kept.journal == nil { kept.journal = p.journal }
+            if kept.journalID == nil { kept.journalID = p.journalID }
+            if kept.journalImpact == nil { kept.journalImpact = p.journalImpact }
             if kept.firstInstitution == nil { kept.firstInstitution = p.firstInstitution }
             if kept.lastInstitution == nil { kept.lastInstitution = p.lastInstitution }
-            byKey[key] = kept
+            if kept.firstAuthorH == nil { kept.firstAuthorH = p.firstAuthorH }
+            if kept.lastAuthorH == nil { kept.lastAuthorH = p.lastAuthorH }
+            if kept.language == nil { kept.language = p.language }
+            if kept.pubmedTypes.isEmpty { kept.pubmedTypes = p.pubmedTypes }
+            if kept.openAlexType == nil { kept.openAlexType = p.openAlexType }
+            if kept.notInPubMed == nil { kept.notInPubMed = p.notInPubMed }
+            // OpenAlex's authors and topics carry ids, which muting and the h-index need;
+            // take them together with their names so the two lists stay in step.
+            if kept.authorIDs.isEmpty, !p.authorIDs.isEmpty { kept.authors = p.authors; kept.authorIDs = p.authorIDs }
+            if kept.topicIDs.isEmpty, !p.topicIDs.isEmpty { kept.topics = p.topics; kept.topicIDs = p.topicIDs }
         }
-        return order.compactMap { byKey[$0] }
+        return kept
     }
 }

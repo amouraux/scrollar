@@ -553,5 +553,119 @@ var bylineOther = bylineOnly; bylineOther.byline = .first
 check(bylineOnly.forRanking != bylineOther.forRanking, "and a ranking choice once the h-index counts")
 check(Ranker.authorBoost(seniorStar, weight: 1, focus: .both) == Ranker.authorBoost(ok("h9") { $0.lastAuthorH = 80 }, weight: 1, focus: .last), "both authors shown: the higher h-index counts")
 
+// MARK: more than one source
+check(SourceRouting.isOpenAlexID("W2741809807") && SourceRouting.isOpenAlexID("T10574"), "OpenAlex ids are recognised")
+check(!SourceRouting.isOpenAlexID("epmc:MED:123") && !SourceRouting.isOpenAlexID("name:Pain") && !SourceRouting.isOpenAlexID("W"), "other ids are not")
+func routes(_ seed: Seed, oa: Bool = true, epmc: Bool = true, pmids: Bool = true) -> [SourceKind] {
+    SourceRouting.targets(for: seed, openAlex: oa, europePMC: epmc, hasOwnPMIDs: pmids)
+}
+check(routes(.keyword("tactile")) == [.openAlex, .europePMC], "a keyword is put to both sources")
+check(routes(.journal(id: "S1", name: "Pain")) == [.openAlex, .europePMC], "a journal is put to both, the second by name")
+check(routes(.journal(id: "name:Pain", name: "Pain")) == [.europePMC], "a journal added by name goes only where names work")
+check(routes(.author(id: "A1", name: "Ada")) == [.openAlex], "an author with an id is not also searched by name while OpenAlex is on")
+check(routes(.author(id: "A1", name: "Ada"), oa: false) == [.europePMC], "and is searched by name when OpenAlex is off")
+check(routes(.author(id: "name:Ada L", name: "Ada L")) == [.europePMC], "an author added by name is searched by name")
+check(routes(.topic(id: "T1", name: "Pain")) == [.openAlex] && routes(.topic(id: "T1", name: "Pain"), oa: false).isEmpty, "a topic needs OpenAlex")
+check(routes(.mesh("Pain")) == [.europePMC], "a MeSH heading goes to Europe PMC")
+check(routes(.cites(workIDs: ["W1", "W2"], label: "Cites your work")) == [.openAlex, .europePMC], "citations of your work are asked of both")
+check(routes(.cites(workIDs: ["epmc:MED:1"], label: "Cites your work"), oa: true) == [.europePMC], "your own papers from another source cannot be put to OpenAlex")
+check(routes(.cites(workIDs: ["W1"], label: "Cites: A tracked paper")) == [.openAlex], "a tracked paper is OpenAlex's")
+check(routes(.cites(workIDs: ["W1"], label: "Cites your work"), pmids: false) == [.openAlex], "without PubMed ids Europe PMC cannot find citations")
+check(routes(.keyword("x"), oa: false, epmc: false).isEmpty, "no source on, nothing to ask")
+
+let window = ("2026-10-01", "2026-11-08")
+check(EuropePMCQuery.build(.keyword("predictive coding"), since: window.0, until: window.1) == "(TITLE:\"predictive coding\" OR ABSTRACT:\"predictive coding\") AND FIRST_PDATE:[2026-10-01 TO 2026-11-08]", "keyword query")
+check(EuropePMCQuery.build(.journal(id: "S1", name: "Pain"), since: window.0, until: window.1) == "JOURNAL:\"Pain\" AND FIRST_PDATE:[2026-10-01 TO 2026-11-08]", "journal query")
+check(EuropePMCQuery.build(.author(id: "name:Mouraux A", name: "Mouraux A"), since: window.0, until: window.1)?.hasPrefix("AUTH:\"Mouraux A\"") == true, "an author by name uses the typed name")
+check(EuropePMCQuery.build(.keyword("a\"b"), since: window.0, until: window.1)?.contains("\"a b\"") == true, "quotes in a phrase cannot break the query")
+check(EuropePMCQuery.build(.topic(id: "T1", name: "x"), since: window.0, until: window.1) == nil, "an OpenAlex topic has no Europe PMC query")
+check(EuropePMCQuery.build(.cites(workIDs: ["W1"], label: "Cites your work"), since: window.0, until: window.1) == nil, "citations need PubMed ids")
+check(EuropePMCQuery.build(.cites(workIDs: ["W1"], label: "Cites your work"), since: window.0, until: window.1, ownPMIDs: ["1", "2"])?.hasPrefix("(CITES:1_MED OR CITES:2_MED)") == true, "citations by PubMed id")
+
+let epmcJSON = """
+{"hitCount": 2, "resultList": {"result": [
+ {"id": "42972058", "source": "MED", "pmid": "42972058", "doi": "10.1038/S41577-026-01363-6",
+  "title": "Peripheral neuroimmune dialogues underlying pain states.",
+  "authorList": {"author": [
+    {"fullName": "Grace PM", "authorAffiliationDetailsList": {"authorAffiliation": [{"affiliation": "Department of Translational Neuroscience, University of Texas MD Anderson Cancer Center, Houston, TX, USA."}]}},
+    {"fullName": "Svensson CI", "authorAffiliationDetailsList": {"authorAffiliation": [{"affiliation": "Department of Physiology, Karolinska Institutet, Stockholm, Sweden."}]}}]},
+  "journalInfo": {"journal": {"title": "Nature reviews. Immunology", "issn": "1474-1733"}},
+  "pubYear": "2026", "firstPublicationDate": "2026-11-02", "language": "eng", "isOpenAccess": "N", "citedByCount": 3,
+  "abstractText": "<h4>Background</h4>Pain is <i>profoundly</i> shaped by neuroimmune interactions &amp; more.",
+  "pubTypeList": {"pubType": ["Review", "Journal Article"]},
+  "meshHeadingList": {"meshHeading": [{"descriptorName": "Pain"}, {"descriptorName": "Nociceptors"}]}},
+ {"id": "PPR1357541", "source": "PPR", "doi": "10.64898/2026.11.02.763662",
+  "title": "Pain Matters: Nociceptive signaling drives neural encoding of inflammatory responses",
+  "authorString": "Sammons M, Rolls A.", "bookOrReportDetails": {"publisher": "bioRxiv", "yearOfPublication": 2026},
+  "firstPublicationDate": "2026-11-03", "pubTypeList": {"pubType": ["Preprint"]}, "isOpenAccess": "N"}
+]}}
+""".data(using: .utf8)!
+let epmcPapers = EuropePMCParser.papers(from: epmcJSON)
+check(epmcPapers.count == 2 && EuropePMCParser.hitCount(in: epmcJSON) == 2, "Europe PMC: both records read")
+let epmcFirst = epmcPapers[0]
+check(epmcFirst.doi == "10.1038/s41577-026-01363-6" && epmcFirst.pmid == "42972058", "Europe PMC: DOI lower-cased, PMID kept")
+check(epmcFirst.title == "Peripheral neuroimmune dialogues underlying pain states", "Europe PMC: the trailing full stop is dropped from the title")
+check(epmcFirst.abstract == "Background Pain is profoundly shaped by neuroimmune interactions & more.", "Europe PMC: markup stripped from the abstract")
+check(epmcFirst.journal == "Nature reviews. Immunology" && epmcFirst.language == "en" && epmcFirst.citedBy == 3, "Europe PMC: journal, language, citations")
+check(epmcFirst.firstInstitution == "University of Texas MD Anderson Cancer Center" && epmcFirst.lastInstitution == "Karolinska Institutet", "Europe PMC: institutions picked out of the affiliation strings")
+check(epmcFirst.kind == .review && epmcFirst.topics == ["Pain", "Nociceptors"], "Europe PMC: publication types and MeSH headings")
+check(epmcFirst.sourceNames == ["Europe PMC"] && epmcFirst.id == "epmc:MED:42972058", "Europe PMC: provenance and id")
+let epmcPreprint = epmcPapers[1]
+check(epmcPreprint.kind == .preprint && epmcPreprint.isRepository && epmcPreprint.journal == "bioRxiv", "Europe PMC: a preprint is a preprint, its server named")
+check(epmcPreprint.link?.absoluteString == "https://doi.org/10.64898/2026.11.02.763662", "Europe PMC: a preprint links by DOI")
+check(Paper(id: "epmc:PPR:PPR9", title: "t", date: "2026-01-01").link?.absoluteString == "https://europepmc.org/article/PPR/PPR9", "Europe PMC: a record with no DOI or PMID links to Europe PMC")
+check(EuropePMCParser.papers(from: Data("not json".utf8)).isEmpty, "Europe PMC: garbage reads as nothing")
+
+check(MeSH.isGeneric("Humans") && MeSH.isGeneric("Middle Aged") && !MeSH.isGeneric("Nociceptors"), "MeSH: check tags are generic, a real topic is not")
+check(!FeedBuilder.seeds(FeedSettings(), myTopics: [Entity(id: "mesh:Humans", name: "Humans")], myWorkIDs: []).contains { $0.seed == .mesh("Humans") }, "MeSH: a check tag is never a seed")
+check(Html.plain("<i>Objective.</i>Tumor stiffness") == "Objective.Tumor stiffness", "html: inline tags vanish without a gap")
+check(Html.plain("<p>One</p><p>Two &lt;3</p>") == "One Two <3", "html: block tags become spaces, entities decode")
+check(Affiliation.institution(from: "Department of Physiology, Faculty of Medicine, Karolinska Institutet, Stockholm, Sweden.") == "Karolinska Institutet", "affiliation: department and faculty are skipped")
+check(Affiliation.institution(from: "Max Planck Institute for Brain Research, Frankfurt, Germany") == "Max Planck Institute for Brain Research", "affiliation: an institute")
+check(Affiliation.institution(from: "Somewhere, Nowhere") == nil, "affiliation: nothing that names an institution")
+check(Languages.iso1("eng") == "en" && Languages.iso1("fr") == "fr" && Languages.iso1("xyz") == nil && Languages.iso1(nil) == nil, "language codes")
+
+let orcidWorks = """
+{"group": [
+ {"external-ids": {"external-id": [{"external-id-type": "doi", "external-id-value": "10.1152/JN.00278.2025"}, {"external-id-type": "pmid", "external-id-value": "41165579"}]},
+  "work-summary": [{"title": {"title": {"value": "A paper"}}, "publication-date": {"year": {"value": "2025"}}}]},
+ {"external-ids": {"external-id": []}, "work-summary": [{"title": {"title": {"value": "A chapter"}}}]},
+ {"external-ids": {"external-id": []}, "work-summary": []}
+]}
+""".data(using: .utf8)!
+let worksRead = OrcidParser.works(from: orcidWorks)
+check(worksRead.count == 2 && worksRead[0] == OrcidWork(title: "A paper", doi: "10.1152/jn.00278.2025", pmid: "41165579", year: 2025), "ORCID: a work's title, DOI, PMID and year")
+check(worksRead[1].doi == nil && worksRead[1].title == "A chapter", "ORCID: a work with no identifier is kept by its title")
+check(OrcidParser.name(from: Data("{\"name\": {\"given-names\": {\"value\": \"André\"}, \"family-name\": {\"value\": \"Mouraux\"}}}".utf8)) == "André Mouraux", "ORCID: the name")
+
+// Merging across sources
+let fromOA = Paper(id: "W1", doi: "10.1/x", title: "Cold reduces pain in treated mice", abstract: nil, journal: "Pain",
+                   date: "2026-10-05", authors: ["Parisa Gazerani"], authorIDs: ["A1"], firstInstitution: "Oslo Met", journalID: "S1", reasons: ["Topic: Pain"], sources: ["OpenAlex"])
+let fromEPMC = Paper(id: "epmc:MED:9", doi: "10.1/x", pmid: "9", title: "Cold reduces pain in treated mice", abstract: "Cold reduced pain.", journal: "Pain",
+                     pubmedTypes: ["Journal Article"], date: "2026-10-05", authors: ["Gazerani P"], reasons: ["Journal: Pain"], sources: ["Europe PMC"])
+let twoSources = Merge.combine([fromEPMC, fromOA])
+check(twoSources.count == 1, "one paper from two sources, by DOI")
+check(twoSources[0].id == "W1" && twoSources[0].authorIDs == ["A1"] && twoSources[0].journalID == "S1", "the OpenAlex copy is the base, so its ids survive")
+check(twoSources[0].abstract == "Cold reduced pain." && twoSources[0].pmid == "9" && twoSources[0].pubmedTypes == ["Journal Article"], "and what it lacks is filled from Europe PMC")
+check(twoSources[0].sourceNames.sorted() == ["Europe PMC", "OpenAlex"] && Set(twoSources[0].reasons) == ["Topic: Pain", "Journal: Pain"], "provenance and reasons add up")
+let noDOI = Paper(id: "epmc:MED:10", pmid: "10", title: "Another", date: "2026-10-05", sources: ["Europe PMC"])
+let noDOI2 = Paper(id: "W5", pmid: "10", title: "Another", date: "2026-10-05", sources: ["OpenAlex"])
+check(Merge.combine([noDOI, noDOI2]).count == 1, "the same PMID joins two records without a DOI")
+
+let earlyVersion = Paper(id: "epmc:PPR:P1", doi: "10.1101/2025.06.02.657417", title: "Tactile stimulation drives cortical responses in mice", isRepository: true,
+                     date: "2025-06-03", authors: ["Smith J", "Lee K"], reasons: ["Keyword: tactile"], sources: ["Europe PMC"])
+let published = Paper(id: "W7", doi: "10.1152/jn.00130.2025", title: "Tactile Stimulation Drives Cortical Responses in Mice.", journal: "Journal of Neurophysiology",
+                      date: "2025-11-20", authors: ["John Smith", "Kim Lee"], reasons: ["Journal: J Neurophysiol"], sources: ["OpenAlex"])
+let joined = Merge.combine([earlyVersion, published])
+check(joined.count == 1 && joined[0].doi == "10.1152/jn.00130.2025" && !joined[0].isRepository, "a preprint and the article it became are one paper, the article winning")
+check(Merge.combine([earlyVersion, Paper(id: "W8", doi: "10.1/y", title: published.title, date: "2027-12-01", authors: ["John Smith"])]).count == 2, "the same title years apart is not the same paper")
+check(Merge.combine([Paper(id: "A", doi: "10.1/a", title: "Editorial", date: "2026-10-05", authors: ["Smith J"]), Paper(id: "B", doi: "10.1/b", title: "Editorial", date: "2026-10-05", authors: ["Smith J"])]).count == 2, "a short generic title is never matched by title")
+check(Merge.firstSurname(Paper(id: "x", title: "t", date: "d", authors: ["Gazerani P"])) == Merge.firstSurname(Paper(id: "y", title: "t", date: "d", authors: ["Parisa Gazerani"])), "surname-first and surname-last names agree")
+check(try JSONDecoder().decode(Paper.self, from: JSONEncoder().encode(fromOA)).sourceNames == ["OpenAlex"], "sources survive a round trip")
+check(try FeedSettings.decode(Data("{}".utf8)).useOpenAlex && FeedSettings().useEuropePMC, "both sources are on by default, also for an older settings file")
+check(FeedBuilder.seeds(FeedSettings(), myTopics: [Entity(id: "mesh:Pain", name: "Pain")], myWorkIDs: []).contains { $0.seed == .mesh("Pain") }, "topics made from MeSH headings become MeSH seeds")
+var mutedByName = FeedSettings(); mutedByName.mutedJournals = [Entity(id: "name:Pain", name: "Pain")]
+check(FeedBuilder.keep([fromEPMC, Paper(id: "z", title: "Other", journal: "Brain", date: "2026-10-05")], settings: mutedByName).map(\.id) == ["z"], "a journal muted by name is muted by name")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

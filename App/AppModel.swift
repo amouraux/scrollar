@@ -120,6 +120,12 @@ final class AppModel {
 
     var hasKey: Bool { !effectiveKey.isEmpty }
 
+    /// Whether OpenAlex will be asked: it needs the user's key and their say-so.
+    var usesOpenAlex: Bool { settings.useOpenAlex && hasKey }
+
+    /// A feed can be built when some source is on. Europe PMC needs nothing.
+    var canBuild: Bool { usesOpenAlex || settings.useEuropePMC }
+
     var isLoading: Bool {
         if case .loading = phase { return true }
         return false
@@ -133,7 +139,7 @@ final class AppModel {
     /// settings changed since. A fetch the user did not ask for waits behind a
     /// "new papers" pill instead of replacing the list they are about to read.
     func refreshIfStale() async {
-        guard hasKey else { return }
+        guard canBuild else { return }
         if needsRefresh {
             await refresh()
         } else if updated.map({ Date().timeIntervalSince($0) > 6 * 3600 }) ?? true {
@@ -144,13 +150,14 @@ final class AppModel {
     func refresh(userInitiated: Bool = true) async {
         if isLoading { return }
         let key = effectiveKey
-        guard !key.isEmpty else {
-            phase = .failed("Add your free OpenAlex key in Settings to load papers.")
+        guard canBuild else {
+            phase = .failed("No source is on. Turn on Europe PMC, or add your OpenAlex key, in Tune.")
             return
         }
         phase = .loading("Starting…")
         needsRefresh = false
         let settings = self.settings
+        let useOpenAlex = usesOpenAlex
         // What this feed is built for, taken now: the user may change a follow
         // while it runs, and the result must not claim to match that.
         let builtFor = settings.withoutFeedback
@@ -164,7 +171,9 @@ final class AppModel {
             // The ranking is CPU work, so it runs off the main thread.
             let (result, vectors) = try await Task.detached(priority: .userInitiated) { () -> (FeedResult, Data?) in
                 let cache = NLTextEmbedder().map { CachingEmbedder($0, stored: cachedVectors) }
-                let engine = FeedEngine(openAlex: OpenAlexClient(apiKey: key), embedder: cache, log: report)
+                let engine = FeedEngine(openAlex: useOpenAlex ? OpenAlexClient(apiKey: key) : nil,
+                                        europePMC: settings.useEuropePMC ? EuropePMCClient() : nil,
+                                        embedder: cache, log: report)
                 let result = try await engine.build(settings, previous: previous)
                 let used = result.profileTexts + (result.citedYou + result.forYou).map { Ranker.text($0.paper) }
                 return (result, cache?.snapshot(keeping: used))

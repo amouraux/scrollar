@@ -66,12 +66,14 @@ func run() async throws {
         print("usage: ./run.sh <orcid> | --settings file.json   (see the header of CLI/main.swift)")
         return
     }
-    guard let key = loadKey() else {
-        print("No key. Put OPENALEX_API_KEY=… in Secrets.local (see Secrets.example).")
-        return
+    // --no-openalex and --no-europepmc switch a source off, to try one alone.
+    let key = args.contains("--no-openalex") ? nil : loadKey()
+    if key == nil && !args.contains("--no-openalex") {
+        print("No OpenAlex key (Secrets.local, see Secrets.example): using Europe PMC alone.")
     }
-
-    var engine = FeedEngine(openAlex: OpenAlexClient(apiKey: key), log: { print($0) })
+    var engine = FeedEngine(openAlex: key.map { OpenAlexClient(apiKey: $0) },
+                            europePMC: args.contains("--no-europepmc") ? nil : EuropePMCClient(),
+                            log: { print($0) })
     if CommandLine.arguments.contains("--no-embeddings") { engine.embedder = nil }
 
     if CommandLine.arguments.contains("--compare") {

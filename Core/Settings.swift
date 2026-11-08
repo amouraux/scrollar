@@ -104,6 +104,12 @@ struct FeedSettings: Codable, Equatable {
     /// the user's own papers. Off for someone with no publications yet.
     var useMyPublications = true
 
+    // MARK: Sources
+    /// OpenAlex needs the user's own free key; Europe PMC (which includes PubMed and
+    /// the preprint servers) needs nothing. Either can be switched off.
+    var useOpenAlex = true
+    var useEuropePMC = true
+
     // MARK: Follow
     var followedTopics: [Entity] = []
     var followedJournals: [Entity] = []
@@ -241,7 +247,7 @@ extension Feedback {
 
 extension FeedSettings {
     enum CodingKeys: String, CodingKey {
-        case formatVersion, orcid, useMyPublications
+        case formatVersion, orcid, useMyPublications, useOpenAlex, useEuropePMC
         case followedTopics, followedJournals, followedAuthors, followedInstitutions
         case followedFunders, followedKeywords, trackedPapers
         case mutedJournals, mutedAuthors, mutedTopics, mutedKeywords
@@ -258,6 +264,8 @@ extension FeedSettings {
         formatVersion = get(.formatVersion, formatVersion)
         orcid = get(.orcid, orcid)
         useMyPublications = get(.useMyPublications, useMyPublications)
+        useOpenAlex = get(.useOpenAlex, useOpenAlex)
+        useEuropePMC = get(.useEuropePMC, useEuropePMC)
         followedTopics = get(.followedTopics, followedTopics)
         followedJournals = get(.followedJournals, followedJournals)
         followedAuthors = get(.followedAuthors, followedAuthors)

@@ -33,6 +33,28 @@ can slip through; the whole window is therefore fetched again every three days, 
 settings change, and after a long absence. `./run.sh <orcid> --compare` runs a full
 build and then an incremental one and checks they agree.
 
+## Sources
+
+Two, either of which can be switched off in Tune, and a paper found by both is shown once.
+
+- **Europe PMC** (no key): PubMed and MEDLINE records and the preprint servers.
+  Biomedicine only. Answers keywords, journals, MeSH headings (made from your own
+  papers' headings when OpenAlex is off), authors and institutions by name, and
+  citations of your work, but its citation data is much thinner than OpenAlex's.
+- **OpenAlex** (your own free key): every field. Needed for topics, authors by
+  id, the impact and h-index options, muting by id, and complete citations.
+
+Without a key the profile comes from ORCID's public API (your works and their
+DOIs) and Europe PMC (abstracts, MeSH). `./run.sh <orcid> --no-openalex` tries
+that path alone; `--no-europepmc` the other.
+
+`Core/Sources.swift` routes each seed to the sources that can answer it, reads
+Europe PMC and ORCID, and `Merge.combine` (in `Model.swift`) is the deduplication:
+copies are one paper if they share a DOI, a PMID or an id, or, for a preprint and
+the article it became, the same title and first author within eighteen months.
+The article, then the OpenAlex copy, is the base, so ids and the DOI history is
+keyed on do not change when a preprint is published.
+
 ## Key
 
 OpenAlex needs a free key (<https://openalex.org/settings/api>). Copy
@@ -44,7 +66,7 @@ their own into Settings and it will live in the Keychain.
 
 - `Core/Model.swift`, `Seed.swift`, `Ranking.swift`: Foundation only, tested.
 - `Core/Settings.swift`, `FeedBuilder.swift`: everything the user can tune, and what it does.
-- `Core/OpenAlex.swift`, `PubMedClient.swift`, `Embedding.swift`: the network and
+- `Core/OpenAlex.swift`, `EuropePMCClient.swift` (and ORCID), `PubMedClient.swift`, `Embedding.swift`: the network and
   Apple's NaturalLanguage; nothing else touches either.
 - `Core/History.swift`: what was seen and read, and how a feed is sorted into new, earlier and read.
 - `Core/Incremental.swift`: refreshing by asking only for what was published since the last fetch, and keeping the rest.
@@ -57,5 +79,5 @@ their own into Settings and it will live in the Keychain.
 - `CLI/main.swift`: prototype driver.
 
 Every seed (a topic, journal, author, keyword, or "cites my work") becomes one
-OpenAlex query. Results are merged by DOI, ranked, and each card keeps the
+query per source that can answer it. Results are merged by DOI, ranked, and each card keeps the
 reasons it appeared.

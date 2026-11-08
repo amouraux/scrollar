@@ -47,10 +47,10 @@ struct SettingsView: View {
 
                 Section("Follow") {
                     entityLink("Topics", kind: .topics, items: $model.settings.followedTopics)
-                    entityLink("Journals", kind: .sources, items: $model.settings.followedJournals)
-                    entityLink("Researchers", kind: .authors, items: $model.settings.followedAuthors)
-                    entityLink("Institutions", kind: .institutions, items: $model.settings.followedInstitutions)
-                    entityLink("Funders", kind: .funders, items: $model.settings.followedFunders)
+                    entityLink("Journals", kind: .sources, items: $model.settings.followedJournals, byName: true)
+                    entityLink("Researchers", kind: .authors, items: $model.settings.followedAuthors, byName: true)
+                    entityLink("Institutions", kind: .institutions, items: $model.settings.followedInstitutions, byName: true)
+                    entityLink("Funders", kind: .funders, items: $model.settings.followedFunders, byName: true)
                     NavigationLink {
                         KeywordListView(rules: $model.settings.followedKeywords)
                     } label: {
@@ -59,7 +59,7 @@ struct SettingsView: View {
                 }
 
                 Section("Mute") {
-                    entityLink("Journals", kind: .sources, items: $model.settings.mutedJournals)
+                    entityLink("Journals", kind: .sources, items: $model.settings.mutedJournals, byName: true)
                     entityLink("Researchers", kind: .authors, items: $model.settings.mutedAuthors)
                     entityLink("Topics", kind: .topics, items: $model.settings.mutedTopics)
                     NavigationLink {
@@ -171,23 +171,28 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    SecureField("OpenAlex key", text: $model.apiKey)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Link("Get a free key", destination: URL(string: "https://openalex.org/settings/api")!)
+                    Toggle("Europe PMC and PubMed", isOn: $model.settings.useEuropePMC)
+                    Toggle("OpenAlex", isOn: $model.settings.useOpenAlex)
+                    if model.settings.useOpenAlex {
+                        SecureField("OpenAlex key (free, optional)", text: $model.apiKey)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        Link("Get a free key", destination: URL(string: "https://openalex.org/settings/api")!)
+                    }
                 } header: {
-                    Text("Data source")
+                    Text("Sources")
                 } footer: {
-                    Text("Papers come from OpenAlex and PubMed. The key is free, stays in this device's Keychain, and is sent only to OpenAlex.")
+                    Text("Europe PMC covers PubMed and the preprint servers for biomedicine and needs nothing. OpenAlex covers every field and adds topics, authors by id, the impact and h-index options and more complete lists of your papers; it needs your own free key, which stays in this device's Keychain and is sent only to OpenAlex. A paper found by both is shown once.")
                 }
             }
             .navigationTitle("Tune")
         }
     }
 
-    private func entityLink(_ title: String, kind: OpenAlexClient.EntityKind, items: Binding<[Entity]>) -> some View {
+    private func entityLink(_ title: String, kind: OpenAlexClient.EntityKind, items: Binding<[Entity]>,
+                            byName: Bool = false) -> some View {
         NavigationLink {
-            EntityListView(title: title, kind: kind, items: items)
+            EntityListView(title: title, kind: kind, items: items, byName: byName)
         } label: {
             LabeledContent(title, value: count(items.wrappedValue.count))
         }
@@ -206,6 +211,9 @@ struct EntityListView: View {
     let title: String
     let kind: OpenAlexClient.EntityKind
     @Binding var items: [Entity]
+    /// Whether a name can be typed in and searched by Europe PMC, for when there is
+    /// no OpenAlex key or OpenAlex does not know it.
+    var byName = false
     @State private var adding = false
 
     var body: some View {
@@ -223,7 +231,7 @@ struct EntityListView: View {
             }
         }
         .sheet(isPresented: $adding) {
-            EntitySearchSheet(kind: kind, title: title, chosen: items) { entity in
+            EntitySearchSheet(kind: kind, title: title, byName: byName, chosen: items) { entity in
                 if !items.contains(entity) { items.append(entity) }
             }
         }
@@ -235,6 +243,7 @@ struct EntitySearchSheet: View {
     @Environment(\.dismiss) private var dismiss
     let kind: OpenAlexClient.EntityKind
     let title: String
+    var byName = false
     let chosen: [Entity]
     let pick: (Entity) -> Void
 
@@ -243,10 +252,42 @@ struct EntitySearchSheet: View {
     @State private var failure: String?
     @State private var added: Set<String> = []
 
+    private var trimmedQuery: String { query.trimmingCharacters(in: .whitespaces) }
+
+    private var nameHint: String {
+        switch kind {
+        case .authors: return "Searched in Europe PMC by name; write it as it appears in PubMed, like Mouraux A"
+        case .sources: return "Searched in Europe PMC by journal name"
+        default: return "Searched in Europe PMC by name"
+        }
+    }
+
     var body: some View {
         NavigationStack {
             List {
                 if let failure { Text(failure).foregroundStyle(.orange) }
+                if !model.usesOpenAlex {
+                    Text("Searching needs OpenAlex and its free key. You can still add a name, which Europe PMC searches for.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                if byName, trimmedQuery.count >= 2 {
+                    let id = SourceRouting.namedID(trimmedQuery)
+                    let done = added.contains(id) || chosen.contains { $0.id == id }
+                    Button {
+                        pick(Entity(id: id, name: trimmedQuery))
+                        added.insert(id)
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Add “\(trimmedQuery)” by name").foregroundStyle(.primary)
+                                Text(nameHint).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if done { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
                 ForEach(results) { hit in
                     let done = added.contains(hit.id) || chosen.contains(hit.entity)
                     Button {
@@ -271,7 +312,7 @@ struct EntitySearchSheet: View {
                 }
             }
             .overlay {
-                if results.isEmpty, query.count >= 2, failure == nil {
+                if results.isEmpty, query.count >= 2, failure == nil, !byName {
                     ContentUnavailableView.search(text: query)
                 }
             }
@@ -285,7 +326,7 @@ struct EntitySearchSheet: View {
             // Wait for a pause in typing, and let a newer query cancel this one.
             .task(id: query) {
                 try? await Task.sleep(for: .milliseconds(300))
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, model.usesOpenAlex else { results = []; return }
                 do {
                     results = try await model.openAlex.search(kind, query: query)
                     failure = nil

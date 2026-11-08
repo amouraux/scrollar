@@ -24,7 +24,14 @@ enum FeedBuilder {
         }
 
         if s.useMyPublications {
-            for t in myTopics.prefix(5) { add(.topic(id: t.id, name: t.name), explicit: false) }
+            for t in myTopics.prefix(5) {
+                // Ids made from MeSH headings (no OpenAlex) become MeSH seeds.
+                if t.id.hasPrefix("mesh:") {
+                    if !MeSH.isGeneric(t.name) { add(.mesh(t.name), explicit: false) }
+                } else {
+                    add(.topic(id: t.id, name: t.name), explicit: false)
+                }
+            }
             if !myWorkIDs.isEmpty { add(.cites(workIDs: myWorkIDs, label: "Cites your work"), explicit: false) }
         }
         for e in s.followedTopics { add(.topic(id: e.id, name: e.name), explicit: true) }
@@ -50,6 +57,8 @@ enum FeedBuilder {
     /// would act on papers that were about to be completed.
     static func keep(_ papers: [Paper], settings s: FeedSettings) -> [Paper] {
         let mutedJournals = Set(s.mutedJournals.map { $0.id.lowercased() })
+        // A journal muted by typing its name has no id to match, so it matches by name.
+        let mutedJournalNames = Set(s.mutedJournals.filter { SourceRouting.isNamed($0.id) }.map { $0.name.lowercased() })
         let mutedAuthors = Set(s.mutedAuthors.map { $0.id.lowercased() })
         let mutedTopics = Set(s.mutedTopics.map { $0.id.lowercased() })
         let mutedWords = s.mutedKeywords.map { $0.lowercased() }.filter { !$0.isEmpty }
@@ -65,6 +74,7 @@ enum FeedBuilder {
             if hidden.contains(p.dedupeKey) { continue }
             if s.weight(for: p.kind) == .hide { continue }
             if let j = p.journalID?.lowercased(), mutedJournals.contains(j) { continue }
+            if let name = p.journal?.lowercased(), mutedJournalNames.contains(name) { continue }
             if p.authorIDs.contains(where: { mutedAuthors.contains($0.lowercased()) }) { continue }
             if p.topicIDs.contains(where: { mutedTopics.contains($0.lowercased()) }) { continue }
             let text = (p.title + " " + (p.abstract ?? "")).lowercased()

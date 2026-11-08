@@ -9,6 +9,9 @@ enum Seed: Hashable {
     case institution(id: String, name: String)
     case funder(id: String, name: String)
     case keyword(String)
+    /// A MeSH heading, for sources that index by it (Europe PMC). Used for the
+    /// topics of the user's own papers when OpenAlex, which names topics its own way, is off.
+    case mesh(String)
     /// New papers that cite any of these works (at most 100: an OpenAlex limit).
     /// `label` is what the card says: "Cites your work", or the tracked paper's title.
     case cites(workIDs: [String], label: String)
@@ -22,6 +25,7 @@ enum Seed: Hashable {
         case .institution(_, let name): return "Institution: \(name)"
         case .funder(_, let name): return "Funder: \(name)"
         case .keyword(let k): return "Keyword: \(k)"
+        case .mesh(let name): return "Topic: \(name)"
         case .cites(_, let label): return label
         }
     }
@@ -45,6 +49,7 @@ enum Seed: Hashable {
         case .funder(let id, _): base = "awards.funder_id:\(id)"
         // A comma would end the filter value early.
         case .keyword(let k): base = "title_and_abstract.search:" + k.replacingOccurrences(of: ",", with: " ")
+        case .mesh(let name): base = "title_and_abstract.search:" + name.replacingOccurrences(of: ",", with: " ")
         case .cites(let ids, _): base = "cites:" + ids.prefix(100).joined(separator: "|")
         }
         return "\(base),from_publication_date:\(since)"

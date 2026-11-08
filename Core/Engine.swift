@@ -2,11 +2,14 @@ import Foundation
 
 enum EngineError: Error, CustomStringConvertible {
     case nothingToFollow
+    case noSource
 
     var description: String {
         switch self {
         case .nothingToFollow:
             return "Nothing to build a feed from: add an ORCID, or follow a topic, journal, author or keyword."
+        case .noSource:
+            return "No source is on: turn on Europe PMC, or OpenAlex with your key, in Tune."
         }
     }
 }
@@ -36,13 +39,18 @@ struct FeedResult {
 /// The network half: settings in, a ranked feed out. The app and the command
 /// line call this one function, so neither can drift from the other.
 struct FeedEngine {
-    var openAlex: OpenAlexClient
+    /// nil when there is no key or the user switched it off.
+    var openAlex: OpenAlexClient?
+    /// nil when the user switched it off.
+    var europePMC: EuropePMCClient? = EuropePMCClient()
+    var orcid = OrcidClient()
     var pubmed = PubMedClient()
     var embedder: TextEmbedder? = NLTextEmbedder()
     /// Progress and numbers, for the command line; the app can ignore it.
     var log: (String) -> Void = { _ in }
 
     func build(_ settings: FeedSettings, previous: PreviousFeed? = nil, today: Date = Date()) async throws -> FeedResult {
+        guard openAlex != nil || europePMC != nil else { throw EngineError.noSource }
         let windowStart = Ranker.dayString(today.addingTimeInterval(-Double(settings.daysBack) * 86_400))
         let mode = Incremental.mode(previous: previous, settings: settings, now: today)
         let since: String
@@ -63,15 +71,29 @@ struct FeedEngine {
         func lap() -> String { defer { clock = Date() }; return String(format: "%.1fs", Date().timeIntervalSince(clock)) }
 
         // 1. The user's own papers: the profile, and the seeds that come from them.
+        //    OpenAlex knows them best; where it is off or fails, ORCID and Europe PMC do.
         var me: AuthorProfile?
         var own: [Paper] = []
         if settings.useMyPublications, let orcid = settings.orcid, !orcid.isEmpty {
-            let author = try await openAlex.author(orcid: orcid)
-            me = author
-            own = try await openAlex.works(filter: "author.id:\(author.id)", perPage: 100)
-            let before = own.filter { $0.abstract != nil }.count
-            own = await enrich(own)
-            log("Profile: \(own.count) papers, abstracts \(before) → \(own.filter { $0.abstract != nil }.count) after PubMed  [\(lap())]")
+            var done = false
+            if let openAlex {
+                do {
+                    let author = try await openAlex.author(orcid: orcid)
+                    me = author
+                    own = try await openAlex.works(filter: "author.id:\(author.id)", perPage: 100)
+                    let before = own.filter { $0.abstract != nil }.count
+                    own = await enrich(own)
+                    log("Profile: \(own.count) papers, abstracts \(before) → \(own.filter { $0.abstract != nil }.count) after PubMed  [\(lap())]")
+                    done = true
+                } catch {
+                    if europePMC == nil { throw error }
+                    log("OpenAlex could not give the profile (\(error)); using ORCID and Europe PMC")
+                }
+            }
+            if !done, let europePMC {
+                (me, own) = try await profileFromOrcid(orcid, europePMC: europePMC)
+                log("Profile from ORCID: \(own.count) papers, \(own.filter { $0.abstract != nil }.count) with abstracts  [\(lap())]")
+            }
         }
         let profileTexts = FeedBuilder.profileTexts(settings, own: own)
 
@@ -83,20 +105,48 @@ struct FeedEngine {
         guard !planned.isEmpty else { throw EngineError.nothingToFollow }
 
         var found: [Paper] = []
+        let ownPMIDs = own.compactMap(\.pmid)
+        let until = Ranker.dayString(today)
+        var perSource: [SourceKind: Int] = [:]
         for step in planned {
-            do {
-                var list = try await openAlex.papers(for: step.seed, since: since, maxPages: maxPages)
-                if step.explicit && !step.seed.citesYou {
-                    for i in list.indices { list[i].followed = true }
+            let targets = SourceRouting.targets(for: step.seed, openAlex: openAlex != nil,
+                                                europePMC: europePMC != nil, hasOwnPMIDs: !ownPMIDs.isEmpty)
+            if targets.isEmpty { log("  no source answers \(step.seed.reason)"); continue }
+            for target in targets {
+                do {
+                    var list: [Paper] = []
+                    switch target {
+                    case .openAlex:
+                        guard let openAlex else { continue }
+                        list = try await openAlex.papers(for: step.seed, since: since, maxPages: maxPages)
+                    case .europePMC:
+                        guard let europePMC,
+                              let query = EuropePMCQuery.build(step.seed, since: since, until: until, ownPMIDs: ownPMIDs) else { continue }
+                        list = try await europePMC.papers(query: query, maxPages: maxPages)
+                        for i in list.indices {
+                            list[i].reasons = [step.seed.reason]
+                            list[i].citesYou = step.seed.citesYou
+                        }
+                    }
+                    for i in list.indices { list[i].sources = [target.rawValue] }
+                    if step.explicit && !step.seed.citesYou {
+                        for i in list.indices { list[i].followed = true }
+                    }
+                    perSource[target, default: 0] += list.count
+                    found += list
+                } catch {
+                    complete = false
+                    log("  skipped \(step.seed.reason) in \(target.rawValue): \(error)")
                 }
-                found += list
-            } catch {
-                complete = false
-                log("  skipped \(step.seed.reason): \(error)")
             }
         }
+        log("Results by source: " + perSource.sorted { $0.key.rawValue < $1.key.rawValue }.map { "\($0.key.rawValue) \($0.value)" }.joined(separator: ", "))
         let myID = me?.id
-        var fetched = Merge.combine(found.filter { p in myID.map { !p.authorIDs.contains($0) } ?? true })
+        // The user's own papers are not suggestions, whichever source returned them.
+        let ownKeys = Set(own.map(\.dedupeKey))
+        var fetched = Merge.combine(found.filter { p in
+            !ownKeys.contains(p.dedupeKey) && (myID.map { !p.authorIDs.contains($0) } ?? true)
+        })
         if let previous { fetched = Incremental.carryOver(from: previous.papers, into: fetched) }
         var papers = fetched
         if mode.isIncremental, let previous {
@@ -137,11 +187,11 @@ struct FeedEngine {
         // The journals' two-year mean citedness, for the "prefer high-impact journals"
         // slider and for the figure on a post. A few requests; if they fail the
         // feed simply has no figures this time.
-        papers = await attachImpact(papers, previous: mode.isIncremental ? previous : nil)
+        if let openAlex { papers = await attachImpact(papers, openAlex: openAlex, previous: mode.isIncremental ? previous : nil) }
         // The authors' h-index costs about a request per hundred authors, so it is
         // only fetched when the user has asked for it to count.
-        if settings.authorWeight > 0 {
-            papers = await attachAuthors(papers, previous: previous)
+        if settings.authorWeight > 0, let openAlex {
+            papers = await attachAuthors(papers, openAlex: openAlex, previous: previous)
             log("Authors: h-index for \(papers.filter { $0.firstAuthorH != nil || $0.lastAuthorH != nil }.count) of \(papers.count) papers  [\(lap())]")
         }
 
@@ -165,10 +215,31 @@ struct FeedEngine {
                           newPapers: ranked.filter { !before.contains($0.paper.dedupeKey) }.count)
     }
 
+    /// The user's papers without OpenAlex: ORCID lists them, Europe PMC supplies the
+    /// abstracts and MeSH headings. A work Europe PMC does not have still counts by its title.
+    private func profileFromOrcid(_ orcid: String, europePMC: EuropePMCClient) async throws -> (AuthorProfile, [Paper]) {
+        let name = (try? await self.orcid.name(orcid: orcid)) ?? orcid
+        let works = try await self.orcid.works(orcid: orcid)
+        let recent = works.sorted { ($0.year ?? 0) > ($1.year ?? 0) }.prefix(100)
+        var papers = (try? await europePMC.papers(dois: recent.compactMap(\.doi))) ?? []
+        let have = Set(papers.compactMap(\.doi))
+        for work in recent where work.doi.map({ !have.contains($0) }) ?? true {
+            guard let title = work.title else { continue }
+            papers.append(Paper(id: "orcid:\(work.doi ?? title)", doi: work.doi, pmid: work.pmid, title: title,
+                                date: "\(work.year ?? 1900)-01-01"))
+        }
+        var counts: [String: Int] = [:]
+        for p in papers { for t in p.topics { counts[t, default: 0] += 1 } }
+        let topics = counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+            .prefix(5).map { (id: "mesh:" + $0.key, name: $0.key, count: $0.value) }
+        let profile = AuthorProfile(id: "orcid:" + orcid, name: name, worksCount: works.count, citedByCount: 0, hIndex: nil, topics: topics)
+        return (profile, papers)
+    }
+
     /// Journals' figures change slowly, so an incremental refresh reuses the ones it
     /// already has and asks only for journals it has not seen; a full rebuild asks
     /// again for all of them, which keeps them from going stale.
-    private func attachImpact(_ papers: [Paper], previous: PreviousFeed?) async -> [Paper] {
+    private func attachImpact(_ papers: [Paper], openAlex: OpenAlexClient, previous: PreviousFeed?) async -> [Paper] {
         var known: [String: Double] = [:]
         for p in previous?.papers ?? [] {
             if let id = p.journalID, let impact = p.journalImpact { known[id] = impact }
@@ -188,7 +259,7 @@ struct FeedEngine {
 
     /// An author's h-index moves slowly and a paper leaves the window within weeks,
     /// so figures already on the papers held are reused, whatever the mode.
-    private func attachAuthors(_ papers: [Paper], previous: PreviousFeed?) async -> [Paper] {
+    private func attachAuthors(_ papers: [Paper], openAlex: OpenAlexClient, previous: PreviousFeed?) async -> [Paper] {
         var known: [String: Int] = [:]
         for p in (previous?.papers ?? []) + papers {
             guard let lead = p.leadAuthorIDs else { continue }
