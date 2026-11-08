@@ -184,9 +184,11 @@ keyword, journal, institution, funder, then a topic).
 
 ## What a post shows
 
-The journal on a coloured banner (the same colour for a journal everywhere), the reason, the
-first and/or last author with their institution, the whole title, and one or two sentences of
-what the paper shows. Those sentences are written on the device by Apple's language model where
+In this order, the title leading: a thin bar of the journal's colour (the same colour for a journal
+everywhere; a setting turns it off), the journal and when in small type above the title, the whole
+title as the biggest thing on the card, one or two sentences of what the paper shows, the first
+and/or last author with their institution (and the impact and h-index while those options are on), and
+the reason it is there, then the buttons. Those sentences are written on the device by Apple's language model where
 there is one (`App/Summarizer.swift`: on-device only, one paper at a time, started when a post
 has stayed on screen and cancelled when it leaves, cached in `summaries.json`, held to two
 sentences in code because the model sometimes writes five); otherwise they are chosen from the

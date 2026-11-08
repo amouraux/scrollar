@@ -181,62 +181,31 @@ struct BylineBadge: View {
     }
 }
 
-/// The post's picture: the journal's name on a colour that is always the same
-/// for that journal, so a journal is recognised before it is read. It stands in
-/// for a figure, which open data does not give us; a real figure would go here.
-struct CoverBanner: View {
+/// A thin bar in the journal's colour along the top of the card: the same colour for a journal
+/// everywhere, so a journal is recognised at a glance without taking the room the title needs.
+struct JournalAccent: View {
     @Environment(\.colorScheme) private var scheme
-    @Environment(AppModel.self) private var model
     let paper: Paper
-
-    /// The topic, and the journal's impact when the user has asked for it to count.
-    private var subline: String? {
-        var parts: [String] = []
-        if let topic = paper.topics.first { parts.append(topic) }
-        if model.settings.impactWeight > 0, let impact = paper.journalImpact {
-            parts.append("Impact " + String(format: "%.1f", impact))
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
 
     var body: some View {
         let spec = Cover.spec(for: paper, byJournal: true)
-        // Dark enough that the white label stays readable on every hue.
-        let top = scheme == .dark ? 0.45 : 0.56
-        ZStack(alignment: .bottomLeading) {
-            LinearGradient(
-                colors: [Color(hue: spec.hueA, saturation: 0.6, brightness: top),
-                         Color(hue: spec.hueB, saturation: 0.6, brightness: top - 0.14)],
-                startPoint: .topLeading, endPoint: .bottomTrailing)
-            Image(systemName: spec.symbol)
-                .font(.system(size: 46))
-                .foregroundStyle(.white.opacity(0.28))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-                .padding(.trailing, 18)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(paper.journal ?? paper.topics.first ?? "Unpublished")
-                    .font(.headline)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-                if paper.journal != nil, let line = subline {
-                    Text(line).font(.caption).opacity(0.85).lineLimit(1)
-                }
-            }
-            .foregroundStyle(.white)
-            .padding(12)
-            .padding(.trailing, 60)
-        }
-        .frame(height: 76)
-        .accessibilityHidden(true)
+        let brightness = scheme == .dark ? 0.62 : 0.56
+        LinearGradient(
+            colors: [Color(hue: spec.hueA, saturation: 0.6, brightness: brightness),
+                     Color(hue: spec.hueB, saturation: 0.6, brightness: brightness - 0.12)],
+            startPoint: .leading, endPoint: .trailing)
+            .frame(height: 5)
+            .accessibilityHidden(true)
     }
 }
 
-/// A post in the stream, laid out like one on LinkedIn: who (badges, names,
-/// where they work), then what (the whole title and what the paper shows), then
-/// a picture of the journal, then buttons to tell the feed what you think.
+/// A post in the stream, laid out like a headline: the journal and when, the whole title as the
+/// biggest thing on it, what the paper shows, who wrote it, why it is here, and buttons to tell
+/// the feed what you think.
 struct PaperCard: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
+    @Environment(\.colorScheme) private var scheme
     @AppStorage("showCovers") private var showCovers = true
     let ranked: RankedPaper
     @State private var expanded = false
@@ -248,23 +217,21 @@ struct PaperCard: View {
     private var people: [Byline] { Byline.people(of: paper, choice: choice) }
 
     var body: some View {
-        // The journal first, running to the card's edges like a cover; then who wrote
-        // it, what it says, and what to do with it.
+        // The title leads: a thin bar of the journal's colour, the journal and when in small type
+        // above it, then the title, what it says, who wrote it and why it is here.
         VStack(alignment: .leading, spacing: 0) {
-            if showCovers { CoverBanner(paper: paper) }
+            if showCovers { JournalAccent(paper: paper) }
             VStack(alignment: .leading, spacing: 10) {
-                if let why = Why.main(for: paper) {
-                    whyLine(why)
-                    Divider()
-                }
-                header
+                eyebrow
                 post
+                if !people.isEmpty { byline }
+                if let why = Why.main(for: paper) { whyLine(why) }
                 if expanded { details.transition(.opacity) }
                 Divider()
                 actionBar
             }
             .padding(.horizontal, 12)
-            .padding(.top, 12)
+            .padding(.top, 10)
             .padding(.bottom, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -308,39 +275,72 @@ struct PaperCard: View {
         if expanded { model.markOpened(paper) }
     }
 
-    // MARK: Header
+    // MARK: Eyebrow
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
+    /// The journal's own colour, dark enough to read on the card in either mode.
+    private var journalColor: Color {
+        guard showCovers else { return .secondary }
+        let hue = Cover.spec(for: paper, byJournal: true).hueA
+        return Color(hue: hue, saturation: 0.7, brightness: scheme == .dark ? 0.9 : 0.5)
+    }
+
+    /// The journal and when, small, above the title; the age is never the part that gets cut.
+    private var eyebrow: some View {
+        HStack(spacing: 6) {
+            if let journal = paper.journal {
+                Text(journal)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(journalColor)
+                    .lineLimit(1)
+            }
+            Text((paper.journal == nil ? "" : "· ") + eyebrowRest)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .fixedSize()
+                .layoutPriority(1)
+            statusMark
+            Spacer(minLength: 0)
+            moreMenu
+        }
+        .frame(minHeight: 24)
+    }
+
+    private var eyebrowRest: String {
+        var parts = [ageLabel(paper.date)]
+        if paper.kind != .research { parts.append(paper.kind.label) }
+        return parts.joined(separator: " · ")
+    }
+
+    // MARK: Byline
+
+    /// Who wrote it, smaller than the title, with where they work and the figures the ranking used.
+    private var byline: some View {
+        HStack(alignment: .top, spacing: 8) {
             badges
             VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 6) {
-                    Text(people.isEmpty ? (paper.journal ?? "Unknown authors") : people.map(\.name).joined(separator: " & "))
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    statusMark
-                }
+                Text(people.map(\.name).joined(separator: " & "))
+                    .font(.footnote.weight(.semibold))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let place = Byline.places(people) {
                     Text(place).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
-                Text(metaLine).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                if let figures = figuresLine {
+                    Text(figures).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
             }
-            Spacer(minLength: 0)
-            moreMenu
         }
     }
 
     /// One badge, or two overlapping for first and last author.
     @ViewBuilder private var badges: some View {
-        if people.isEmpty {
-            BylineBadge(initials: Byline.initials(paper.journal ?? "?"), hue: Byline.hue(for: paper.journal ?? paper.title))
-        } else if people.count == 1 {
-            BylineBadge(initials: people[0].initials, hue: people[0].hue)
+        if people.count == 1 {
+            BylineBadge(initials: people[0].initials, hue: people[0].hue, size: 32)
         } else {
-            HStack(spacing: -9) {
+            HStack(spacing: -8) {
                 ForEach(Array(people.enumerated()), id: \.offset) { _, person in
-                    BylineBadge(initials: person.initials, hue: person.hue, size: 38)
+                    BylineBadge(initials: person.initials, hue: person.hue, size: 30)
                         .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 2))
                 }
             }
@@ -371,13 +371,13 @@ struct PaperCard: View {
         return "h-index \(h) (\(first > last ? "first" : "last") author)"
     }
 
-    /// The journal is on the picture; here only when it was and what kind of paper.
-    private var metaLine: String {
-        var parts = [ageLabel(paper.date)]
-        if !showCovers, let journal = paper.journal { parts.append(journal) }
+    /// The journal's impact and the author's h-index, while the options that use them are on, so
+    /// the ranking can be judged.
+    private var figuresLine: String? {
+        var parts: [String] = []
+        if model.settings.impactWeight > 0, let impact = paper.journalImpact { parts.append("Impact " + String(format: "%.1f", impact)) }
         if let h = hIndexLabel { parts.append(h) }
-        if paper.kind != .research { parts.append(paper.kind.label) }
-        return parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     /// Tuning the feed from the post itself: each choice mutes one thing.
@@ -412,12 +412,12 @@ struct PaperCard: View {
 
     // MARK: Post
 
-    /// The whole title, then what the paper shows. A tap opens the abstract.
+    /// The whole title, the biggest thing on the card, then what the paper shows. A tap opens the abstract.
     private var post: some View {
         Button(action: toggle) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(paper.title)
-                    .font(.body.weight(.semibold))
+                    .font(.title3.weight(.bold))
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 if let takeaway = model.takeaway(for: paper) {

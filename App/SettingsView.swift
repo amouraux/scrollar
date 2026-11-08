@@ -169,11 +169,11 @@ struct SettingsView: View {
                     Picker("Post is headed by", selection: $model.settings.byline) {
                         ForEach(BylineChoice.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
-                    Toggle("Show the journal on each post", isOn: $showCovers)
+                    Toggle("Colour each post by its journal", isOn: $showCovers)
                 } header: {
                     Text("Posts")
                 } footer: {
-                    Text("Badges show initials: open scholarly data has no author photographs. Which end of the author list leads depends on your field. The h-index option below follows this choice: the higher of the two when both are shown. The picture carries the journal's name.")
+                    Text("Badges show initials: open scholarly data has no author photographs. Which end of the author list leads depends on your field. The h-index option below follows this choice: the higher of the two when both are shown. A journal always has the same colour: a thin bar along the top of its posts and its name above the title.")
                 }
 
                 Section("Content") {
