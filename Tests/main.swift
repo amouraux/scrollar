@@ -488,5 +488,24 @@ check(Summary.limited(wordy) == "The study found that cold reduced pain. It also
 check(Summary.limited("   ") == nil, "limited: nothing in, nothing out")
 check(Summary.limited(String(repeating: "word ", count: 120) + "end.", maxLength: 80)?.hasSuffix("…") == true, "limited: one endless sentence is clipped, not passed on")
 
+// MARK: why a post is in the feed
+func why(_ reasons: [String], followed: Bool = true) -> Why? { Why.main(for: ok("why") { $0.reasons = reasons; $0.followed = followed }) }
+check(why(["Topic: Pain", "Cites your work", "Journal: Pain"])?.text == "Cites your work", "why: a citation of your work beats everything")
+check(why(["Topic: Pain", "Author: Ada First"])?.text == "Author you follow: Ada First", "why: a followed author beats a topic")
+check(why(["Journal: Pain", "Topic: Pain"])?.text == "From a journal you follow", "why: a followed journal beats a topic")
+check(why(["Topic: Pain", "Cites: My tracked paper"])?.text == "Cites a paper you track: My tracked paper", "why: a tracked paper's citation comes next after your own work")
+check(why(["Topic: Pain"], followed: true)?.text == "Topic you follow: Pain", "why: a followed topic")
+check(why(["Topic: Pain"], followed: false)?.text == "Topic from your own papers: Pain", "why: an inferred topic says so")
+check(why(["Topic: Pain", "Journal: Pain", "Author: X"])?.others == 2, "why: counts the other reasons")
+check(why([]) == nil, "why: no reason, no line")
+check(why(["Cites your work"])?.isCitation == true && why(["Topic: Pain"])?.isCitation == false, "why: only citations are marked as such")
+let everySeed: [Seed] = [.topic(id: "T1", name: "Pain"), .journal(id: "S1", name: "Pain"), .author(id: "A1", name: "Ada"),
+                         .institution(id: "I1", name: "UCLouvain"), .funder(id: "F1", name: "FNRS"), .keyword("tactile"),
+                         .cites(workIDs: ["W1"], label: "Cites your work"), .cites(workIDs: ["W2"], label: "Cites: A tracked paper")]
+check(everySeed.allSatisfy { seed in
+    let w = why([seed.reason])
+    return w != nil && w?.symbol != Why.fallbackSymbol
+}, "why: every kind of seed is understood, so renaming a reason prefix fails here")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

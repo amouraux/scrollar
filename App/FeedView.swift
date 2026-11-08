@@ -226,6 +226,10 @@ struct PaperCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if let why = Why.main(for: paper) {
+                whyLine(why)
+                Divider()
+            }
             header
             post
             // Out of the way once the reader is into the abstract.
@@ -259,6 +263,19 @@ struct PaperCard: View {
             try? await Task.sleep(for: .milliseconds(700))
             if !Task.isCancelled { await model.writeTakeaway(for: paper) }
         }
+    }
+
+    /// Why this post is here, above it as LinkedIn says why it was suggested.
+    private func whyLine(_ why: Why) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: why.symbol)
+            Text(why.text).lineLimit(1)
+            if why.others > 0 { Text("+\(why.others)").foregroundStyle(.tertiary) }
+        }
+        .font(.caption.weight(why.isCitation ? .semibold : .regular))
+        .foregroundStyle(why.isCitation ? Color.accentColor : Color.secondary)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Shown because: \(why.text)")
     }
 
     private func toggle() {
