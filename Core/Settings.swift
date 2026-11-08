@@ -73,24 +73,35 @@ struct KeywordRule: Codable, Hashable {
     /// None of these may appear. "attention" without "deficit" is a different literature.
     var exclude: [String] = []
     var importance = Importance.normal
+    /// What identifies this rule in the sync file. Not the phrase: the same phrase may carry
+    /// several rules ("pain" with EEG, "pain" with MRI), and renaming one must not look like
+    /// deleting it and adding another. A rule saved before this existed takes its phrase, which
+    /// is the key it was already synced under.
+    var id: String
 
-    init(phrase: String, alsoRequire: [String] = [], exclude: [String] = [], importance: Importance = .normal) {
+    init(phrase: String, alsoRequire: [String] = [], exclude: [String] = [], importance: Importance = .normal, id: String? = nil) {
+        self.id = id ?? phrase
         self.phrase = phrase
         self.alsoRequire = alsoRequire
         self.exclude = exclude
         self.importance = importance
     }
 
-    enum CodingKeys: String, CodingKey { case phrase, alsoRequire, exclude, importance }
+    enum CodingKeys: String, CodingKey { case phrase, alsoRequire, exclude, importance, id }
 
     /// Tolerant like every stored type: a keyword saved before importance existed is Normal.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         phrase = try c.decode(String.self, forKey: .phrase)
+        id = (try? c.decodeIfPresent(String.self, forKey: .id)) ?? phrase
         alsoRequire = (try? c.decodeIfPresent([String].self, forKey: .alsoRequire)) ?? []
         exclude = (try? c.decodeIfPresent([String].self, forKey: .exclude)) ?? []
         importance = (try? c.decodeIfPresent(Importance.self, forKey: .importance)) ?? .normal
     }
+
+    /// The search this rule stands for. Rules with the same phrase and the same required words
+    /// share a seed and a reason; they differ only in what they exclude.
+    var seed: Seed { .keyword(phrase, also: alsoRequire.filter { !$0.isEmpty }) }
 
     /// `text` is already lowercased.
     func accepts(_ text: String) -> Bool {
@@ -255,9 +266,16 @@ struct FeedSettings: Codable, Equatable {
     /// The importance of the most important followed keyword that found this paper, or nil if
     /// no keyword did. A paper found by a high keyword and a low one counts as high.
     func keywordImportance(of paper: Paper) -> Importance? {
-        let byReason = Dictionary(followedKeywords.map { (Seed.keyword($0.phrase).reason, $0.importance) },
-                                  uniquingKeysWith: { first, _ in first })
+        let byReason = Dictionary(followedKeywords.map { ($0.seed.reason, $0.importance) },
+                                  uniquingKeysWith: { $0.tier >= $1.tier ? $0 : $1 })
         return paper.reasons.compactMap { byReason[$0] }.max { $0.tier < $1.tier }
+    }
+
+    /// A new rule on `phrase`. It takes the phrase as its id unless something already has it,
+    /// so two devices that add the same word at once agree; a second rule gets its own.
+    mutating func addKeyword(_ phrase: String) {
+        let taken = Set(followedKeywords.map(\.id))
+        followedKeywords.append(KeywordRule(phrase: phrase, id: taken.contains(phrase) ? UUID().uuidString : phrase))
     }
 
     /// Everything except what the user did with the feed. Changing a follow or a

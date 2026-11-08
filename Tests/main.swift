@@ -252,7 +252,8 @@ check(kept([seen], fb) == ["seen"], "unhide brings it back")
 
 var rules = FeedSettings()
 rules.followedKeywords = [KeywordRule(phrase: "attention", alsoRequire: ["pain"], exclude: ["deficit"])]
-let reason = Seed.keyword("attention").reason
+let reason = rules.followedKeywords[0].seed.reason
+check(reason == "Keyword: attention + pain", "a rule's reason names the words it requires")
 check(kept([ok("a") { $0.reasons = [reason]; $0.title = "Attention and pain" }], rules) == ["a"], "keyword rule satisfied")
 check(kept([ok("a") { $0.reasons = [reason]; $0.title = "Attention deficit and pain" }], rules).isEmpty, "keyword exclude drops what only that keyword found")
 check(kept([ok("a") { $0.reasons = [reason]; $0.title = "Attention in vision" }], rules).isEmpty, "keyword alsoRequire drops what only that keyword found")
@@ -932,6 +933,40 @@ check(!sections.forYou.fresh.contains { $0.paper.id == "star" } && sections.high
 var seenHistory = History(); seenHistory.markSeen("doi:none", at: Date())
 let emptyLayout = FeedLayout.make(citedYou: [], forYou: [], history: seenHistory, settings: layoutSettings, now: Date())
 check(emptyLayout.isEmpty, "layout: nothing in, nothing out")
+
+// MARK: one phrase, several rules
+var twin = FeedSettings()
+twin.addKeyword("pain")
+twin.followedKeywords[0].alsoRequire = ["EEG"]
+twin.addKeyword("pain")
+twin.followedKeywords[1].alsoRequire = ["MRI"]
+check(twin.followedKeywords.count == 2 && twin.followedKeywords[0].id != twin.followedKeywords[1].id, "the same phrase can be followed twice, each rule with its own id")
+let twinSeeds = FeedBuilder.seeds(twin, myWorkIDs: []).map(\.seed.reason)
+check(twinSeeds == ["Keyword: pain + EEG", "Keyword: pain + MRI"], "each rule is its own search")
+func twinKept(_ title: String, _ reasons: [String]) -> Bool {
+    !FeedBuilder.keep([ok("t") { $0.reasons = reasons; $0.title = title }], settings: twin).isEmpty
+}
+check(twinKept("Pain and EEG", ["Keyword: pain + EEG"]), "twin rules: the first rule's paper stays")
+check(twinKept("Pain and MRI", ["Keyword: pain + MRI"]), "twin rules: the second rule's paper stays")
+check(!twinKept("Pain and fMRI", ["Keyword: pain + EEG"]), "twin rules: a rule keeps only what has its own words")
+check(twinKept("Pain, EEG and MRI", ["Keyword: pain + EEG", "Keyword: pain + MRI"]), "twin rules: either may find it")
+var twinHigh = twin; twinHigh.followedKeywords[1].importance = .high
+check(twinHigh.keywordImportance(of: ok("t") { $0.reasons = ["Keyword: pain + MRI"] }) == .high
+      && twinHigh.keywordImportance(of: ok("t") { $0.reasons = ["Keyword: pain + EEG"] }) == .normal, "twin rules carry their own importance")
+var twinNamed = FeedSettings(); twinNamed.addKeyword("pain"); twinNamed.addKeyword("pain")
+check(twinNamed.followedKeywords[0].id == "pain", "the first rule on a phrase keeps the phrase as its id, as before")
+let twinItems = SyncProjection.items(of: twin)
+check(twinItems.keys.filter { $0.hasPrefix("kw/") }.count == 2, "twin rules are two sync items, not one")
+let twinPhone = FeedSettings()
+var twinPhoneLedger: [String: SyncEntry] = [:]
+for (k, v) in twinItems { twinPhoneLedger[k] = SyncEntry(at: Date(timeIntervalSince1970: 1_000), present: true, value: v) }
+let twinApplied = SyncProjection.apply(twinPhoneLedger, to: twinPhone)
+check(twinApplied.followedKeywords.map { $0.alsoRequire }.sorted { $0.joined() < $1.joined() } == [["EEG"], ["MRI"]], "twin rules survive a sync to a second device")
+var renamed = twin; renamed.followedKeywords[0].phrase = "headache"
+check(SyncProjection.items(of: renamed).keys.sorted() == twinItems.keys.sorted(), "renaming a rule keeps its sync key")
+check((try! JSONDecoder().decode(KeywordRule.self, from: Data("{\"phrase\": \"tactile\"}".utf8))).id == "tactile", "a rule saved before ids existed takes its phrase")
+check(Seed.keyword("pain", also: ["EEG", "MRI"]).filter(since: "d") == "title_and_abstract.search:\"pain\" AND \"EEG\" AND \"MRI\",from_publication_date:d", "OpenAlex is asked for all the words")
+check(EuropePMCQuery.build(.keyword("pain", also: ["EEG"]), since: window.0, until: window.1) == "((TITLE:\"pain\" OR ABSTRACT:\"pain\") AND (TITLE:\"EEG\" OR ABSTRACT:\"EEG\")) AND FIRST_PDATE:[2026-10-01 TO 2026-11-08]", "Europe PMC is asked for all the words")
 
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

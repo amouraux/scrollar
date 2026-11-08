@@ -189,7 +189,7 @@ enum SyncProjection {
     static func items(of s: FeedSettings) -> [String: String] {
         var out: [String: String] = [:]
         for list in entityLists { for e in s[keyPath: list.path] { out["e/\(list.name)/\(e.id)"] = json(e) } }
-        for k in s.followedKeywords { out["kw/\(k.phrase)"] = json(k) }
+        for k in s.followedKeywords { out["kw/\(k.id)"] = json(k) }
         for p in s.profileOrcids { out["po/\(p.orcid)"] = json(p) }
         for w in s.mutedKeywords { out["mw/\(w)"] = "" }
         for p in s.feedback.saved { out["sv/\(p.id)"] = json(p) }
@@ -229,7 +229,7 @@ enum SyncProjection {
         for list in entityLists {
             s[keyPath: list.path] = ordered(s[keyPath: list.path], key: { $0.id }, prefix: "e/\(list.name)/", entries: entries)
         }
-        s.followedKeywords = ordered(s.followedKeywords, key: { $0.phrase }, prefix: "kw/", entries: entries)
+        s.followedKeywords = ordered(s.followedKeywords, key: { $0.id }, prefix: "kw/", entries: entries)
         s.profileOrcids = Array(ordered(s.profileOrcids, key: { $0.orcid }, prefix: "po/", entries: entries).prefix(3))
         s.mutedKeywords = orderedNames(s.mutedKeywords, prefix: "mw/", entries: entries)
         s.feedback.saved = ordered(s.feedback.saved, key: { $0.id }, prefix: "sv/", entries: entries)

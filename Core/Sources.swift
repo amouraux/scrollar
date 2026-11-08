@@ -59,9 +59,11 @@ enum EuropePMCQuery {
     static func build(_ seed: Seed, since: String, until: String, ownPMIDs: [String] = []) -> String? {
         func q(_ s: String) -> String { "\"" + s.replacingOccurrences(of: "\"", with: " ") + "\"" }
         func name(_ id: String, _ display: String) -> String { SourceRouting.isNamed(id) ? String(id.dropFirst(5)) : display }
-        let base: String
+        var base: String
         switch seed {
-        case .keyword(let k): base = "(TITLE:\(q(k)) OR ABSTRACT:\(q(k)))"
+        case .keyword(let k, let also):
+            base = ([k] + also).map { "(TITLE:\(q($0)) OR ABSTRACT:\(q($0)))" }.joined(separator: " AND ")
+            if !also.isEmpty { base = "(" + base + ")" }
         case .journal(let id, let n): base = "JOURNAL:\(q(name(id, n)))"
         case .mesh(let n): base = "MESH:\(q(n))"
         case .author(let id, let n): base = "AUTH:\(q(name(id, n)))"

@@ -461,7 +461,7 @@ struct KeywordListView: View {
                 }
                 .onDelete { rules.remove(atOffsets: $0) }
             } footer: {
-                Text("Each phrase is searched in titles and abstracts, and everything it finds is kept in your feed, however low it would score. Importance ranks your keywords against each other: a High keyword lifts its papers up the list, a Low one lowers them. Open a keyword to set it, and to require or exclude other words.")
+                Text("Each phrase is searched in titles and abstracts, and everything it finds is kept in your feed, however low it would score. Importance ranks your keywords against each other: a High keyword lifts its papers up the list, a Low one lowers them. Open a keyword to set it, and to require or exclude other words. Add the same phrase again to follow it with different words: \"pain\" requiring EEG and \"pain\" requiring MRI are two rules, and a paper needs to pass only one of them.")
             }
         }
         .navigationTitle("Keywords")
@@ -474,8 +474,10 @@ struct KeywordListView: View {
             TextField("e.g. predictive coding", text: $newPhrase)
             Button("Add") {
                 let phrase = newPhrase.trimmingCharacters(in: .whitespaces)
-                if !phrase.isEmpty, !rules.contains(where: { $0.phrase == phrase }) {
-                    rules.append(KeywordRule(phrase: phrase))
+                // The same phrase may be added again: each rule has its own words to require.
+                if !phrase.isEmpty {
+                    let taken = Set(rules.map(\.id))
+                    rules.append(KeywordRule(phrase: phrase, id: taken.contains(phrase) ? UUID().uuidString : phrase))
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -516,7 +518,7 @@ struct KeywordRuleEditor: View {
             } header: {
                 Text("Must also contain")
             } footer: {
-                Text("Separate with commas. Every one must appear in the title or abstract.")
+                Text("Separate with commas. Every one must appear in the title or abstract, and they are also put to the sources, so a broad phrase finds papers that have them. To accept either of two words, add the phrase twice.")
             }
             Section {
                 TextField("e.g. rat, mouse", text: Binding(

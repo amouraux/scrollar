@@ -544,7 +544,7 @@ final class AppModel {
         for item in chosen where !isFollowed(item) {
             switch item.kind {
             case .topic: s.followedTopics.append(item.entity)
-            case .keyword: s.followedKeywords.append(KeywordRule(phrase: item.entity.name))
+            case .keyword: s.addKeyword(item.entity.name)
             case .journal: s.followedJournals.append(item.entity)
             case .researcher: s.followedAuthors.append(item.entity)
             case .institution: s.followedInstitutions.append(item.entity)

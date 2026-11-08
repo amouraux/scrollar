@@ -8,7 +8,10 @@ enum Seed: Hashable {
     case author(id: String, name: String)
     case institution(id: String, name: String)
     case funder(id: String, name: String)
-    case keyword(String)
+    /// `also` is what the rule requires beside the phrase. It is part of the seed so the
+    /// source is asked for "pain AND EEG" and not for the newest 300 papers on "pain", which
+    /// would hold few about EEG. Two rules on one phrase are two seeds.
+    case keyword(String, also: [String] = [])
     /// A MeSH heading, for sources that index by it (Europe PMC). Used for the
     /// topics of the user's own papers when OpenAlex, which names topics its own way, is off.
     case mesh(String)
@@ -24,7 +27,7 @@ enum Seed: Hashable {
         case .author(_, let name): return "Author: \(name)"
         case .institution(_, let name): return "Institution: \(name)"
         case .funder(_, let name): return "Funder: \(name)"
-        case .keyword(let k): return "Keyword: \(k)"
+        case .keyword(let k, let also): return "Keyword: " + ([k] + also).joined(separator: " + ")
         case .mesh(let name): return "Topic: \(name)"
         case .cites(_, let label): return label
         }
@@ -48,7 +51,12 @@ enum Seed: Hashable {
         case .institution(let id, _): base = "authorships.institutions.lineage:\(id)"
         case .funder(let id, _): base = "awards.funder_id:\(id)"
         // A comma would end the filter value early.
-        case .keyword(let k): base = "title_and_abstract.search:" + k.replacingOccurrences(of: ",", with: " ")
+        case .keyword(let k, let also):
+            // A bare phrase is searched as words, as it always was; with conditions each term is
+            // quoted so AND joins whole phrases.
+            func clean(_ t: String) -> String { t.replacingOccurrences(of: ",", with: " ").replacingOccurrences(of: "\"", with: " ") }
+            base = "title_and_abstract.search:" + (also.isEmpty ? clean(k)
+                : ([k] + also).map { "\"\(clean($0))\"" }.joined(separator: " AND "))
         case .mesh(let name): base = "title_and_abstract.search:" + name.replacingOccurrences(of: ",", with: " ")
         case .cites(let ids, _): base = "cites:" + ids.prefix(100).joined(separator: "|")
         }

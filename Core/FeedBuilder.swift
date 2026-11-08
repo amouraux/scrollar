@@ -40,7 +40,7 @@ enum FeedBuilder {
         for e in s.followedAuthors { add(.author(id: e.id, name: e.name), explicit: true) }
         for e in s.followedInstitutions { add(.institution(id: e.id, name: e.name), explicit: true) }
         for e in s.followedFunders { add(.funder(id: e.id, name: e.name), explicit: true) }
-        for k in s.followedKeywords where !k.phrase.isEmpty { add(.keyword(k.phrase), explicit: true) }
+        for k in s.followedKeywords where !k.phrase.isEmpty { add(k.seed, explicit: true) }
         for p in s.trackedPapers { add(.cites(workIDs: [p.id], label: "Cites: \(p.name)"), explicit: true) }
         return planned
     }
@@ -65,10 +65,10 @@ enum FeedBuilder {
         let mutedWords = s.mutedKeywords.map { $0.lowercased() }.filter { !$0.isEmpty }
         let languages = Set(s.languages.map { $0.lowercased() })
         let hidden = Set(s.feedback.hidden)
-        var rules: [String: KeywordRule] = [:]
-        for r in s.followedKeywords where rules[Seed.keyword(r.phrase).reason] == nil {
-            rules[Seed.keyword(r.phrase).reason] = r
-        }
+        // Rules on one phrase with the same required words share a reason; a paper passes if any
+        // of them accepts it, and the rules of a phrase with different words are OR, not AND.
+        var rules: [String: [KeywordRule]] = [:]
+        for r in s.followedKeywords { rules[r.seed.reason, default: []].append(r) }
 
         var kept: [Paper] = []
         for var p in papers {
@@ -87,7 +87,7 @@ enum FeedBuilder {
             // A keyword's own conditions apply to what that keyword found. A paper
             // another seed also found does not need to pass them.
             if !p.reasons.isEmpty {
-                p.reasons = p.reasons.filter { rules[$0]?.accepts(text) ?? true }
+                p.reasons = p.reasons.filter { reason in rules[reason]?.contains { $0.accepts(text) } ?? true }
                 if p.reasons.isEmpty { continue }
             }
             kept.append(p)

@@ -161,7 +161,13 @@ The user ranks their own keywords: each has an importance (Low, Normal, High; No
 set in Tune under Keywords. It adds its bonus above to the papers the keyword found, which is
 how a High keyword rises in the single list. A paper that a journal or researcher also found is at
 least Normal, whatever its keywords say. Journals and researchers are unranked and count as
-Normal. A follow never changes the similarity measure, which comes only from the user's own and
+Normal. A keyword can require other words (all of them) and exclude some. The required words go to the
+sources with the phrase ("pain" AND "EEG"), so a broad phrase is not cut to its newest 300 papers
+before they are checked; exclusions are checked afterwards. The same phrase may be followed more than once,
+each with its own words: the rules of a phrase are alternatives, so "pain" with EEG and "pain" with
+MRI find papers that have either. Each rule is its own search and its own reason on the card
+("Keyword: pain + EEG"), with its own importance, and is synced by an id, not by the phrase
+(`KeywordRule.id`; a rule saved earlier takes its phrase). A follow never changes the similarity measure, which comes only from the user's own and
 saved papers.
 
 ## Learning from publications
