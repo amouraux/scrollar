@@ -138,6 +138,12 @@ struct FeedEngine {
         // slider and for the figure on a post. A few requests; if they fail the
         // feed simply has no figures this time.
         papers = await attachImpact(papers, previous: mode.isIncremental ? previous : nil)
+        // The authors' h-index costs about a request per hundred authors, so it is
+        // only fetched when the user has asked for it to count.
+        if settings.authorWeight > 0 {
+            papers = await attachAuthors(papers, previous: previous)
+            log("Authors: h-index for \(papers.filter { $0.firstAuthorH != nil || $0.lastAuthorH != nil }.count) of \(papers.count) papers  [\(lap())]")
+        }
 
         // 4. Apply the user's mutes and filters before the slow step, so
         //    nothing hidden is ever embedded.
@@ -176,6 +182,36 @@ struct FeedEngine {
             guard !paper.isRepository, let id = paper.journalID, let impact = known[id] else { return paper }
             var p = paper
             p.journalImpact = impact
+            return p
+        }
+    }
+
+    /// An author's h-index moves slowly and a paper leaves the window within weeks,
+    /// so figures already on the papers held are reused, whatever the mode.
+    private func attachAuthors(_ papers: [Paper], previous: PreviousFeed?) async -> [Paper] {
+        var known: [String: Int] = [:]
+        for p in (previous?.papers ?? []) + papers {
+            guard let lead = p.leadAuthorIDs else { continue }
+            if let h = p.firstAuthorH { known[lead.first] = h }
+            if let h = p.lastAuthorH { known[lead.last] = h }
+        }
+        var wanted: Set<String> = []
+        for p in papers {
+            guard let lead = p.leadAuthorIDs else { continue }
+            wanted.insert(lead.first)
+            wanted.insert(lead.last)
+        }
+        let missing = wanted.subtracting(known.keys).sorted()
+        if !missing.isEmpty {
+            log("  authors: asking for \(missing.count) h-indexes")
+            do { known.merge(try await openAlex.authorHIndex(ids: missing)) { _, new in new } }
+            catch { log("  author figures unavailable (\(error)); continuing with what is known") }
+        }
+        return papers.map { paper in
+            guard let lead = paper.leadAuthorIDs else { return paper }
+            var p = paper
+            p.firstAuthorH = known[lead.first]
+            p.lastAuthorH = known[lead.last]
             return p
         }
     }

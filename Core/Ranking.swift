@@ -159,6 +159,8 @@ enum Ranker {
     /// × settings.impactWeight. The range is about -1 to +2 at full weight, so a
     /// strong preference moves a paper a few places, not to the top on journal alone.
     static let impactScale = 3.0
+    /// × settings.authorWeight; same size as the journal's, for the same reason.
+    static let authorScale = 3.0
     static let recencyHalfLifeDays = 14.0
     static let repositoryPenalty = 0.4
     /// A researcher has several themes. Averaging all their papers blurs them
@@ -174,6 +176,26 @@ enum Ranker {
         guard weight > 0, let impact, impact >= 0 else { return 0 }
         let level = min(log(1 + impact) / log(21.0), 1)
         return impactScale * weight * (level - 0.35)
+    }
+
+    /// The h-index that counts for this paper, if there is one. For "either", the
+    /// higher of the two that are known.
+    static func chosenH(_ paper: Paper, focus: BylineChoice) -> Int? {
+        switch focus {
+        case .first: return paper.firstAuthorH
+        case .last: return paper.lastAuthorH
+        case .both: return [paper.firstAuthorH, paper.lastAuthorH].compactMap { $0 }.max()
+        }
+    }
+
+    /// Zero at an h-index of about ten, negative below it, up to about +0.5 at a
+    /// hundred. Logarithmic, since 5 against 15 is a bigger step than 85 against
+    /// 95; an unknown author is neutral. It favours the established over the
+    /// early-career, and h-indexes differ by field: the slider is the user's call.
+    static func authorBoost(_ paper: Paper, weight: Double, focus: BylineChoice) -> Double {
+        guard weight > 0, let h = chosenH(paper, focus: focus), h >= 0 else { return 0 }
+        let level = min(log(1 + Double(h)) / log(101.0), 1)
+        return authorScale * weight * (level - 0.5)
     }
 
     static func rank(_ candidates: [Paper], profileTexts: [String], embedder: TextEmbedder? = nil,
@@ -195,6 +217,7 @@ enum Ranker {
             if paper.isRepository && paper.kind != .preprint { score -= repositoryPenalty }
             score += settings.weight(for: paper.kind).adjustment
             score += impactBoost(paper.journalImpact, weight: settings.impactWeight)
+            score += authorBoost(paper, weight: settings.authorWeight, focus: settings.authorFocus)
             ranked.append(RankedPaper(paper: paper, score: score, similarity: similarity[i]))
         }
         return ranked.sorted {

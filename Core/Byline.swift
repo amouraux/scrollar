@@ -7,7 +7,7 @@ import Foundation
 /// First or last is the reader's choice because the convention differs by field:
 /// in the life sciences the last author leads the lab; in much of physics and
 /// computing the first author did the work.
-enum BylineChoice: String, CaseIterable {
+enum BylineChoice: String, CaseIterable, Codable {
     case last, first, both
 
     var label: String {

@@ -110,10 +110,26 @@ struct SettingsView: View {
                             Text("Strongly").font(.caption).foregroundStyle(.secondary)
                         }
                     }
+                    VStack(alignment: .leading) {
+                        Text("Prefer authors with a high h-index")
+                        Slider(value: $model.settings.authorWeight, in: 0...1)
+                        HStack {
+                            Text("Ignore").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Text("Strongly").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    if model.settings.authorWeight > 0 {
+                        Picker("Whose h-index", selection: $model.settings.authorFocus) {
+                            Text("Senior (last) author").tag(BylineChoice.last)
+                            Text("First author").tag(BylineChoice.first)
+                            Text("Either: the higher").tag(BylineChoice.both)
+                        }
+                    }
                 } header: {
                     Text("Time and balance")
                 } footer: {
-                    Text("Impact is OpenAlex's two-year mean citedness: how often a journal's recent papers are cited. It is an open measure close to the impact factor, which is Clarivate's and not available here. Preprints and journals without a figure are neither favoured nor penalised.")
+                    Text("The h-index is OpenAlex's, computed from its own record of each author, so it can be wrong for common names. It favours established researchers over early-career ones, and varies by field. Authors with no figure are neither favoured nor penalised. Impact is OpenAlex's two-year mean citedness: how often a journal's recent papers are cited. It is an open measure close to the impact factor, which is Clarivate's and not available here. Preprints and journals without a figure are neither favoured nor penalised.")
                 }
 
                 Section {

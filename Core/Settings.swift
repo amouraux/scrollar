@@ -136,6 +136,11 @@ struct FeedSettings: Codable, Equatable {
     /// 0 ignores the journal; 1 gives a strong premium to papers from journals
     /// with a high two-year mean citedness (see `Paper.journalImpact`).
     var impactWeight = 0.0
+    /// 0 ignores who wrote it; 1 gives a strong premium to papers whose chosen
+    /// author has a high h-index.
+    var authorWeight = 0.0
+    /// Whose h-index counts: the senior (last) author, the first, or the higher of the two.
+    var authorFocus = BylineChoice.last
 
     // MARK: Content
     var requireAbstract = false
@@ -162,7 +167,7 @@ struct FeedSettings: Codable, Equatable {
         return s
     }
 
-    /// What decides which papers must be fetched. The three sliders only decide how
+    /// What decides which papers must be fetched. The sliders (and which author counts) only decide how
     /// the papers already held are ordered, so moving one needs a re-rank (an
     /// incremental refresh, seconds) and not a full rebuild (a minute).
     var forFetching: FeedSettings {
@@ -171,6 +176,8 @@ struct FeedSettings: Codable, Equatable {
         s.recency = d.recency
         s.closeness = d.closeness
         s.impactWeight = d.impactWeight
+        s.authorWeight = d.authorWeight
+        s.authorFocus = d.authorFocus
         return s
     }
 
@@ -228,7 +235,7 @@ extension FeedSettings {
         case followedTopics, followedJournals, followedAuthors, followedInstitutions
         case followedFunders, followedKeywords, trackedPapers
         case mutedJournals, mutedAuthors, mutedTopics, mutedKeywords
-        case kindWeights, daysBack, recency, closeness, impactWeight
+        case kindWeights, daysBack, recency, closeness, impactWeight, authorWeight, authorFocus
         case requireAbstract, openAccessOnly, seenExpiryDays, showReadPapers, languages, feedback
     }
 
@@ -257,6 +264,8 @@ extension FeedSettings {
         recency = min(max(get(.recency, recency), 0), 1)
         closeness = min(max(get(.closeness, closeness), 0), 1)
         impactWeight = min(max(get(.impactWeight, impactWeight), 0), 1)
+        authorWeight = min(max(get(.authorWeight, authorWeight), 0), 1)
+        authorFocus = get(.authorFocus, authorFocus)
         requireAbstract = get(.requireAbstract, requireAbstract)
         openAccessOnly = get(.openAccessOnly, openAccessOnly)
         seenExpiryDays = min(max(get(.seenExpiryDays, seenExpiryDays), 1), 60)

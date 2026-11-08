@@ -52,6 +52,10 @@ struct Paper: Hashable, Codable {
     /// Optional, so a feed cached before these existed still loads.
     var firstInstitution: String? = nil
     var lastInstitution: String? = nil
+    /// OpenAlex's h-index for the first and the last author, fetched only when the
+    /// user asks for it to count. Optional so an older cache still loads.
+    var firstAuthorH: Int? = nil
+    var lastAuthorH: Int? = nil
     var citedBy = 0
     var topics: [String] = []
     /// Short OpenAlex ids. Names can be spelled two ways; muting needs the id.
@@ -75,6 +79,14 @@ struct Paper: Hashable, Codable {
     /// A DOI lookup found no PubMed record, so it is not tried again on every
     /// refresh. Optional so a cache written before this field existed still loads.
     var notInPubMed: Bool? = nil
+
+    /// The first and last author's OpenAlex ids, when they can be told for certain:
+    /// names and ids are filled separately, so a missing id would shift the list.
+    var leadAuthorIDs: (first: String, last: String)? {
+        guard !authors.isEmpty, authors.count == authorIDs.count,
+              let first = authorIDs.first, let last = authorIDs.last else { return nil }
+        return (first, last)
+    }
 
     /// One paper can arrive from several seeds, and from OpenAlex and PubMed;
     /// the DOI is the join key, with the PMID and the OpenAlex id as fallbacks.
@@ -124,6 +136,8 @@ enum Merge {
             kept.followed = kept.followed || p.followed
             if kept.abstract == nil { kept.abstract = p.abstract }
             if kept.journalImpact == nil { kept.journalImpact = p.journalImpact }
+            if kept.firstAuthorH == nil { kept.firstAuthorH = p.firstAuthorH }
+            if kept.lastAuthorH == nil { kept.lastAuthorH = p.lastAuthorH }
             if kept.pmid == nil { kept.pmid = p.pmid }
             if kept.doi == nil { kept.doi = p.doi }
             if kept.firstInstitution == nil { kept.firstInstitution = p.firstInstitution }

@@ -100,6 +100,24 @@ struct OpenAlexClient {
         return out
     }
 
+    /// h-index by author id, from OpenAlex's own record of each author. One request
+    /// per hundred authors.
+    func authorHIndex(ids: [String]) async throws -> [String: Int] {
+        var out: [String: Int] = [:]
+        for start in stride(from: 0, to: ids.count, by: 100) {
+            let batch = ids[start..<min(start + 100, ids.count)]
+            let data = try await fetch("authors", [
+                "filter": "openalex:" + batch.joined(separator: "|"),
+                "per-page": "100",
+                "select": "id,summary_stats",
+            ])
+            for author in try JSONDecoder().decode(AuthorsDTO.self, from: data).results {
+                if let h = author.summary_stats?.h_index { out[Identifiers.openAlexID(author.id)] = h }
+            }
+        }
+        return out
+    }
+
     enum EntityKind: String, CaseIterable {
         case topics, sources, authors, institutions, funders
     }
@@ -167,6 +185,15 @@ private struct AutocompleteDTO: Decodable {
         let hint: String?
         let works_count: Int?
     }
+}
+
+private struct AuthorsDTO: Decodable {
+    let results: [Author]
+    struct Author: Decodable {
+        let id: String
+        let summary_stats: Stats?
+    }
+    struct Stats: Decodable { let h_index: Int? }
 }
 
 private struct SourcesDTO: Decodable {

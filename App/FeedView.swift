@@ -346,10 +346,25 @@ struct PaperCard: View {
         }
     }
 
+    /// The figure the ranking used, shown while the option is on so it can be judged.
+    private var hIndexLabel: String? {
+        let s = model.settings
+        guard s.authorWeight > 0 else { return nil }
+        switch s.authorFocus {
+        case .last: return paper.lastAuthorH.map { "last author h-index \($0)" }
+        case .first: return paper.firstAuthorH.map { "first author h-index \($0)" }
+        case .both:
+            guard paper.firstAuthorH != nil || paper.lastAuthorH != nil else { return nil }
+            return "h-index " + [paper.firstAuthorH.map { "\($0) first" }, paper.lastAuthorH.map { "\($0) last" }]
+                .compactMap { $0 }.joined(separator: ", ")
+        }
+    }
+
     /// The journal is on the picture; here only when it was and what kind of paper.
     private var metaLine: String {
         var parts = [ageLabel(paper.date)]
         if !showCovers, let journal = paper.journal { parts.append(journal) }
+        if let h = hIndexLabel { parts.append(h) }
         if paper.kind != .research { parts.append(paper.kind.label) }
         return parts.joined(separator: " · ")
     }
