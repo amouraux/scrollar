@@ -48,7 +48,7 @@ struct SettingsView: View {
                     Text("Your papers set what the feed looks for, and tell you when someone cites them.")
                 }
 
-                Section("Follow") {
+                Section {
                     entityLink("Topics", kind: .topics, items: $model.settings.followedTopics)
                     entityLink("Journals", kind: .sources, items: $model.settings.followedJournals, byName: true)
                     entityLink("Researchers", kind: .authors, items: $model.settings.followedAuthors, byName: true)
@@ -59,6 +59,11 @@ struct SettingsView: View {
                     } label: {
                         LabeledContent("Keywords", value: count(model.settings.followedKeywords.count))
                     }
+                    Toggle("Show everything I follow in its own section", isOn: $model.settings.followSection)
+                } header: {
+                    Text("Follow")
+                } footer: {
+                    Text("Each follow searches for new papers. With the section on, every paper that something you follow found is listed under \"From what you follow\", newest first, with no cut-off. With it off, those papers are ranked with all the rest and only get a small bonus, so a weak match can fall out of the feed.")
                 }
 
                 Section("Mute") {

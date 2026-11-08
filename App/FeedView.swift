@@ -52,20 +52,28 @@ struct FeedView: View {
             ForEach(cited.prefix(10), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
         }
 
+        // Everything something you follow found, newest first, with no cut-off by rank.
+        let following = layout.following.fresh + layout.following.earlier
+        if !following.isEmpty {
+            SectionTitle(text: "From what you follow", systemImage: "star")
+            ForEach(following.prefix(400), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+        }
+
         if !layout.forYou.fresh.isEmpty {
             SectionTitle(text: "For you", systemImage: "sparkles")
             ForEach(layout.forYou.fresh.prefix(150), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
         }
 
         if !layout.forYou.earlier.isEmpty {
-            if layout.forYou.fresh.isEmpty { CaughtUp() }
+            if layout.forYou.fresh.isEmpty && layout.following.fresh.isEmpty { CaughtUp() }
             SectionTitle(text: "Earlier", systemImage: "clock")
             ForEach(layout.forYou.earlier.prefix(60), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
         }
 
-        if model.settings.showReadPapers, !layout.forYou.read.isEmpty {
+        let read = layout.following.read + layout.forYou.read
+        if model.settings.showReadPapers, !read.isEmpty {
             SectionTitle(text: "Read", systemImage: "checkmark.circle")
-            ForEach(layout.forYou.read.prefix(60), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+            ForEach(read.prefix(60), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
         }
 
         if layout.isEmpty, !model.isLoading { EmptyFeed() }

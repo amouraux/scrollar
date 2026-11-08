@@ -180,6 +180,7 @@ enum SyncProjection {
         scalar("byline", \.byline), scalar("requireAbstract", \.requireAbstract),
         scalar("openAccessOnly", \.openAccessOnly), scalar("seenExpiryDays", \.seenExpiryDays),
         scalar("showReadPapers", \.showReadPapers), scalar("languages", \.languages),
+        scalar("followSection", \.followSection),
     ]
 
     /// Every decision a settings value holds, by key. An empty string is an item with no payload.

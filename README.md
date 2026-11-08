@@ -114,7 +114,7 @@ OpenAlex. Do not compile a key in.
 blend, 0.6 Apple embeddings and 0.4 word statistics, against the three nearest papers, so a
 researcher with several themes is not averaged into one) times the "stay close to my work"
 slider; a bonus for each further seed that found the paper, for citing the user's work and
-for being found by something they follow; a recency term that halves every fortnight, times
+for being found by something they follow (which matters only with the follow section off, see below); a recency term that halves every fortnight, times
 its slider; a small penalty for repository records (not for preprints); the kind adjustment
 (case reports and conference abstracts start lowered; hide removes them before ranking); and
 two optional terms, off by default: the journal's two-year mean citedness (OpenAlex's
@@ -122,6 +122,18 @@ open stand-in for the impact factor, which is Clarivate's) and the h-index of th
 last or the higher of the two authors. Both are logarithmic, neutral for a paper with no
 figure, and capped. The three ranking sliders only reorder what is held, so moving one costs an
 incremental refresh, not a rebuild.
+
+## What a follow does
+
+A follow becomes a search per source that can answer it (`SourceRouting`), returning the newest
+papers in the look-back window, up to about 300 per follow per source. By default
+(`followSection`, in Tune under Follow) every paper that something followed found is listed under
+"From what you follow", newest first, with no rank cut-off and no repeat in the ranked list; it still
+passes the user's mutes and filters, and the same seen, read and expiry rules. Switched off, the
+followed papers are ranked with the rest and get +0.8 (and +0.5 for each further search that found
+them), so a weak match can fall below the 150 new papers the ranked list shows. A follow never
+changes the similarity measure, which comes only from the user's own and saved papers. The section is
+a display choice (`Arranger.split`): changing it fetches and ranks nothing again.
 
 ## Reading state
 

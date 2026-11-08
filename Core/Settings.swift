@@ -119,6 +119,10 @@ struct FeedSettings: Codable, Equatable {
     var followedKeywords: [KeywordRule] = []
     /// Papers whose new citations the user wants to hear about.
     var trackedPapers: [Entity] = []
+    /// Show every paper something followed found in a section of its own, newest first,
+    /// above the ranked feed. Off: followed papers are ranked with the rest, with a small bonus.
+    /// Only a matter of display, so changing it fetches and ranks nothing again.
+    var followSection = true
 
     // MARK: Mute
     var mutedJournals: [Entity] = []
@@ -185,6 +189,7 @@ struct FeedSettings: Codable, Equatable {
         s.impactWeight = d.impactWeight
         s.authorWeight = d.authorWeight
         s.byline = d.byline
+        s.followSection = d.followSection
         return s
     }
 
@@ -194,6 +199,7 @@ struct FeedSettings: Codable, Equatable {
     var forRanking: FeedSettings {
         var s = withoutFeedback
         if s.authorWeight == 0 { s.byline = FeedSettings().byline }
+        s.followSection = FeedSettings().followSection
         return s
     }
 
@@ -249,7 +255,7 @@ extension FeedSettings {
     enum CodingKeys: String, CodingKey {
         case formatVersion, orcid, useMyPublications, useOpenAlex, useEuropePMC
         case followedTopics, followedJournals, followedAuthors, followedInstitutions
-        case followedFunders, followedKeywords, trackedPapers
+        case followedFunders, followedKeywords, trackedPapers, followSection
         case mutedJournals, mutedAuthors, mutedTopics, mutedKeywords
         case kindWeights, daysBack, recency, closeness, impactWeight, authorWeight, byline
         case requireAbstract, openAccessOnly, seenExpiryDays, showReadPapers, languages, feedback
@@ -273,6 +279,7 @@ extension FeedSettings {
         followedFunders = get(.followedFunders, followedFunders)
         followedKeywords = get(.followedKeywords, followedKeywords)
         trackedPapers = get(.trackedPapers, trackedPapers)
+        followSection = get(.followSection, followSection)
         mutedJournals = get(.mutedJournals, mutedJournals)
         mutedAuthors = get(.mutedAuthors, mutedAuthors)
         mutedTopics = get(.mutedTopics, mutedTopics)

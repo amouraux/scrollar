@@ -18,8 +18,10 @@ final class AppModel {
     /// scroll, so no card moves while it is being looked at.
     struct Layout {
         var citedYou = Arranged()
+        /// Everything something followed found, newest first.
+        var following = Arranged()
         var forYou = Arranged()
-        var isEmpty: Bool { citedYou.isEmpty && forYou.isEmpty }
+        var isEmpty: Bool { citedYou.isEmpty && following.isEmpty && forYou.isEmpty }
     }
 
     var settings: FeedSettings {
@@ -32,7 +34,7 @@ final class AppModel {
             // Following something new or muting something means fetching again;
             // hiding one paper does not.
             if settings.forRanking != oldValue.forRanking { needsRefresh = true }
-            if settings.seenExpiryDays != oldValue.seenExpiryDays { rearrange() }
+            if settings.seenExpiryDays != oldValue.seenExpiryDays || settings.followSection != oldValue.followSection { rearrange() }
         }
     }
 
@@ -281,12 +283,11 @@ final class AppModel {
 
     /// Keep a refresh aside and count what is new in it, without touching the screen.
     private func stage(_ result: FeedResult, builtFor: FeedSettings) {
-        let shown = layout.citedYou.fresh + layout.citedYou.earlier + layout.forYou.fresh + layout.forYou.earlier
+        let shown = [layout.citedYou, layout.following, layout.forYou].flatMap { $0.fresh + $0.earlier }
         let onScreen = Set(shown.map { $0.paper.dedupeKey })
-        let now = Date()
-        let incoming = Arranger.arrange(result.citedYou, history: history, settings: settings, now: now).fresh
-            + Arranger.arrange(result.forYou, history: history, settings: settings, now: now).fresh
-        let count = incoming.filter { !onScreen.contains($0.paper.dedupeKey) }.count
+        let incoming = makeLayout(citedYou: result.citedYou, forYou: result.forYou, now: Date())
+        let count = [incoming.citedYou, incoming.following, incoming.forYou].flatMap(\.fresh)
+            .filter { !onScreen.contains($0.paper.dedupeKey) }.count
         if count == 0 {
             apply(result, builtFor: builtFor)   // nothing the user would notice changing
         } else {
@@ -297,9 +298,16 @@ final class AppModel {
     }
 
     private func rearrange() {
-        let now = Date()
-        layout = Layout(citedYou: Arranger.arrange(citedYou, history: history, settings: settings, now: now),
-                        forYou: Arranger.arrange(forYou, history: history, settings: settings, now: now))
+        layout = makeLayout(citedYou: citedYou, forYou: forYou, now: Date())
+    }
+
+    /// What is on screen for a ranked feed: the news about the user's work, everything
+    /// their follows found (if they asked for that section), and the rest in rank order.
+    private func makeLayout(citedYou: [RankedPaper], forYou: [RankedPaper], now: Date) -> Layout {
+        let split = Arranger.split(forYou, followSection: settings.followSection)
+        return Layout(citedYou: Arranger.arrange(citedYou, history: history, settings: settings, now: now),
+                      following: Arranger.arrange(split.followed, history: history, settings: settings, now: now),
+                      forYou: Arranger.arrange(split.rest, history: history, settings: settings, now: now))
     }
 
     private func progress(_ message: String) {
@@ -518,6 +526,7 @@ final class AppModel {
             a.read.removeAll { !kept($0) }
         }
         drop(&layout.citedYou)
+        drop(&layout.following)
         drop(&layout.forYou)
     }
 }

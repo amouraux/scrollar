@@ -750,5 +750,26 @@ check(SyncProjection.items(of: FeedSettings()).keys.contains("v/orcid") && (try?
 var every = FeedSettings(); every.orcid = "0000-0001-2345-6789"; every.languages = ["en", "fr"]; every.kindWeights = ["caseReport": .hide]; every.impactWeight = 0.7; every.authorWeight = 0.3; every.byline = .first
 check(device(every, stamp: at(1)).apply(to: FeedSettings()) == every, "sync: every kind of setting survives the record and back")
 
+// MARK: the section for what the user follows
+func ranked(_ p: Paper, _ score: Double) -> RankedPaper { RankedPaper(paper: p, score: score, similarity: 0) }
+let fOld = ranked(ok("fa") { $0.followed = true; $0.date = "2026-10-01" }, 9)
+let fNewLow = ranked(ok("fb") { $0.followed = true; $0.date = "2026-10-05" }, 0.1)
+let fNewHigh = ranked(ok("fc") { $0.followed = true; $0.date = "2026-10-05" }, 3)
+let plainTop = ranked(ok("pt") { $0.date = "2026-10-06" }, 8)
+let plainLow = ranked(ok("pl") { $0.date = "2026-10-02" }, 1)
+let splitOn = Arranger.split([fOld, plainTop, fNewLow, fNewHigh, plainLow], followSection: true)
+check(splitOn.followed.map(\.paper.id) == ["fc", "fb", "fa"], "follow section: newest first, then by score, whatever the ranking said")
+check(splitOn.rest.map(\.paper.id) == ["pt", "pl"], "follow section: the rest keeps its rank order and does not repeat what was taken out")
+check(splitOn.followed.count + splitOn.rest.count == 5, "follow section: nothing is lost or shown twice")
+let splitOff = Arranger.split([fOld, plainTop, fNewLow], followSection: false)
+let offIDs: [String] = splitOff.rest.map { $0.paper.id }
+check(splitOff.followed.isEmpty && offIDs == ["fa", "pt", "fb"], "follow section off: everything stays in the ranked list")
+check(Arranger.split([], followSection: true).followed.isEmpty, "follow section: an empty feed is fine")
+check(FeedSettings().followSection && (try! FeedSettings.decode(Data("{}".utf8))).followSection, "follow section: on by default, also for an older settings file")
+var sectionOff = FeedSettings(); sectionOff.followSection = false
+check(sectionOff.forRanking == FeedSettings().forRanking && sectionOff.forFetching == FeedSettings().forFetching, "follow section: only a display choice, so it asks for no refresh")
+var syncedOff = FeedSettings(); syncedOff.followSection = false
+check(device(syncedOff, stamp: at(1)).apply(to: FeedSettings()).followSection == false, "follow section: the choice syncs")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)
