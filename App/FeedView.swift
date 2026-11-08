@@ -60,8 +60,9 @@ struct FeedView: View {
                 SectionTitle(text: "Your feed", systemImage: "text.justify.leading")
                 ForEach(feed.fresh, id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
             }
+            olderPapers(layout)
             if !feed.earlier.isEmpty {
-                if feed.fresh.isEmpty && layout.highlights.isEmpty { CaughtUp() }
+                if feed.fresh.isEmpty && layout.highlights.isEmpty && layout.older.isEmpty { CaughtUp() }
                 SectionTitle(text: "Earlier", systemImage: "clock")
                 ForEach(feed.earlier, id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
             }
@@ -88,8 +89,9 @@ struct FeedView: View {
                 ForEach(layout.forYou.fresh.prefix(FeedLayout.freshCap), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
             }
 
+            olderPapers(layout)
             if !layout.forYou.earlier.isEmpty {
-                if layout.forYou.fresh.isEmpty && layout.following.fresh.isEmpty { CaughtUp() }
+                if layout.forYou.fresh.isEmpty && layout.following.fresh.isEmpty && layout.older.isEmpty { CaughtUp() }
                 SectionTitle(text: "Earlier", systemImage: "clock")
                 ForEach(layout.forYou.earlier.prefix(FeedLayout.earlierCap), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
             }
@@ -102,6 +104,45 @@ struct FeedView: View {
         }
 
         if layout.isEmpty, !model.isLoading { EmptyFeed() }
+    }
+
+    /// What lies beyond the look-back, then the way to fetch more. The footer is what makes the
+    /// feed endless: it asks for older papers when it scrolls into view, and they appear above it.
+    @ViewBuilder private func olderPapers(_ layout: FeedLayout) -> some View {
+        if !layout.older.isEmpty {
+            SectionTitle(text: "Further back", systemImage: "calendar")
+            ForEach(layout.older, id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+        }
+        if !layout.isEmpty { OlderFooter() }
+    }
+}
+
+/// Fetches the days before the ones held when it comes into view. A lazy stack only builds it
+/// when the reader is near the end, so nothing is fetched for a feed that is still being read.
+private struct OlderFooter: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Group {
+            if model.olderFailed {
+                Button { model.retryOlder() } label: {
+                    Label("Could not load older papers. Try again", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+            } else if model.canLoadOlder {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Looking further back…").font(.subheadline).foregroundStyle(.secondary)
+                }
+            } else if model.settings.daysBack + model.extraDays >= Incremental.furthestDays {
+                Label("That is a year back, as far as it looks", systemImage: "calendar.badge.checkmark")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+        // Runs again after each fetch, so a short list keeps going back until the screen is full.
+        .task(id: "\(model.extraDays)-\(model.isLoading)") { await model.loadOlder() }
     }
 }
 

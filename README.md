@@ -138,12 +138,14 @@ papers in the look-back window, up to about 300 per follow per source.
 **One ranked list, with a guarantee.** The feed is a single list in score order (`FeedLayout`,
 `Core/Layout.swift`), so a paper that cites the user, one a keyword found and one with neither
 are interleaved by how well they fit, newest breaking ties, and not shown as three blocks. The
-list is cut to the best 150 new papers (60 earlier, 60 read), except that a paper found by a
-**journal, a researcher or a keyword** (`Paper.isPinned`) is never cut: it appears however low
-it scores, and still passes the user's mutes, filters and the same seen, read and expiry rules.
+list is not cut: it goes as far down as the papers held (the earlier and read lists are limited to 60
+each), so a paper found by a **journal, a researcher or a keyword** (`Paper.isPinned`) always
+appears, however low it scores, and still passes the user's mutes, filters and the same seen, read
+and expiry rules. Past the end of it the feed goes on (see Endless scroll). In the sections order the
+"For you" list is still limited to 150.
 A **topic, an institution or a funder** is too broad to list in full (each names hundreds of
 papers a month, in every field), so what only those found is ranked with the rest and gets +0.8
-(and +0.5 for each further search that found it), and a weak match can fall below the cut.
+(and +0.5 for each further search that found it), and a weak match sinks to the bottom.
 Tune, Order and highlights can instead show the old three sections (cites you, from what you
 follow, for you; `Arranger.split`).
 
@@ -191,6 +193,23 @@ suggestions fill the lists (`profileFilled`, synced, so a second device does not
 nothing the user removes comes back); a notice says so. After that "Suggest what to follow…" in Tune
 shows what is not yet followed, to choose from. Without OpenAlex the same works from the Europe PMC records that carry the
 iD (MeSH headings as topics, journals and co-authors by name; no keywords, institutions or funders). `./run.sh <orcid> --suggest [--also <orcid>]` prints the suggestions.
+
+## Endless scroll
+
+The feed holds the look-back window (30 days by default). Scrolling to the end of it brings a
+footer into view, and the footer fetches the 30 days before the ones held (`Incremental.olderRange`,
+`FeedEngine.build(older: true)`): the same follows, the same sources, bounded by a start and an end
+date, merged into what is held. The papers appear below, under "Further back", and the footer fetches
+the next 30 days while it is still on screen, until a year is held. Three rules keep the list from
+moving under a finger. Further back is always last among the new papers, whatever it scores. It is
+ordered by the 30-day step it came from, nearest first, and by score within a step, so a better
+paper fetched later never lands above one already scrolled past. And highlights come only from the
+look-back. Going back does not touch the record of how recent the feed is, so the normal refreshes
+carry on as before. A full rebuild (every three days, or when a follow or filter changes) fetches
+the look-back only and forgets the extra days; scrolling to the end fetches them again. A failed fetch
+leaves a button, "Try again", and does not retry by itself. The extra days are kept in the feed cache
+(`CachedFeed.extraDays`), not in the settings, and cost requests like any refresh: with OpenAlex that is
+per follow, up to three pages, for each 30 days.
 
 ## Reading state
 

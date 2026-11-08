@@ -39,7 +39,7 @@ enum Seed: Hashable {
     }
 
     /// OpenAlex `filter=` value for papers published on or after `since`.
-    func filter(since: String) -> String {
+    func filter(since: String, until: String? = nil) -> String {
         let base: String
         switch self {
         case .topic(let id, _): base = "topics.id:\(id)"
@@ -60,6 +60,6 @@ enum Seed: Hashable {
         case .mesh(let name): base = "title_and_abstract.search:" + name.replacingOccurrences(of: ",", with: " ")
         case .cites(let ids, _): base = "cites:" + ids.prefix(100).joined(separator: "|")
         }
-        return "\(base),from_publication_date:\(since)"
+        return "\(base),from_publication_date:\(since)" + (until.map { ",to_publication_date:\($0)" } ?? "")
     }
 }

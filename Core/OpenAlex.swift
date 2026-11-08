@@ -200,10 +200,10 @@ struct OpenAlexClient {
     /// Run one seed, tagging every result with why it is there.
     /// `maxPages` more than 1 keeps asking while a page comes back full, so a long
     /// gap since the last refresh is not cut off at the newest `perPage` papers.
-    func papers(for seed: Seed, since: String, perPage: Int = 100, maxPages: Int = 1) async throws -> [Paper] {
+    func papers(for seed: Seed, since: String, until: String? = nil, perPage: Int = 100, maxPages: Int = 1) async throws -> [Paper] {
         var found: [Paper] = []
         for page in 1...max(maxPages, 1) {
-            let batch = try await works(filter: seed.filter(since: since), perPage: perPage, page: page)
+            let batch = try await works(filter: seed.filter(since: since, until: until), perPage: perPage, page: page)
             found += batch
             if batch.count < perPage { break }
         }

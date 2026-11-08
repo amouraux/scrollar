@@ -45,6 +45,8 @@ struct CachedFeed: Codable {
     var fetchedThrough: Date?
     /// When the whole look-back window was last fetched from scratch.
     var fullBuildAt: Date?
+    /// Days held beyond the look-back.
+    var extraDays: Int?
 }
 
 /// Files in the app's own container. Settings are kept; the feed and the

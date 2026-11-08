@@ -75,6 +75,11 @@ final class AppModel {
     private var builtWith: FeedSettings?
     private var fetchedThrough: Date?
     private var fullBuildAt: Date?
+    /// Days held beyond the look-back, from scrolling to the end of the feed.
+    private(set) var extraDays = 0
+    /// The last attempt to go further back failed; the footer offers a retry instead of
+    /// trying again by itself, which would loop on a broken connection.
+    private(set) var olderFailed = false
     private var saveHistoryTask: Task<Void, Never>?
     private let store = Store()
 
@@ -126,6 +131,7 @@ final class AppModel {
             builtWith = cached.builtWith
             fetchedThrough = cached.fetchedThrough
             fullBuildAt = cached.fullBuildAt
+            extraDays = cached.extraDays ?? 0
             // A follow added just before the app was closed must not wait six hours.
             if let built = cached.builtWith, built.forRanking != settings.forRanking { needsRefresh = true }
         }
@@ -192,21 +198,43 @@ final class AppModel {
         }
     }
 
-    func refresh(userInitiated: Bool = true) async {
+    /// Whether the end of the feed can go further back: a feed is held to build on, and
+    /// less than a year of it is.
+    var canLoadOlder: Bool {
+        // What is held must have been fetched for today's follows and filters, or the older
+        // papers would be merged into a feed whose reasons no longer apply.
+        guard canBuild, fetchedThrough != nil, fullBuildAt != nil, let built = builtWith,
+              !(citedYou.isEmpty && forYou.isEmpty), built.forFetching == settings.forFetching else { return false }
+        return settings.daysBack + extraDays < Incremental.furthestDays
+    }
+
+    /// The reader reached the end: fetch the days before the ones held and add them below.
+    func loadOlder() async {
+        guard canLoadOlder, !isLoading, !olderFailed else { return }
+        await refresh(userInitiated: true, older: true)
+    }
+
+    func retryOlder() {
+        olderFailed = false
+        Task { await loadOlder() }
+    }
+
+    func refresh(userInitiated: Bool = true, older: Bool = false) async {
         if isLoading { return }
         let key = effectiveKey
         guard canBuild else {
             phase = .failed("No source is on. Turn on Europe PMC, or add your OpenAlex key, in Tune.")
             return
         }
-        phase = .loading("Starting…")
-        needsRefresh = false
+        let previous = previousFeed()
+        if older && previous == nil { return }
+        phase = .loading(older ? "Looking further back…" : "Starting…")
+        if !older { needsRefresh = false }
         let settings = self.settings
         let useOpenAlex = usesOpenAlex
         // What this feed is built for, taken now: the user may change a follow
         // while it runs, and the result must not claim to match that.
         let builtFor = settings.withoutFeedback
-        let previous = previousFeed()
         let cachedVectors = store.loadEmbeddings()
         let report: (String) -> Void = { [weak self] message in
             Task { @MainActor in self?.progress(message) }
@@ -219,12 +247,13 @@ final class AppModel {
                 let engine = FeedEngine(openAlex: useOpenAlex ? OpenAlexClient(apiKey: key) : nil,
                                         europePMC: settings.useEuropePMC ? EuropePMCClient() : nil,
                                         embedder: cache, log: report)
-                let result = try await engine.build(settings, previous: previous)
+                let result = try await engine.build(settings, previous: previous, older: older)
                 let used = result.profileTexts + (result.citedYou + result.forYou).map { Ranker.text($0.paper) }
                 return (result, cache?.snapshot(keeping: used))
             }.value
 
             phase = .idle
+            olderFailed = false
             if let vectors { store.saveEmbeddings(vectors) }
             if userInitiated || layout.isEmpty {
                 apply(result, builtFor: builtFor)
@@ -234,6 +263,7 @@ final class AppModel {
         } catch {
             // Keep showing the last feed; only say what went wrong.
             log.error("refresh failed: \(String(describing: error), privacy: .public)")
+            if older { olderFailed = true }
             phase = .failed("\(error)")
         }
     }
@@ -249,7 +279,7 @@ final class AppModel {
         guard let through = fetchedThrough, let full = fullBuildAt, let built = builtWith,
               !(citedYou.isEmpty && forYou.isEmpty) else { return nil }
         return PreviousFeed(papers: (citedYou + forYou).map(\.paper),
-                            fetchedThrough: through, fullBuildAt: full, builtWith: built)
+                            fetchedThrough: through, fullBuildAt: full, builtWith: built, extraDays: extraDays)
     }
 
     private func apply(_ result: FeedResult, builtFor: FeedSettings) {
@@ -265,7 +295,10 @@ final class AppModel {
         // Advance what the cache covers only if every seed answered. A fetch with a
         // gap must be asked for again; a full build with a gap cannot be built on at all.
         builtWith = builtFor
-        if result.complete {
+        extraDays = result.extraDays
+        if case .older = result.mode {
+            // Going back says nothing about how recent what is held is.
+        } else if result.complete {
             fetchedThrough = result.fetchedAt
             if !result.mode.isIncremental { fullBuildAt = result.fetchedAt }
         } else if !result.mode.isIncremental {
@@ -283,7 +316,8 @@ final class AppModel {
         store.saveHistory(history)
         store.saveFeed(CachedFeed(citedYou: citedYou, forYou: forYou, authorName: authorName,
                                   date: Date(), usedEmbeddings: result.usedEmbeddings,
-                                  builtWith: builtFor, fetchedThrough: fetchedThrough, fullBuildAt: fullBuildAt))
+                                  builtWith: builtFor, fetchedThrough: fetchedThrough, fullBuildAt: fullBuildAt,
+                                  extraDays: extraDays))
     }
 
     /// Keep a refresh aside and count what is new in it, without touching the screen.

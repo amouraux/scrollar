@@ -3,6 +3,7 @@ import Foundation
 enum EngineError: Error, CustomStringConvertible {
     case nothingToFollow
     case noSource
+    case nothingOlder
 
     var description: String {
         switch self {
@@ -10,6 +11,8 @@ enum EngineError: Error, CustomStringConvertible {
             return "Nothing to build a feed from: add an ORCID, or follow a topic, journal, author or keyword."
         case .noSource:
             return "No source is on: turn on Europe PMC, or OpenAlex with your key, in Tune."
+        case .nothingOlder:
+            return "There is nothing older to ask for."
         }
     }
 }
@@ -34,6 +37,8 @@ struct FeedResult {
     var fetchedAt: Date
     /// Papers in the feed that the previous one did not have.
     var newPapers: Int
+    /// Days held beyond the look-back (see `Incremental.olderStep`).
+    var extraDays = 0
 }
 
 /// The network half: settings in, a ranked feed out. The app and the command
@@ -48,19 +53,40 @@ struct FeedEngine {
     /// Progress and numbers, for the command line; the app can ignore it.
     var log: (String) -> Void = { _ in }
 
-    func build(_ settings: FeedSettings, previous: PreviousFeed? = nil, today: Date = Date()) async throws -> FeedResult {
+    /// `older` asks for the days before the ones held and adds them to `previous`, instead of
+    /// refreshing the recent ones.
+    func build(_ settings: FeedSettings, previous: PreviousFeed? = nil, today: Date = Date(), older: Bool = false) async throws -> FeedResult {
         guard openAlex != nil || europePMC != nil else { throw EngineError.noSource }
-        let windowStart = Ranker.dayString(today.addingTimeInterval(-Double(settings.daysBack) * 86_400))
-        let mode = Incremental.mode(previous: previous, settings: settings, now: today)
+        // What is held reaches back past the look-back when the reader has scrolled to the end.
+        let heldExtra = previous?.extraDays ?? 0
+        let windowStart = Ranker.dayString(today.addingTimeInterval(-Double(settings.daysBack + heldExtra) * 86_400))
+        var extraDays = 0
+        let mode: Incremental.Mode
+        var untilOverride: String?
+        if older {
+            guard let previous, let range = Incremental.olderRange(now: today, daysBack: settings.daysBack, extraDays: previous.extraDays)
+            else { throw EngineError.nothingOlder }
+            mode = .older(since: range.since, until: range.until)
+            untilOverride = range.until
+            extraDays = range.extraDays
+        } else {
+            mode = Incremental.mode(previous: previous, settings: settings, now: today)
+            extraDays = mode.isIncremental ? heldExtra : 0
+        }
         let since: String
         switch mode {
         case .full(let reason):
-            since = windowStart
+            since = Ranker.dayString(today.addingTimeInterval(-Double(settings.daysBack) * 86_400))
             log("Full build: \(reason)")
         case .incremental(let from):
             since = from
             log("Incremental: asking only for papers published since \(from)")
+        case .older(let from, let to):
+            since = from
+            log("Older: asking for papers published \(from) to \(to)")
         }
+        // Journal and author figures already held are reused, both when refreshing and when going back.
+        let reusesPrevious = mode.isIncremental || untilOverride != nil
         // Both modes page the same way. A full build that took only the newest page
         // would cover a few days of a busy topic and call it the whole window, and an
         // incremental one would then find "new" papers that were only never fetched.
@@ -100,7 +126,7 @@ struct FeedEngine {
 
         var found: [Paper] = []
         let ownPMIDs = own.compactMap(\.pmid)
-        let until = Ranker.dayString(today)
+        let until = untilOverride ?? Ranker.dayString(today)
         var perSource: [SourceKind: Int] = [:]
         for step in planned {
             let targets = SourceRouting.targets(for: step.seed, openAlex: openAlex != nil,
@@ -112,7 +138,7 @@ struct FeedEngine {
                     switch target {
                     case .openAlex:
                         guard let openAlex else { continue }
-                        list = try await openAlex.papers(for: step.seed, since: since, maxPages: maxPages)
+                        list = try await openAlex.papers(for: step.seed, since: since, until: untilOverride, maxPages: maxPages)
                     case .europePMC:
                         guard let europePMC,
                               let query = EuropePMCQuery.build(step.seed, since: since, until: until, ownPMIDs: ownPMIDs) else { continue }
@@ -143,7 +169,11 @@ struct FeedEngine {
         })
         if let previous { fetched = Incremental.carryOver(from: previous.papers, into: fetched) }
         var papers = fetched
-        if mode.isIncremental, let previous {
+        if let previous, untilOverride != nil {
+            // Going back adds to everything held; nothing is dropped for being old.
+            papers = Merge.combine(fetched + previous.papers)
+            log("Older: \(found.count) results → \(fetched.count) unique; \(papers.count) held now  [\(lap())]")
+        } else if mode.isIncremental, let previous {
             papers = Incremental.merge(previous: previous.papers, fresh: fetched, windowStart: windowStart)
             log("Candidates: \(found.count) results from \(planned.count) seeds → \(fetched.count) unique; " +
                 "with \(previous.papers.count) kept from before, \(papers.count) in the window  [\(lap())]")
@@ -181,7 +211,7 @@ struct FeedEngine {
         // The journals' two-year mean citedness, for the "prefer high-impact journals"
         // slider and for the figure on a post. A few requests; if they fail the
         // feed simply has no figures this time.
-        if let openAlex { papers = await attachImpact(papers, openAlex: openAlex, previous: mode.isIncremental ? previous : nil) }
+        if let openAlex { papers = await attachImpact(papers, openAlex: openAlex, previous: reusesPrevious ? previous : nil) }
         // The authors' h-index costs about a request per hundred authors, so it is
         // only fetched when the user has asked for it to count.
         if settings.authorWeight > 0, let openAlex {
@@ -206,7 +236,9 @@ struct FeedEngine {
                           mode: mode,
                           complete: complete,
                           fetchedAt: today,
-                          newPapers: ranked.filter { !before.contains($0.paper.dedupeKey) }.count)
+                          newPapers: ranked.filter { !before.contains($0.paper.dedupeKey) }.count,
+                          // A seed that failed leaves a gap in what was just fetched: ask for it again.
+                          extraDays: older && !complete ? heldExtra : extraDays)
     }
 
     /// One person's papers: OpenAlex when it is on and answers, else the Europe PMC records that

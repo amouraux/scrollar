@@ -920,16 +920,37 @@ let layoutCited = [hr(ok("cited") { $0.citesYou = true; $0.date = "2026-10-01" }
 var layoutOthers = (0..<200).map { hr(ok("o\($0)") { $0.date = "2026-10-02" }, 5 - Double($0) / 100, 0.1) }
 layoutOthers.append(hr(ok("lowFollow") { $0.followed = true; $0.reasons = ["Journal: Pain"]; $0.date = "2026-10-03" }, -2, 0.1))
 layoutOthers.insert(hr(ok("star") { $0.journalImpact = 20; $0.date = "2026-10-04" }, 9, 0.99), at: 0)
-let blended = FeedLayout.make(citedYou: layoutCited, forYou: layoutOthers, history: History(), settings: layoutSettings, now: Date())
+let layoutNow = Calendar(identifier: .gregorian).date(from: DateComponents(timeZone: TimeZone(identifier: "UTC"), year: 2026, month: 10, day: 10, hour: 12))!
+let blended = FeedLayout.make(citedYou: layoutCited, forYou: layoutOthers, history: History(), settings: layoutSettings, now: layoutNow)
 let blendedIDs: [String] = blended.feed.fresh.map { $0.paper.id }
 check(blended.highlights.map { $0.ranked.paper.id } == ["star"] && !blendedIDs.contains("star"), "layout: a highlight is lifted out of the list, not shown twice")
-check(blendedIDs.count == FeedLayout.freshCap + 1 && blendedIDs.contains("lowFollow") && blendedIDs.last == "lowFollow", "layout: the list is cut to its best, and what the user follows is still there, at the foot")
+check(blendedIDs.count == 202 && blendedIDs.last == "lowFollow", "layout: the list is not cut, so it can be scrolled as far as what is held")
 check(Array(blendedIDs.prefix(3)) == ["o0", "cited", "o1"], "layout: a paper citing the user's work is placed by its score among the rest, not ahead of them")
 check(blended.citedYou.isEmpty && blended.following.isEmpty && blended.forYou.isEmpty, "layout: one list, no sections")
 var sectionSettings = layoutSettings; sectionSettings.feedOrder = .sections
-let sections = FeedLayout.make(citedYou: layoutCited, forYou: layoutOthers, history: History(), settings: sectionSettings, now: Date())
+let sections = FeedLayout.make(citedYou: layoutCited, forYou: layoutOthers, history: History(), settings: sectionSettings, now: layoutNow)
 check(sections.citedYou.fresh.map { $0.paper.id } == ["cited"] && sections.following.fresh.map { $0.paper.id } == ["lowFollow"] && sections.feed.isEmpty, "layout in sections: cited you, what is followed, and the rest apart")
 check(!sections.forYou.fresh.contains { $0.paper.id == "star" } && sections.highlights.count == 1, "layout in sections: highlights come out of the sections too")
+// papers older than the look-back go last, whatever they score
+let oldPapers = [hr(ok("recentOld") { $0.date = "2026-08-25" }, 1, 0.1),
+                 hr(ok("ancient") { $0.date = "2026-08-01"; $0.journalImpact = 30 }, 9.5, 0.99),
+                 hr(ok("ancientFollow") { $0.date = "2026-08-02"; $0.followed = true; $0.reasons = ["Journal: Pain"] }, 1, 0.1)]
+let withOld = FeedLayout.make(citedYou: layoutCited, forYou: layoutOthers + oldPapers, history: History(), settings: layoutSettings, now: layoutNow)
+check(withOld.older.map { $0.paper.id } == ["recentOld", "ancient", "ancientFollow"], "layout: papers older than the look-back are a list of their own, the nearer 30 days first and the best first within them")
+check(!withOld.feed.fresh.contains { $0.paper.id.hasPrefix("ancient") } && withOld.highlights.map { $0.ranked.paper.id } == ["star"], "layout: they are not in the list above and are never highlighted")
+check(withOld.all.contains { $0.paper.id == "ancient" } && !withOld.isEmpty, "layout: they count as on screen")
+let withOldSections = FeedLayout.make(citedYou: layoutCited, forYou: layoutOthers + oldPapers, history: History(), settings: sectionSettings, now: layoutNow)
+check(withOldSections.older.map { $0.paper.id } == ["recentOld", "ancient", "ancientFollow"] && !withOldSections.following.fresh.contains { $0.paper.id == "ancientFollow" }, "layout in sections: the same")
+// going further back
+let backFrom = Calendar(identifier: .gregorian).date(from: DateComponents(timeZone: TimeZone(identifier: "UTC"), year: 2026, month: 11, day: 8, hour: 12))!
+let firstBack = Incremental.olderRange(now: backFrom, daysBack: 30, extraDays: 0)!
+check(firstBack.since == "2026-09-09" && firstBack.until == "2026-10-09" && firstBack.extraDays == 30, "older: the first step is the 30 days before the look-back")
+let secondBack = Incremental.olderRange(now: backFrom, daysBack: 30, extraDays: 30)!
+check(secondBack.until == "2026-09-09" && secondBack.extraDays == 60, "older: the next step starts where the last stopped")
+check(Incremental.olderRange(now: backFrom, daysBack: 30, extraDays: 335) == nil && Incremental.olderRange(now: backFrom, daysBack: 30, extraDays: 330)?.extraDays == 335, "older: it stops at a year, the last step shortened")
+check(Incremental.olderRange(now: backFrom, daysBack: 90, extraDays: 0)!.until == "2026-08-10", "older: it counts from the look-back chosen")
+check(Seed.keyword("pain").filter(since: "2026-09-09", until: "2026-10-09") == "title_and_abstract.search:pain,from_publication_date:2026-09-09,to_publication_date:2026-10-09", "older: OpenAlex is given both ends")
+check(Seed.keyword("pain").filter(since: "d") == "title_and_abstract.search:pain,from_publication_date:d", "a normal query has no end date")
 var seenHistory = History(); seenHistory.markSeen("doi:none", at: Date())
 let emptyLayout = FeedLayout.make(citedYou: [], forYou: [], history: seenHistory, settings: layoutSettings, now: Date())
 check(emptyLayout.isEmpty, "layout: nothing in, nothing out")

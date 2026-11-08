@@ -19,6 +19,8 @@ struct PreviousFeed {
     /// The settings (without feedback) the papers were fetched for: their
     /// reasons and flags are only valid for those.
     var builtWith: FeedSettings
+    /// Days held beyond the look-back, fetched when the reader scrolled to the end.
+    var extraDays = 0
 }
 
 enum Incremental {
@@ -27,10 +29,28 @@ enum Incremental {
     static let overlapDays = 3
     static let fullRebuildDays = 3.0
 
+    /// Scrolling to the end asks for the days before the ones held, this many at a time, up
+    /// to a year in all. A full rebuild forgets them: it fetches the look-back only, and
+    /// scrolling to the end fetches them again.
+    static let olderStep = 30
+    static let furthestDays = 365
+
+    /// The days to ask for next, as yyyy-MM-dd bounds, and how many extra days are then held;
+    /// nil once a year is held.
+    static func olderRange(now: Date, daysBack: Int, extraDays: Int) -> (since: String, until: String, extraDays: Int)? {
+        let held = daysBack + extraDays
+        guard held < furthestDays else { return nil }
+        let step = min(olderStep, furthestDays - held)
+        func day(_ n: Int) -> String { Ranker.dayString(now.addingTimeInterval(-Double(n) * 86_400)) }
+        return (day(held + step), day(held), extraDays + step)
+    }
+
     enum Mode: Equatable {
         case full(reason: String)
         /// Ask only for papers published on or after this day (yyyy-MM-dd).
         case incremental(since: String)
+        /// The days before the ones held, between these two (yyyy-MM-dd, both included).
+        case older(since: String, until: String)
 
         var isIncremental: Bool {
             if case .incremental = self { return true }
