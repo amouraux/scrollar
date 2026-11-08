@@ -771,11 +771,6 @@ let splitOff = Arranger.split([fOld, plainTop, fNewLow], followSection: false)
 let offIDs: [String] = splitOff.rest.map { $0.paper.id }
 check(splitOff.followed.isEmpty && offIDs == ["fa", "pt", "fb"], "follow section off: everything stays in the ranked list")
 check(Arranger.split([], followSection: true).followed.isEmpty, "follow section: an empty feed is fine")
-check(FeedSettings().followSection && (try! FeedSettings.decode(Data("{}".utf8))).followSection, "follow section: on by default, also for an older settings file")
-var sectionOff = FeedSettings(); sectionOff.followSection = false
-check(sectionOff.forRanking == FeedSettings().forRanking && sectionOff.forFetching == FeedSettings().forFetching, "follow section: only a display choice, so it asks for no refresh")
-var syncedOff = FeedSettings(); syncedOff.followSection = false
-check(device(syncedOff, stamp: at(1)).apply(to: FeedSettings()).followSection == false, "follow section: the choice syncs")
 
 // MARK: ORCID and profile suggestions
 check(Orcid.normalised("0000-0003-1056-5980") == "0000-0003-1056-5980", "orcid: a valid iD is accepted")
@@ -881,6 +876,62 @@ check(device(importanceSynced, stamp: at(1)).apply(to: FeedSettings()).followedK
 var importanceChanged = importanceSynced; importanceChanged.followedKeywords[0].importance = .low
 var importanceLedger = device(importanceSynced, stamp: at(1)); importanceLedger.reconcile(importanceChanged, at: at(9))
 check(importanceLedger.merged(with: device(importanceSynced, stamp: at(1))).apply(to: importanceSynced).followedKeywords.first?.importance == .low, "keyword importance: changing it on one device is a later decision than the old value")
+
+// MARK: feed order and highlights
+let hlDefaults = FeedSettings()
+check(hlDefaults.feedOrder == .blended && hlDefaults.highlightCount == 3 && hlDefaults.highlightCloseness == 0.95 && hlDefaults.highlightImpact == 5 && hlDefaults.highlightAuthorH == 40, "layout settings: one ranked list and three highlights by default")
+let hlClamped = try! FeedSettings.decode(Data("{\"highlightCount\": 99, \"highlightCloseness\": 0.1, \"highlightImpact\": -4, \"highlightAuthorH\": 9999, \"feedOrder\": \"nonsense\"}".utf8))
+check(hlClamped.highlightCount == 5 && hlClamped.highlightCloseness == 0.5 && hlClamped.highlightImpact == 0 && hlClamped.highlightAuthorH == 200 && hlClamped.feedOrder == .blended, "layout settings: clamped when read, an unknown order is the default")
+var hlChanged = FeedSettings(); hlChanged.feedOrder = .sections; hlChanged.highlightCount = 0; hlChanged.highlightImpact = 12; hlChanged.highlightCloseness = 0.8; hlChanged.highlightAuthorH = 70
+check(hlChanged.forRanking == FeedSettings().forRanking && hlChanged.forFetching == FeedSettings().forFetching, "layout settings: only display, so they ask for no refresh")
+check(device(hlChanged, stamp: at(1)).apply(to: FeedSettings()) == hlChanged, "layout settings: they sync")
+
+func hr(_ p: Paper, _ score: Double, _ sim: Double) -> RankedPaper { RankedPaper(paper: p, score: score, similarity: sim) }
+let hlImpact = hr(ok("hi") { $0.journalImpact = 12.04 }, 4, 0.97)
+let hlNoSignal = hr(ok("hn"), 5, 0.99)
+let hlFar = hr(ok("hf") { $0.journalImpact = 30 }, 6, 0.80)
+let hlCites = hr(ok("hc") { $0.citesYou = true }, 3, 0.96)
+let hlSenior = hr(ok("hs") { $0.lastAuthorH = 80 }, 3.5, 0.96)
+let hlFollowed = hr(ok("hp") { $0.followed = true; $0.reasons = ["Journal: Pain"] }, 2, 0.96)
+let picked = Highlights.select([hlImpact, hlNoSignal, hlFar, hlCites, hlSenior, hlFollowed], settings: FeedSettings())
+let pickedIDs: [String] = picked.map { $0.ranked.paper.id }
+check(pickedIDs == ["hi", "hs", "hc"], "highlights: close to the user's work and with something more, best score first, at most three")
+check(!pickedIDs.contains("hn") && !pickedIDs.contains("hf"), "highlights: close alone is not enough, and a great journal alone is not close enough")
+check(picked.first?.reason == "very close to your work · journal impact 12.0" && picked[1].reason.contains("senior author h-index 80") && picked[2].reason.contains("cites your work"), "highlights: the reason says what makes each one stand out")
+var hlMany = FeedSettings(); hlMany.highlightCount = 5
+check(Highlights.select([hlImpact, hlCites, hlSenior, hlFollowed], settings: hlMany).last?.reason.contains("from something you follow") == true, "highlights: something specific the user follows, with closeness, counts")
+var hlNone = FeedSettings(); hlNone.highlightCount = 0
+check(Highlights.select([hlImpact], settings: hlNone).isEmpty, "highlights: none when switched off")
+var hlNoImpact = FeedSettings(); hlNoImpact.highlightImpact = 0
+check(Highlights.select([hlImpact], settings: hlNoImpact).isEmpty, "highlights: an impact threshold of zero ignores the journal")
+var hlStrict = FeedSettings(); hlStrict.highlightImpact = 20
+check(Highlights.select([hlImpact], settings: hlStrict).isEmpty, "highlights: a higher impact threshold leaves out a lesser journal")
+var hlByline = FeedSettings(); hlByline.byline = .first
+check(Highlights.select([hlSenior], settings: hlByline).isEmpty, "highlights: the h-index that counts follows the author the user chose")
+
+let blendList = (0..<5).map { hr(ok("b\($0)"), Double(10 - $0), 0) } + [hr(ok("pin") { $0.followed = true; $0.reasons = ["Journal: Pain"] }, -1, 0)]
+let blendIDs: [String] = Arranger.blend(blendList, cap: 3).map { $0.paper.id }
+check(blendIDs == ["b0", "b1", "b2", "pin"], "blend: the best few, in order, and what the user follows even though it scores lowest")
+
+// the whole layout
+var layoutSettings = FeedSettings(); layoutSettings.followedKeywords = []
+let layoutCited = [hr(ok("cited") { $0.citesYou = true; $0.date = "2026-10-01" }, 4.995, 0.5)]
+var layoutOthers = (0..<200).map { hr(ok("o\($0)") { $0.date = "2026-10-02" }, 5 - Double($0) / 100, 0.1) }
+layoutOthers.append(hr(ok("lowFollow") { $0.followed = true; $0.reasons = ["Journal: Pain"]; $0.date = "2026-10-03" }, -2, 0.1))
+layoutOthers.insert(hr(ok("star") { $0.journalImpact = 20; $0.date = "2026-10-04" }, 9, 0.99), at: 0)
+let blended = FeedLayout.make(citedYou: layoutCited, forYou: layoutOthers, history: History(), settings: layoutSettings, now: Date())
+let blendedIDs: [String] = blended.feed.fresh.map { $0.paper.id }
+check(blended.highlights.map { $0.ranked.paper.id } == ["star"] && !blendedIDs.contains("star"), "layout: a highlight is lifted out of the list, not shown twice")
+check(blendedIDs.count == FeedLayout.freshCap + 1 && blendedIDs.contains("lowFollow") && blendedIDs.last == "lowFollow", "layout: the list is cut to its best, and what the user follows is still there, at the foot")
+check(Array(blendedIDs.prefix(3)) == ["o0", "cited", "o1"], "layout: a paper citing the user's work is placed by its score among the rest, not ahead of them")
+check(blended.citedYou.isEmpty && blended.following.isEmpty && blended.forYou.isEmpty, "layout: one list, no sections")
+var sectionSettings = layoutSettings; sectionSettings.feedOrder = .sections
+let sections = FeedLayout.make(citedYou: layoutCited, forYou: layoutOthers, history: History(), settings: sectionSettings, now: Date())
+check(sections.citedYou.fresh.map { $0.paper.id } == ["cited"] && sections.following.fresh.map { $0.paper.id } == ["lowFollow"] && sections.feed.isEmpty, "layout in sections: cited you, what is followed, and the rest apart")
+check(!sections.forYou.fresh.contains { $0.paper.id == "star" } && sections.highlights.count == 1, "layout in sections: highlights come out of the sections too")
+var seenHistory = History(); seenHistory.markSeen("doi:none", at: Date())
+let emptyLayout = FeedLayout.make(citedYou: [], forYou: [], history: seenHistory, settings: layoutSettings, now: Date())
+check(emptyLayout.isEmpty, "layout: nothing in, nothing out")
 
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

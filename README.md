@@ -115,7 +115,7 @@ OpenAlex. Do not compile a key in.
 blend, 0.6 Apple embeddings and 0.4 word statistics, against the three nearest papers, so a
 researcher with several themes is not averaged into one) times the "stay close to my work"
 slider; a bonus for each further seed that found the paper, for citing the user's work and
-for being found by something they follow (which matters for topics, institutions and funders, and for everything with the follow section off, see below); a recency term that halves every fortnight, times
+for being found by something they follow (which matters for topics, institutions and funders, see below); a recency term that halves every fortnight, times
 its slider; a small penalty for repository records (not for preprints); the kind adjustment
 (case reports and conference abstracts start lowered; hide removes them before ranking); and
 the importance the user gave the keyword that found it (High +1.2, Normal 0, Low −0.6; the highest of the keywords that found it); and
@@ -133,22 +133,36 @@ list**: the app no longer infers topics behind the user's back. The user's publi
 follows, the filters and the sliders, each explained under its list.
 
 A follow becomes a search per source that can answer it (`SourceRouting`), returning the newest
-papers in the look-back window, up to about 300 per follow per source. By default (`followSection`,
-in Tune under Follow) every paper that a **journal, a researcher or a keyword** followed found is
-listed under "From what you follow", newest first, with no rank cut-off and no repeat in the ranked
-list; it still passes the user's mutes and filters, and the same seen, read and expiry rules. A
-**topic, an institution or a funder** is too broad to list in full (each names hundreds of papers a
-month, in every field), so what only those found is ranked with the rest and gets +0.8 (and +0.5 for
-each further search that found it); the ranked list shows 150 new papers, so a weak match can fall
-below that. With the section off, everything is ranked.
+papers in the look-back window, up to about 300 per follow per source.
+
+**One ranked list, with a guarantee.** The feed is a single list in score order (`FeedLayout`,
+`Core/Layout.swift`), so a paper that cites the user, one a keyword found and one with neither
+are interleaved by how well they fit, newest breaking ties, and not shown as three blocks. The
+list is cut to the best 150 new papers (60 earlier, 60 read), except that a paper found by a
+**journal, a researcher or a keyword** (`Paper.isPinned`) is never cut: it appears however low
+it scores, and still passes the user's mutes, filters and the same seen, read and expiry rules.
+A **topic, an institution or a funder** is too broad to list in full (each names hundreds of
+papers a month, in every field), so what only those found is ranked with the rest and gets +0.8
+(and +0.5 for each further search that found it), and a weak match can fall below the cut.
+Tune, Order and highlights can instead show the old three sections (cites you, from what you
+follow, for you; `Arranger.split`).
+
+**Highlights.** Up to three posts (0 to 5) are lifted into a strip at the top, marked with
+an orange outline and the reason in one line. A paper qualifies only if it is very close to the
+user's own work (similarity at or above a threshold, 95% by default) **and** has at least one
+further sign: it is in a journal whose two-year mean citedness reaches a bar (5 by default), the
+author the byline shows has an h-index at or above a bar (40; for First and last the higher of
+the two), it cites the user's work, or it comes from a journal, researcher or keyword the user
+follows. Setting a bar to 0 ignores that sign. The best by score fill the strip, and a
+highlighted paper is not repeated below. Everything in this paragraph is a display choice
+(`Highlights.select`): changing it fetches and ranks nothing again.
 
 The user ranks their own keywords: each has an importance (Low, Normal, High; Normal by default),
-set in Tune under Keywords. It adds its bonus above to the papers the keyword found, and it orders the
-follow section: High keywords first, then Normal, then Low, newest first within each. A paper that a
-journal or researcher also found is at least Normal, whatever its keywords say. Journals and researchers
-are unranked and count as Normal. A follow never changes the similarity
-measure, which comes only from the user's own and saved papers. The section is a display choice
-(`Arranger.split`, `Paper.isPinned`): changing it fetches and ranks nothing again.
+set in Tune under Keywords. It adds its bonus above to the papers the keyword found, which is
+how a High keyword rises in the single list. A paper that a journal or researcher also found is at
+least Normal, whatever its keywords say. Journals and researchers are unranked and count as
+Normal. A follow never changes the similarity measure, which comes only from the user's own and
+saved papers.
 
 ## Learning from publications
 
@@ -251,7 +265,7 @@ model is a heuristic and is sometimes background, not a finding.
     (settings in, ranked feed out; the app and the command line both call it).
   - `Settings.swift`, `History.swift`, `Incremental.swift`, `Sync.swift`, `Sources.swift`
     (routing, Europe PMC parsing), `Summary.swift`, `Byline.swift`, `Why.swift`,
-    `Cover.swift`, `PubMed.swift`, `Profile.swift` (the ORCID check, and suggestions from publications).
+    `Cover.swift`, `Layout.swift` (the single ranked list and the highlights), `PubMed.swift`, `Profile.swift` (the ORCID check, and suggestions from publications).
   - Network and Apple frameworks, each in one place: `OpenAlex.swift`, `EuropePMCClient.swift`,
     `PubMedClient.swift`, `ProfileFetcher.swift` (a person's papers, for the profile and its suggestions), `Embedding.swift` (NaturalLanguage).
 - `App/`: SwiftUI. `AppModel` holds the state, `Store` the files and the Keychain,

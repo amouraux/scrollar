@@ -1,0 +1,119 @@
+import Foundation
+
+// What is on screen, worked out from a ranked feed. Pure, so the order a reader sees can be tested.
+
+/// A paper that fits particularly well, and why, in words.
+struct Highlight {
+    var ranked: RankedPaper
+    var reason: String
+}
+
+enum Highlights {
+    /// The few fresh papers that are both very close to the user's own work and have something
+    /// more going for them, best first. Closeness alone is not enough: the second thing is what
+    /// makes it worth interrupting the feed for, and every part of the rule is a setting.
+    static func select(_ fresh: [RankedPaper], settings s: FeedSettings) -> [Highlight] {
+        guard s.highlightCount > 0 else { return [] }
+        return fresh
+            .filter { $0.similarity >= s.highlightCloseness }
+            .compactMap { r -> Highlight? in
+                let signals = Highlights.signals(for: r.paper, settings: s)
+                guard !signals.isEmpty else { return nil }
+                return Highlight(ranked: r, reason: (["very close to your work"] + signals).joined(separator: " · "))
+            }
+            .sorted { $0.ranked.score != $1.ranked.score ? $0.ranked.score > $1.ranked.score : $0.ranked.paper.dedupeKey < $1.ranked.paper.dedupeKey }
+            .prefix(s.highlightCount)
+            .map { $0 }
+    }
+
+    /// What, besides being close, makes a paper stand out.
+    static func signals(for p: Paper, settings s: FeedSettings) -> [String] {
+        var out: [String] = []
+        if s.highlightImpact > 0, let impact = p.journalImpact, impact >= s.highlightImpact {
+            out.append("journal impact " + String(format: "%.1f", impact))
+        }
+        if s.highlightAuthorH > 0, let h = Ranker.chosenH(p, focus: s.byline), h >= s.highlightAuthorH {
+            let who = s.byline == .last ? "senior author " : s.byline == .first ? "first author " : "author "
+            out.append(who + "h-index \(h)")
+        }
+        if p.citesYou { out.append("cites your work") }
+        if p.isPinned { out.append("from something you follow") }
+        return out
+    }
+}
+
+extension Arranger {
+    /// A ranked list cut to its best `cap`, except that nothing a journal, researcher or keyword the
+    /// user follows found is ever cut: following something is a request to see it, so a low score
+    /// only decides where it sits. The order is kept.
+    static func blend(_ ranked: [RankedPaper], cap: Int) -> [RankedPaper] {
+        var others = 0
+        return ranked.filter { r in
+            if r.paper.isPinned { return true }
+            others += 1
+            return others <= cap
+        }
+    }
+}
+
+struct FeedLayout {
+    static let freshCap = 150
+    static let earlierCap = 60
+    static let readCap = 60
+
+    var highlights: [Highlight] = []
+    /// Blended order: everything, ranked.
+    var feed = Arranged()
+    /// Sections order.
+    var citedYou = Arranged()
+    var following = Arranged()
+    var forYou = Arranged()
+
+    var isEmpty: Bool { highlights.isEmpty && feed.isEmpty && citedYou.isEmpty && following.isEmpty && forYou.isEmpty }
+
+    /// Every paper still on screen, as a place to look for one.
+    var all: [RankedPaper] {
+        highlights.map(\.ranked) + [feed, citedYou, following, forYou].flatMap { $0.fresh + $0.earlier + $0.read }
+    }
+
+    static func make(citedYou: [RankedPaper], forYou: [RankedPaper], history: History,
+                     settings: FeedSettings, now: Date) -> FeedLayout {
+        var layout = FeedLayout()
+        func byScore(_ a: RankedPaper, _ b: RankedPaper) -> Bool {
+            if a.score != b.score { return a.score > b.score }
+            if a.paper.date != b.paper.date { return a.paper.date > b.paper.date }
+            return a.paper.dedupeKey < b.paper.dedupeKey
+        }
+        func removing(_ keys: Set<String>, from a: Arranged) -> Arranged {
+            var out = a
+            out.fresh.removeAll { keys.contains($0.paper.dedupeKey) }
+            return out
+        }
+
+        switch settings.feedOrder {
+        case .blended:
+            let everything = (citedYou + forYou).sorted(by: byScore)
+            var arranged = Arranger.arrange(everything, history: history, settings: settings, now: now)
+            layout.highlights = Highlights.select(arranged.fresh, settings: settings)
+            arranged = removing(Set(layout.highlights.map { $0.ranked.paper.dedupeKey }), from: arranged)
+            arranged.fresh = Arranger.blend(arranged.fresh, cap: freshCap)
+            arranged.earlier = Arranger.blend(arranged.earlier, cap: earlierCap)
+            arranged.read = Array(arranged.read.prefix(readCap))
+            layout.feed = arranged
+        case .sections:
+            let split = Arranger.split(forYou, followSection: true, keywords: settings.followedKeywords)
+            var cited = Arranger.arrange(citedYou, history: history, settings: settings, now: now)
+            var following = Arranger.arrange(split.followed, history: history, settings: settings, now: now)
+            var rest = Arranger.arrange(split.rest, history: history, settings: settings, now: now)
+            layout.highlights = Highlights.select((cited.fresh + following.fresh + rest.fresh).sorted(by: byScore), settings: settings)
+            let taken = Set(layout.highlights.map { $0.ranked.paper.dedupeKey })
+            cited = removing(taken, from: cited)
+            following = removing(taken, from: following)
+            rest = removing(taken, from: rest)
+            layout.citedYou = cited
+            layout.following = following
+            layout.forYou = rest
+        }
+        return layout
+    }
+}

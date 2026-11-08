@@ -66,9 +66,9 @@ struct SettingsView: View {
                     entityLink("Topics", kind: .topics, items: $model.settings.followedTopics,
                                explanation: "Papers OpenAlex files under a topic (each paper has up to three). A topic is broad, a few hundred papers a month, so what it finds is ranked with everything else and gets a small bonus, not listed in full. Searched in OpenAlex; a topic taken from a paper's MeSH headings is searched in Europe PMC.")
                     entityLink("Journals", kind: .sources, items: $model.settings.followedJournals, byName: true,
-                               explanation: "Everything these journals publish in your look-back window, newest first, under \"From what you follow\". Large general journals publish a lot: remove any you do not want in full.")
+                               explanation: "Everything these journals publish in your look-back window is kept in your feed, however low it would score. Large general journals publish a lot: remove any you do not want in full.")
                     entityLink("Researchers", kind: .authors, items: $model.settings.followedAuthors, byName: true,
-                               explanation: "Every paper where this person appears anywhere in the author list, under \"From what you follow\". Chosen from the search, they are matched by OpenAlex id; added by name, they are searched in Europe PMC and a namesake may slip in.")
+                               explanation: "Every paper where this person appears anywhere in the author list is kept in your feed, however low it would score. Chosen from the search, they are matched by OpenAlex id; added by name, they are searched in Europe PMC and a namesake may slip in.")
                     entityLink("Institutions", kind: .institutions, items: $model.settings.followedInstitutions, byName: true,
                                explanation: "Papers with an author at this institution or one of its departments or hospitals. An institution publishes in every field, so what it finds is ranked with everything else and gets a small bonus, not listed in full.")
                     entityLink("Funders", kind: .funders, items: $model.settings.followedFunders, byName: true,
@@ -78,11 +78,33 @@ struct SettingsView: View {
                     } label: {
                         LabeledContent("Keywords", value: count(model.settings.followedKeywords.count))
                     }
-                    Toggle("Show everything I follow in its own section", isOn: $model.settings.followSection)
                 } header: {
                     Text("Follow")
                 } footer: {
-                    Text("Each follow searches for new papers. With the section on, every paper that a journal, a researcher or a keyword you follow found is listed under \"From what you follow\", newest first, with no cut-off. Topics, institutions and funders are too broad to list in full, so what they find is ranked with all the rest and gets a small bonus. With the section off, everything is ranked.")
+                    Text("Each follow searches for new papers. Everything that a journal, a researcher or a keyword you follow found is always in your feed, however low it scores. Topics, institutions and funders are too broad for that, so what they find is ranked with all the rest and gets a small bonus.")
+                }
+
+                Section {
+                    Picker("Order", selection: $model.settings.feedOrder) {
+                        ForEach(FeedOrder.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    Stepper("Highlights: \(model.settings.highlightCount)", value: $model.settings.highlightCount, in: 0...5)
+                    if model.settings.highlightCount > 0 {
+                        VStack(alignment: .leading) {
+                            Text("Very close to my work: the closest \(max(1, Int(((1 - model.settings.highlightCloseness) * 100).rounded())))%")
+                            Slider(value: $model.settings.highlightCloseness, in: 0.5...0.99)
+                        }
+                        Stepper(model.settings.highlightImpact == 0 ? "Journal impact: ignored"
+                                : "Journal impact at least \(Int(model.settings.highlightImpact))",
+                                value: $model.settings.highlightImpact, in: 0...50, step: 1)
+                        Stepper(model.settings.highlightAuthorH == 0 ? "Author h-index: ignored"
+                                : "Author h-index at least \(model.settings.highlightAuthorH)",
+                                value: $model.settings.highlightAuthorH, in: 0...200, step: 5)
+                    }
+                } header: {
+                    Text("Order and highlights")
+                } footer: {
+                    Text("One ranked list puts every paper where its score says, so a paper that cites you, one from a journal you follow and a close match all compete, and the line on each card says why it is there. In sections puts what cites you first, then what you follow, then the rest. Highlights are the few new papers above the feed that are very close to your work and also have something more: a journal or an author as strong as you set, a citation of your work, or something specific you follow. Impact is OpenAlex's two-year mean citedness (a high journal is about 5 or more); the h-index is checked only when the h-index option below has fetched it, for the author you chose under Posts.")
                 }
 
                 Section("Mute") {
@@ -439,7 +461,7 @@ struct KeywordListView: View {
                 }
                 .onDelete { rules.remove(atOffsets: $0) }
             } footer: {
-                Text("Each phrase is searched in titles and abstracts, and what it finds is listed in full under \"From what you follow\". Importance ranks your keywords against each other: a High keyword lifts its papers in the ranking and lists them first, a Low one lowers them. Open a keyword to set it, and to require or exclude other words.")
+                Text("Each phrase is searched in titles and abstracts, and everything it finds is kept in your feed, however low it would score. Importance ranks your keywords against each other: a High keyword lifts its papers up the list, a Low one lowers them. Open a keyword to set it, and to require or exclude other words.")
             }
         }
         .navigationTitle("Keywords")
@@ -485,7 +507,7 @@ struct KeywordRuleEditor: View {
             } header: {
                 Text("Importance")
             } footer: {
-                Text("High lifts the papers this keyword finds in the ranking and lists them first under \"From what you follow\"; Low lowers them. A paper that a journal or researcher you follow also found is never listed below Normal.")
+                Text("High lifts the papers this keyword finds up the list; Low lowers them. A paper that a journal or researcher you follow also found is never ranked below Normal.")
             }
             Section {
                 TextField("e.g. EEG, humans", text: Binding(

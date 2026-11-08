@@ -16,13 +16,10 @@ final class AppModel {
     /// What is on screen: the feed sorted into new, earlier and read. It changes
     /// when a feed is loaded or the user asks for the new papers, never as they
     /// scroll, so no card moves while it is being looked at.
-    struct Layout {
-        var citedYou = Arranged()
-        /// Everything something followed found, newest first.
-        var following = Arranged()
-        var forYou = Arranged()
-        var isEmpty: Bool { citedYou.isEmpty && following.isEmpty && forYou.isEmpty }
-    }
+    /// What is on screen: highlights, then the feed in the order the user chose, sorted into new,
+    /// earlier and read. It changes when a feed is loaded or the user asks for the new papers,
+    /// never as they scroll, so no card moves while it is being looked at.
+    typealias Layout = FeedLayout
 
     var settings: FeedSettings {
         didSet {
@@ -34,7 +31,13 @@ final class AppModel {
             // Following something new or muting something means fetching again;
             // hiding one paper does not.
             if settings.forRanking != oldValue.forRanking { needsRefresh = true }
-            if settings.seenExpiryDays != oldValue.seenExpiryDays || settings.followSection != oldValue.followSection { rearrange() }
+            let layoutChanged = settings.seenExpiryDays != oldValue.seenExpiryDays
+                || settings.feedOrder != oldValue.feedOrder
+                || settings.highlightCount != oldValue.highlightCount
+                || settings.highlightCloseness != oldValue.highlightCloseness
+                || settings.highlightImpact != oldValue.highlightImpact
+                || settings.highlightAuthorH != oldValue.highlightAuthorH
+            if layoutChanged { rearrange() }
         }
     }
 
@@ -285,11 +288,10 @@ final class AppModel {
 
     /// Keep a refresh aside and count what is new in it, without touching the screen.
     private func stage(_ result: FeedResult, builtFor: FeedSettings) {
-        let shown = [layout.citedYou, layout.following, layout.forYou].flatMap { $0.fresh + $0.earlier }
-        let onScreen = Set(shown.map { $0.paper.dedupeKey })
+        let onScreen = Set(layout.all.map { $0.paper.dedupeKey })
         let incoming = makeLayout(citedYou: result.citedYou, forYou: result.forYou, now: Date())
-        let count = [incoming.citedYou, incoming.following, incoming.forYou].flatMap(\.fresh)
-            .filter { !onScreen.contains($0.paper.dedupeKey) }.count
+        let fresh = incoming.highlights.map(\.ranked) + [incoming.feed, incoming.citedYou, incoming.following, incoming.forYou].flatMap(\.fresh)
+        let count = fresh.filter { !onScreen.contains($0.paper.dedupeKey) }.count
         if count == 0 {
             apply(result, builtFor: builtFor)   // nothing the user would notice changing
         } else {
@@ -306,10 +308,7 @@ final class AppModel {
     /// What is on screen for a ranked feed: the news about the user's work, everything
     /// their follows found (if they asked for that section), and the rest in rank order.
     private func makeLayout(citedYou: [RankedPaper], forYou: [RankedPaper], now: Date) -> Layout {
-        let split = Arranger.split(forYou, followSection: settings.followSection, keywords: settings.followedKeywords)
-        return Layout(citedYou: Arranger.arrange(citedYou, history: history, settings: settings, now: now),
-                      following: Arranger.arrange(split.followed, history: history, settings: settings, now: now),
-                      forYou: Arranger.arrange(split.rest, history: history, settings: settings, now: now))
+        FeedLayout.make(citedYou: citedYou, forYou: forYou, history: history, settings: settings, now: now)
     }
 
     private func progress(_ message: String) {
@@ -655,8 +654,10 @@ final class AppModel {
             a.earlier.removeAll { !kept($0) }
             a.read.removeAll { !kept($0) }
         }
+        drop(&layout.feed)
         drop(&layout.citedYou)
         drop(&layout.following)
         drop(&layout.forYou)
+        layout.highlights.removeAll { FeedBuilder.keep([$0.ranked.paper], settings: settings).isEmpty }
     }
 }

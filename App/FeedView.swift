@@ -46,34 +46,59 @@ struct FeedView: View {
 
     @ViewBuilder private var content: some View {
         let layout = model.layout
-        let cited = layout.citedYou.fresh + layout.citedYou.earlier
-        if !cited.isEmpty {
-            SectionTitle(text: "Cited you", systemImage: "quote.bubble")
-            ForEach(cited.prefix(10), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+
+        // The few that fit particularly well, above everything, each saying why.
+        if !layout.highlights.isEmpty {
+            SectionTitle(text: "Highlights", systemImage: "star.circle")
+            ForEach(layout.highlights, id: \.ranked.paper.dedupeKey) { PaperCard(ranked: $0.ranked, highlight: $0.reason) }
         }
 
-        // Everything something you follow found, newest first, with no cut-off by rank.
-        let following = layout.following.fresh + layout.following.earlier
-        if !following.isEmpty {
-            SectionTitle(text: "From what you follow", systemImage: "star")
-            ForEach(following.prefix(400), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
-        }
+        if model.settings.feedOrder == .blended {
+            // One list in the order of its score; the line on each card says why it is there.
+            let feed = layout.feed
+            if !feed.fresh.isEmpty {
+                SectionTitle(text: "Your feed", systemImage: "text.justify.leading")
+                ForEach(feed.fresh, id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+            }
+            if !feed.earlier.isEmpty {
+                if feed.fresh.isEmpty && layout.highlights.isEmpty { CaughtUp() }
+                SectionTitle(text: "Earlier", systemImage: "clock")
+                ForEach(feed.earlier, id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+            }
+            if model.settings.showReadPapers, !feed.read.isEmpty {
+                SectionTitle(text: "Read", systemImage: "checkmark.circle")
+                ForEach(feed.read, id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+            }
+        } else {
+            let cited = layout.citedYou.fresh + layout.citedYou.earlier
+            if !cited.isEmpty {
+                SectionTitle(text: "Cited you", systemImage: "quote.bubble")
+                ForEach(cited.prefix(10), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+            }
 
-        if !layout.forYou.fresh.isEmpty {
-            SectionTitle(text: "For you", systemImage: "sparkles")
-            ForEach(layout.forYou.fresh.prefix(150), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
-        }
+            // Everything something you follow found, newest first, with no cut-off by rank.
+            let following = layout.following.fresh + layout.following.earlier
+            if !following.isEmpty {
+                SectionTitle(text: "From what you follow", systemImage: "star")
+                ForEach(following.prefix(400), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+            }
 
-        if !layout.forYou.earlier.isEmpty {
-            if layout.forYou.fresh.isEmpty && layout.following.fresh.isEmpty { CaughtUp() }
-            SectionTitle(text: "Earlier", systemImage: "clock")
-            ForEach(layout.forYou.earlier.prefix(60), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
-        }
+            if !layout.forYou.fresh.isEmpty {
+                SectionTitle(text: "For you", systemImage: "sparkles")
+                ForEach(layout.forYou.fresh.prefix(FeedLayout.freshCap), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+            }
 
-        let read = layout.following.read + layout.forYou.read
-        if model.settings.showReadPapers, !read.isEmpty {
-            SectionTitle(text: "Read", systemImage: "checkmark.circle")
-            ForEach(read.prefix(60), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+            if !layout.forYou.earlier.isEmpty {
+                if layout.forYou.fresh.isEmpty && layout.following.fresh.isEmpty { CaughtUp() }
+                SectionTitle(text: "Earlier", systemImage: "clock")
+                ForEach(layout.forYou.earlier.prefix(FeedLayout.earlierCap), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+            }
+
+            let read = layout.following.read + layout.forYou.read
+            if model.settings.showReadPapers, !read.isEmpty {
+                SectionTitle(text: "Read", systemImage: "checkmark.circle")
+                ForEach(read.prefix(FeedLayout.readCap), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+            }
         }
 
         if layout.isEmpty, !model.isLoading { EmptyFeed() }
@@ -190,6 +215,8 @@ struct PaperCard: View {
     @Environment(\.colorScheme) private var scheme
     @AppStorage("showCovers") private var showCovers = true
     let ranked: RankedPaper
+    /// Set for a highlight: why it is one, in words.
+    var highlight: String? = nil
     @State private var expanded = false
     @State private var seenTimer: Task<Void, Never>?
 
@@ -207,6 +234,7 @@ struct PaperCard: View {
                 if !showCovers { eyebrow }
                 post
                 if !people.isEmpty { byline }
+                if let highlight { highlightLine(highlight) }
                 if let why = Why.main(for: paper) { whyLine(why) }
                 if expanded { details.transition(.opacity) }
                 Divider()
@@ -219,6 +247,11 @@ struct PaperCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            if highlight != nil {
+                RoundedRectangle(cornerRadius: 14).stroke(Color.orange.opacity(0.7), lineWidth: 1.5)
+            }
+        }
         // Dimmed once read, but never while it is open in front of the reader.
         .opacity(status == .read && !expanded ? 0.6 : 1)
         .accessibilityElement(children: .contain)
@@ -236,6 +269,14 @@ struct PaperCard: View {
             try? await Task.sleep(for: .milliseconds(700))
             if !Task.isCancelled { await model.writeTakeaway(for: paper) }
         }
+    }
+
+    /// Why this is a highlight: the paper is very close to the user's work and has something more.
+    private func highlightLine(_ text: String) -> some View {
+        Label(text.prefix(1).uppercased() + text.dropFirst(), systemImage: "star.fill")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.orange)
+            .accessibilityLabel("Highlight: \(text)")
     }
 
     /// Why this post is here, above it as LinkedIn says why it was suggested.

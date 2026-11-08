@@ -180,7 +180,9 @@ enum SyncProjection {
         scalar("byline", \.byline), scalar("requireAbstract", \.requireAbstract),
         scalar("openAccessOnly", \.openAccessOnly), scalar("seenExpiryDays", \.seenExpiryDays),
         scalar("showReadPapers", \.showReadPapers), scalar("languages", \.languages),
-        scalar("followSection", \.followSection), scalar("profileFilled", \.profileFilled),
+        scalar("feedOrder", \.feedOrder), scalar("highlightCount", \.highlightCount),
+        scalar("highlightCloseness", \.highlightCloseness), scalar("highlightImpact", \.highlightImpact),
+        scalar("highlightAuthorH", \.highlightAuthorH), scalar("profileFilled", \.profileFilled),
     ]
 
     /// Every decision a settings value holds, by key. An empty string is an item with no payload.
