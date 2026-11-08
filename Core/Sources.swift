@@ -194,6 +194,18 @@ enum Html {
     }
 }
 
+extension Paper {
+    /// Titles and abstracts from OpenAlex and Crossref-fed journals carry markup ("<i>In Silico</i>")
+    /// and entities. A feed cached before they were cleaned still holds them, so this is applied
+    /// when one is loaded as well as when a record is read.
+    var withPlainText: Paper {
+        var p = self
+        if title.contains("<") || title.contains("&") { p.title = Html.plain(title) }
+        if let a = abstract, a.contains("<") || a.contains("&") { p.abstract = Html.plain(a) }
+        return p
+    }
+}
+
 enum Affiliation {
     private static let markers = ["universit", "institut", "hospital", "college", "école", "ecole", "centre",
                                   "center", "clinic", "academy", "laborator", "school of", "medical school",

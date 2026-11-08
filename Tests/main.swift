@@ -1347,5 +1347,10 @@ let roughMore = LibraryImport.adding(to: roughFirst, parsed: LibraryImport.rough
 check(roughMore.items.count == 5 && roughMore.items.first { $0.title.hasPrefix("Brand new") }?.dateAdded == roughMore.importedAt && roughMore.items.first { $0.doi == "10.1016/j.pneurobio.2010.10.005" }?.dateAdded == roughFirst.importedAt && roughMore.name == "Pasted", "paste: a second paste adds, keeps the dates of what was there, and does not double a paper")
 check(Zotero.profileTexts(roughMore.items, recent: 1)[0].hasPrefix("Brand new"), "paste: what was pasted last counts as the newest")
 
+// MARK: markup in titles
+let htmlPaper = Paper(id: "W1", title: "Sequence-Activity and Integrated <i>In Silico</i> and <i>In Vitro</i> Study of <i>Staphylococcus aureus</i> &amp; peptides", abstract: "<jats:p>We show &lt;5% loss.</jats:p>", date: "2026-10-01").withPlainText
+check(htmlPaper.title == "Sequence-Activity and Integrated In Silico and In Vitro Study of Staphylococcus aureus & peptides" && htmlPaper.abstract == "We show <5% loss.", "markup: tags and entities are gone from a title and an abstract, including a cache written before they were cleaned")
+check(Paper(id: "W2", title: "Plain title", abstract: nil, date: "2026-10-01").withPlainText == Paper(id: "W2", title: "Plain title", abstract: nil, date: "2026-10-01"), "markup: a clean paper is left as it is")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

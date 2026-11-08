@@ -148,8 +148,8 @@ final class AppModel {
         history = store.loadHistory()
         summaries = store.loadSummaries()
         if let cached = store.loadFeed() {
-            citedYou = cached.citedYou
-            forYou = cached.forYou
+            citedYou = cached.citedYou.map { RankedPaper(paper: $0.paper.withPlainText, score: $0.score, similarity: $0.similarity) }
+            forYou = cached.forYou.map { RankedPaper(paper: $0.paper.withPlainText, score: $0.score, similarity: $0.similarity) }
             authorName = cached.authorName
             updated = cached.date
             usedEmbeddings = cached.usedEmbeddings ?? true

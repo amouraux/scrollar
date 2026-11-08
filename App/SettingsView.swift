@@ -99,8 +99,13 @@ struct SettingsView: View {
                     Stepper("Highlights: \(model.settings.highlightCount)", value: $model.settings.highlightCount, in: 0...5)
                     if model.settings.highlightCount > 0 {
                         VStack(alignment: .leading) {
-                            Text("Very close to my work: the closest \(max(1, Int(((1 - model.settings.highlightCloseness) * 100).rounded())))%")
+                            Text("Highlight papers in the top \(max(1, Int(((1 - model.settings.highlightCloseness) * 100).rounded())))% closest to my work")
                             Slider(value: $model.settings.highlightCloseness, in: 0.5...0.99)
+                            HStack {
+                                Text("More highlights").frame(maxWidth: .infinity, alignment: .leading)
+                                Text("Only the very closest")
+                            }
+                            .font(.caption).foregroundStyle(.secondary)
                         }
                         Stepper(model.settings.highlightImpact == 0 ? "Journal impact: ignored"
                                 : "Journal impact at least \(Int(model.settings.highlightImpact))",

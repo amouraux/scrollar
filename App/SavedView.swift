@@ -46,7 +46,7 @@ struct SavedView: View {
         } else {
             List {
                 ForEach(model.settings.feedback.saved.reversed(), id: \.id) { paper in
-                    row(title: paper.title, subtitle: paper.date, abstract: paper.abstract, url: paper.link)
+                    row(title: Html.plain(paper.title), subtitle: paper.date, abstract: paper.abstract, url: paper.link)
                         .swipeActions {
                             Button("Remove", role: .destructive) {
                                 model.settings.feedback.saved.removeAll { $0.id == paper.id }
@@ -65,7 +65,7 @@ struct SavedView: View {
         } else {
             List {
                 ForEach(read, id: \.paper.id) { item in
-                    row(title: item.paper.title,
+                    row(title: Html.plain(item.paper.title),
                         subtitle: "Read " + item.date.formatted(.relative(presentation: .named)),
                         abstract: item.paper.abstract, url: item.paper.link)
                 }
