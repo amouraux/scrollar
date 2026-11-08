@@ -254,6 +254,9 @@ model is a heuristic and is sometimes background, not a finding.
     `PubMedClient.swift`, `ProfileFetcher.swift` (a person's papers, for the profile and its suggestions), `Embedding.swift` (NaturalLanguage).
 - `App/`: SwiftUI. `AppModel` holds the state, `Store` the files and the Keychain,
   `SyncFile` the sync file, `Summarizer` the on-device model, `FeedView`, `SavedView`, `SettingsView`, `ProfileViews` (others to learn from, and the suggestions sheet).
+- `Design/`: the icon. `AppIcon-source.webp` is the artwork (a transparent background); `make-icon.swift`
+  puts it, enlarged and centred, on an opaque background and writes the 1024-pixel PNG in
+  `App/Assets.xcassets/AppIcon.appiconset` (`swiftc Design/make-icon.swift -o /tmp/icon && /tmp/icon Design/AppIcon-source.webp App/Assets.xcassets/AppIcon.appiconset/AppIcon.png`).
 - `CLI/main.swift`: the command-line driver. `Tests/`: the checks and their runner.
 
 Every seed (a topic, journal, author, keyword, or "cites my work") becomes one query per source
