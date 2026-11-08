@@ -156,12 +156,25 @@ enum Ranker {
     /// Something the user chose to follow should surface even when it is not
     /// close to their own work: a journal followed for its breadth, say.
     static let followedBonus = 0.8
+    /// × settings.impactWeight. The range is about -1 to +2 at full weight, so a
+    /// strong preference moves a paper a few places, not to the top on journal alone.
+    static let impactScale = 3.0
     static let recencyHalfLifeDays = 14.0
     static let repositoryPenalty = 0.4
     /// A researcher has several themes. Averaging all their papers blurs them
     /// into one; comparing with the few nearest papers does not.
     static let neighbours = 3
     static let embeddingShare = 0.6
+
+    /// 0 at no figure and at a journal cited about twice per paper; negative below,
+    /// up to about 0.65 for a journal cited twenty times or more. Logarithmic, because
+    /// the difference between 1 and 3 matters more than between 21 and 23. A paper
+    /// with no figure (a preprint, a new journal) is neutral, not penalised.
+    static func impactBoost(_ impact: Double?, weight: Double) -> Double {
+        guard weight > 0, let impact, impact >= 0 else { return 0 }
+        let level = min(log(1 + impact) / log(21.0), 1)
+        return impactScale * weight * (level - 0.35)
+    }
 
     static func rank(_ candidates: [Paper], profileTexts: [String], embedder: TextEmbedder? = nil,
                      settings: FeedSettings = FeedSettings(), today: Date) -> [RankedPaper] {
@@ -181,6 +194,7 @@ enum Ranker {
             // a field appears first; the penalty is for Zenodo and library records.
             if paper.isRepository && paper.kind != .preprint { score -= repositoryPenalty }
             score += settings.weight(for: paper.kind).adjustment
+            score += impactBoost(paper.journalImpact, weight: settings.impactWeight)
             ranked.append(RankedPaper(paper: paper, score: score, similarity: similarity[i]))
         }
         return ranked.sorted {

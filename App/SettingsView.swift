@@ -101,8 +101,19 @@ struct SettingsView: View {
                             Text("My own field").font(.caption).foregroundStyle(.secondary)
                         }
                     }
+                    VStack(alignment: .leading) {
+                        Text("Prefer high-impact journals")
+                        Slider(value: $model.settings.impactWeight, in: 0...1)
+                        HStack {
+                            Text("Ignore").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Text("Strongly").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                 } header: {
                     Text("Time and balance")
+                } footer: {
+                    Text("Impact is OpenAlex's two-year mean citedness: how often a journal's recent papers are cited. It is an open measure close to the impact factor, which is Clarivate's and not available here. Preprints and journals without a figure are neither favoured nor penalised.")
                 }
 
                 Section {

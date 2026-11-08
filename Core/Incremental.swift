@@ -41,8 +41,9 @@ enum Incremental {
     static func mode(previous: PreviousFeed?, settings: FeedSettings, now: Date) -> Mode {
         guard let p = previous else { return .full(reason: "first build") }
         // Different follows or mutes make the kept papers' reasons wrong. Feedback
-        // is excluded: hiding a paper is applied to the kept set, not by refetching.
-        if p.builtWith != settings.withoutFeedback { return .full(reason: "settings changed") }
+        // and the ranking sliders are excluded: they reorder the kept set, they do
+        // not change what must be fetched.
+        if p.builtWith.forFetching != settings.forFetching { return .full(reason: "settings changed") }
         // Kept papers from before authors' institutions were recorded would show
         // no affiliation until the next scheduled rebuild.
         if !p.papers.isEmpty, p.papers.allSatisfy({ $0.firstInstitution == nil && $0.lastInstitution == nil }) {

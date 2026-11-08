@@ -172,7 +172,18 @@ struct BylineBadge: View {
 /// for a figure, which open data does not give us; a real figure would go here.
 struct CoverBanner: View {
     @Environment(\.colorScheme) private var scheme
+    @Environment(AppModel.self) private var model
     let paper: Paper
+
+    /// The topic, and the journal's impact when the user has asked for it to count.
+    private var subline: String? {
+        var parts: [String] = []
+        if let topic = paper.topics.first { parts.append(topic) }
+        if model.settings.impactWeight > 0, let impact = paper.journalImpact {
+            parts.append("Impact " + String(format: "%.1f", impact))
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
 
     var body: some View {
         let spec = Cover.spec(for: paper, byJournal: true)
@@ -193,8 +204,8 @@ struct CoverBanner: View {
                     .font(.headline)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
-                if paper.journal != nil, let topic = paper.topics.first {
-                    Text(topic).font(.caption).opacity(0.85).lineLimit(1)
+                if paper.journal != nil, let line = subline {
+                    Text(line).font(.caption).opacity(0.85).lineLimit(1)
                 }
             }
             .foregroundStyle(.white)

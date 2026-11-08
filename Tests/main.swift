@@ -507,5 +507,25 @@ check(everySeed.allSatisfy { seed in
     return w != nil && w?.symbol != Why.fallbackSymbol
 }, "why: every kind of seed is understood, so renaming a reason prefix fails here")
 
+// MARK: journal impact
+var impactOn = FeedSettings(); impactOn.impactWeight = 1
+let nature = ok("hi") { $0.journalImpact = 24; $0.date = "2026-10-01" }
+let obscure = ok("lo") { $0.journalImpact = 0.4; $0.date = "2026-10-01" }
+let unknownJournal = ok("none") { $0.journalImpact = nil; $0.date = "2026-10-01" }
+check(Ranker.rank([obscure, nature], profileTexts: profile, settings: impactOn, today: now).first?.paper.id == "hi", "impact on: a high-impact journal ranks above a low one")
+let withoutImpact = Ranker.rank([obscure, nature], profileTexts: profile, today: now)
+check(withoutImpact.first?.score == withoutImpact.last?.score, "impact off (the default): the journal changes nothing")
+check(Ranker.impactBoost(nil, weight: 1) == 0 && Ranker.impactBoost(24, weight: 0) == 0, "impact: no figure or no weight, no effect")
+check(Ranker.impactBoost(0.4, weight: 1) < 0 && Ranker.impactBoost(24, weight: 1) > 0, "impact: below about two is pushed down, above it up")
+check(Ranker.impactBoost(100, weight: 1) == Ranker.impactBoost(24, weight: 1), "impact: capped, so one journal cannot dominate")
+check(Ranker.impactBoost(5, weight: 0.5) == Ranker.impactBoost(5, weight: 1) / 2, "impact: the slider scales it")
+let neutral = Ranker.rank([unknownJournal], profileTexts: profile, settings: impactOn, today: now).first?.score
+check(neutral == Ranker.rank([unknownJournal], profileTexts: profile, today: now).first?.score, "impact: an unknown journal is neither rewarded nor penalised")
+var slid = baseSettings; slid.recency = 0.9; slid.closeness = 0.1; slid.impactWeight = 1
+check(Incremental.mode(previous: prev(), settings: slid, now: tNow).isIncremental, "moving a ranking slider re-ranks incrementally, without a full rebuild")
+check(slid.withoutFeedback != baseSettings.withoutFeedback && slid.forFetching == baseSettings.forFetching, "a ranking slider is a settings change, but not a fetching one")
+check(try FeedSettings.decode(Data("{\"impactWeight\": 7}".utf8)).impactWeight == 1, "impact weight is clamped when read")
+check(try FeedSettings.decode(Data("{}".utf8)).impactWeight == 0, "impact weight is off in an older settings file")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

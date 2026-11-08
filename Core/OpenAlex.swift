@@ -80,6 +80,26 @@ struct OpenAlexClient {
         return try JSONDecoder().decode(WorksDTO.self, from: data).results.compactMap(\.paper)
     }
 
+    /// Two-year mean citedness by journal id, for the journals OpenAlex has a figure
+    /// for. One request per hundred journals.
+    func journalImpact(ids: [String]) async throws -> [String: Double] {
+        var out: [String: Double] = [:]
+        for start in stride(from: 0, to: ids.count, by: 100) {
+            let batch = ids[start..<min(start + 100, ids.count)]
+            let data = try await fetch("sources", [
+                "filter": "openalex:" + batch.joined(separator: "|"),
+                "per-page": "100",
+                "select": "id,summary_stats",
+            ])
+            for source in try JSONDecoder().decode(SourcesDTO.self, from: data).results {
+                if let value = source.summary_stats?.citedness {
+                    out[Identifiers.openAlexID(source.id)] = value
+                }
+            }
+        }
+        return out
+    }
+
     enum EntityKind: String, CaseIterable {
         case topics, sources, authors, institutions, funders
     }
@@ -146,6 +166,18 @@ private struct AutocompleteDTO: Decodable {
         let display_name: String?
         let hint: String?
         let works_count: Int?
+    }
+}
+
+private struct SourcesDTO: Decodable {
+    let results: [Source]
+    struct Source: Decodable {
+        let id: String
+        let summary_stats: Stats?
+    }
+    struct Stats: Decodable {
+        let citedness: Double?
+        enum CodingKeys: String, CodingKey { case citedness = "2yr_mean_citedness" }
     }
 }
 

@@ -50,6 +50,7 @@ their own into Settings and it will live in the Keychain.
 - `Core/Incremental.swift`: refreshing by asking only for what was published since the last fetch, and keeping the rest.
 - `Core/Summary.swift`: the one sentence on a collapsed post, chosen from the abstract's own sentences.
 - `Core/Byline.swift`: who heads a post (first or last author, a setting): their name, institution, and the initials and colour of the round badge. Open scholarly data has no author photographs or reusable logos, so initials stand in.
+- `Core/Why.swift`: the one reason shown above a post (a citation of your work, a followed author or journal, a topic).
 - `Core/Cover.swift`: the generated picture on each post (colour and symbol from the topic); a real figure would go in the same place.
 - `Core/Engine.swift`: settings in, ranked feed out. The app and the command line both call it.
 - `App/`: SwiftUI. The OpenAlex key is in the Keychain, never in the settings file or the binary.

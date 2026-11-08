@@ -57,6 +57,11 @@ struct Paper: Hashable, Codable {
     /// Short OpenAlex ids. Names can be spelled two ways; muting needs the id.
     var topicIDs: [String] = []
     var journalID: String? = nil
+    /// OpenAlex's two-year mean citedness of the journal: an open measure close
+    /// to the impact factor (which is Clarivate's and not available to us). nil for
+    /// repositories and for journals OpenAlex has no figure for. Optional so a
+    /// cache written before this existed still loads.
+    var journalImpact: Double? = nil
     var isOpenAccess = false
     /// ISO 639-1 code as OpenAlex detected it; nil when it did not.
     var language: String? = nil
@@ -118,6 +123,7 @@ enum Merge {
             kept.citesYou = kept.citesYou || p.citesYou
             kept.followed = kept.followed || p.followed
             if kept.abstract == nil { kept.abstract = p.abstract }
+            if kept.journalImpact == nil { kept.journalImpact = p.journalImpact }
             if kept.pmid == nil { kept.pmid = p.pmid }
             if kept.doi == nil { kept.doi = p.doi }
             if kept.firstInstitution == nil { kept.firstInstitution = p.firstInstitution }

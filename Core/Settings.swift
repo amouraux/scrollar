@@ -133,6 +133,9 @@ struct FeedSettings: Codable, Equatable {
     var recency = 0.5
     /// 0: show me what I follow, whatever it is. 1: show me what is closest to my own work.
     var closeness = 0.5
+    /// 0 ignores the journal; 1 gives a strong premium to papers from journals
+    /// with a high two-year mean citedness (see `Paper.journalImpact`).
+    var impactWeight = 0.0
 
     // MARK: Content
     var requireAbstract = false
@@ -156,6 +159,18 @@ struct FeedSettings: Codable, Equatable {
     var withoutFeedback: FeedSettings {
         var s = self
         s.feedback = Feedback()
+        return s
+    }
+
+    /// What decides which papers must be fetched. The three sliders only decide how
+    /// the papers already held are ordered, so moving one needs a re-rank (an
+    /// incremental refresh, seconds) and not a full rebuild (a minute).
+    var forFetching: FeedSettings {
+        var s = withoutFeedback
+        let d = FeedSettings()
+        s.recency = d.recency
+        s.closeness = d.closeness
+        s.impactWeight = d.impactWeight
         return s
     }
 
@@ -213,7 +228,7 @@ extension FeedSettings {
         case followedTopics, followedJournals, followedAuthors, followedInstitutions
         case followedFunders, followedKeywords, trackedPapers
         case mutedJournals, mutedAuthors, mutedTopics, mutedKeywords
-        case kindWeights, daysBack, recency, closeness
+        case kindWeights, daysBack, recency, closeness, impactWeight
         case requireAbstract, openAccessOnly, seenExpiryDays, showReadPapers, languages, feedback
     }
 
@@ -241,6 +256,7 @@ extension FeedSettings {
         daysBack = min(max(get(.daysBack, daysBack), 1), 365)
         recency = min(max(get(.recency, recency), 0), 1)
         closeness = min(max(get(.closeness, closeness), 0), 1)
+        impactWeight = min(max(get(.impactWeight, impactWeight), 0), 1)
         requireAbstract = get(.requireAbstract, requireAbstract)
         openAccessOnly = get(.openAccessOnly, openAccessOnly)
         seenExpiryDays = min(max(get(.seenExpiryDays, seenExpiryDays), 1), 60)

@@ -134,6 +134,11 @@ struct FeedEngine {
         log("PubMed: abstracts \(abstractsBefore) → \(papers.filter { $0.abstract != nil }.count) of \(papers.count); " +
             "\(matched.count) of \(wanted.count) DOI lookups matched  [\(lap())]")
 
+        // The journals' two-year mean citedness, for the "prefer high-impact journals"
+        // slider and for the figure on a post. A few requests; if they fail the
+        // feed simply has no figures this time.
+        papers = await attachImpact(papers, previous: mode.isIncremental ? previous : nil)
+
         // 4. Apply the user's mutes and filters before the slow step, so
         //    nothing hidden is ever embedded.
         let kept = FeedBuilder.keep(papers, settings: settings)
@@ -152,6 +157,27 @@ struct FeedEngine {
                           complete: complete,
                           fetchedAt: today,
                           newPapers: ranked.filter { !before.contains($0.paper.dedupeKey) }.count)
+    }
+
+    /// Journals' figures change slowly, so an incremental refresh reuses the ones it
+    /// already has and asks only for journals it has not seen; a full rebuild asks
+    /// again for all of them, which keeps them from going stale.
+    private func attachImpact(_ papers: [Paper], previous: PreviousFeed?) async -> [Paper] {
+        var known: [String: Double] = [:]
+        for p in previous?.papers ?? [] {
+            if let id = p.journalID, let impact = p.journalImpact { known[id] = impact }
+        }
+        let wanted = Set(papers.filter { !$0.isRepository }.compactMap(\.journalID)).subtracting(known.keys).sorted()
+        if !wanted.isEmpty {
+            do { known.merge(try await openAlex.journalImpact(ids: wanted)) { _, new in new } }
+            catch { log("  journal figures unavailable (\(error)); continuing without them") }
+        }
+        return papers.map { paper in
+            guard !paper.isRepository, let id = paper.journalID, let impact = known[id] else { return paper }
+            var p = paper
+            p.journalImpact = impact
+            return p
+        }
     }
 
     /// PubMed is an addition, never a requirement: if it is down the feed still works.
