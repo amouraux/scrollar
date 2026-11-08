@@ -627,18 +627,21 @@ check(Affiliation.institution(from: "Max Planck Institute for Brain Research, Fr
 check(Affiliation.institution(from: "Somewhere, Nowhere") == nil, "affiliation: nothing that names an institution")
 check(Languages.iso1("eng") == "en" && Languages.iso1("fr") == "fr" && Languages.iso1("xyz") == nil && Languages.iso1(nil) == nil, "language codes")
 
-let orcidWorks = """
-{"group": [
- {"external-ids": {"external-id": [{"external-id-type": "doi", "external-id-value": "10.1152/JN.00278.2025"}, {"external-id-type": "pmid", "external-id-value": "41165579"}]},
-  "work-summary": [{"title": {"title": {"value": "A paper"}}, "publication-date": {"year": {"value": "2025"}}}]},
- {"external-ids": {"external-id": []}, "work-summary": [{"title": {"title": {"value": "A chapter"}}}]},
- {"external-ids": {"external-id": []}, "work-summary": []}
-]}
+let byOrcidJSON = """
+{"hitCount": 174, "resultList": {"result": [
+ {"id": "1", "source": "MED", "title": "A paper", "firstPublicationDate": "2026-10-01",
+  "authorList": {"author": [
+    {"fullName": "Legrain V", "firstName": "Valéry", "lastName": "Legrain", "authorId": {"type": "ORCID", "value": "0000-0002-9999-0001"}},
+    {"fullName": "Mouraux A", "firstName": "André", "lastName": "Mouraux", "authorId": {"type": "ORCID", "value": "0000-0003-1056-5980"}}]}},
+ {"id": "2", "source": "MED", "title": "Another", "firstPublicationDate": "2026-09-01",
+  "authorList": {"author": [{"fullName": "Doe J", "authorId": {"type": "ORCID", "value": "0000-0001-0000-0002"}}]}}
+]}}
 """.data(using: .utf8)!
-let worksRead = OrcidParser.works(from: orcidWorks)
-check(worksRead.count == 2 && worksRead[0] == OrcidWork(title: "A paper", doi: "10.1152/jn.00278.2025", pmid: "41165579", year: 2025), "ORCID: a work's title, DOI, PMID and year")
-check(worksRead[1].doi == nil && worksRead[1].title == "A chapter", "ORCID: a work with no identifier is kept by its title")
-check(OrcidParser.name(from: Data("{\"name\": {\"given-names\": {\"value\": \"André\"}, \"family-name\": {\"value\": \"Mouraux\"}}}".utf8)) == "André Mouraux", "ORCID: the name")
+check(EuropePMCQuery.orcid("0000-0003-1056-5980") == "AUTHORID:\"0000-0003-1056-5980\"", "by iD: the query asks for the author's iD, not the ORCID service")
+check(EuropePMCParser.authorName(orcid: "0000-0003-1056-5980", in: byOrcidJSON) == "André Mouraux", "by iD: the name is the given and family names Europe PMC holds for that iD")
+check(EuropePMCParser.authorName(orcid: "0000-0001-0000-0002", in: byOrcidJSON) == "Doe J", "by iD: the 'Doe J' form when there are no separate names")
+check(EuropePMCParser.authorName(orcid: "0000-0000-0000-0000", in: byOrcidJSON) == nil && EuropePMCParser.authorName(orcid: "x", in: Data("nope".utf8)) == nil, "by iD: an iD no record carries, or garbage, has no name")
+check(EuropePMCParser.hitCount(in: byOrcidJSON) == 174 && EuropePMCParser.papers(from: byOrcidJSON).count == 2, "by iD: the total and the papers are read")
 
 // Merging across sources
 let fromOA = Paper(id: "W1", doi: "10.1/x", title: "Cold reduces pain in treated mice", abstract: nil, journal: "Pain",

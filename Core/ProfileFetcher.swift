@@ -1,26 +1,14 @@
 import Foundation
 
-/// A person's papers, from OpenAlex where it is on and answers, else from ORCID's list of
-/// their works with Europe PMC supplying the rest. The network half of Profile.swift.
+/// A person's papers, from OpenAlex where it is on and answers, else from the Europe PMC
+/// records that carry their ORCID iD. The network half of Profile.swift.
 enum OrcidProfile {
-    /// The papers behind an ORCID iD without OpenAlex: ORCID lists them, Europe PMC supplies the
-    /// abstracts and MeSH headings. A work Europe PMC does not have still counts by its title.
-    static func papers(orcid: String, europePMC: EuropePMCClient, orcidClient: OrcidClient) async throws -> (AuthorProfile, [Paper]) {
-        let name = (try? await orcidClient.name(orcid: orcid)) ?? orcid
-        let works = try await orcidClient.works(orcid: orcid)
-        let recent = works.sorted { ($0.year ?? 0) > ($1.year ?? 0) }.prefix(100)
-        var papers = (try? await europePMC.papers(dois: recent.compactMap(\.doi))) ?? []
-        let have = Set(papers.compactMap(\.doi))
-        for work in recent where work.doi.map({ !have.contains($0) }) ?? true {
-            guard let title = work.title else { continue }
-            papers.append(Paper(id: "orcid:\(work.doi ?? title)", doi: work.doi, pmid: work.pmid, title: title,
-                                date: "\(work.year ?? 1900)-01-01"))
-        }
-        var counts: [String: Int] = [:]
-        for p in papers { for t in p.topics { counts[t, default: 0] += 1 } }
-        let topics = counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
-            .prefix(5).map { (id: "mesh:" + $0.key, name: $0.key, count: $0.value) }
-        let profile = AuthorProfile(id: "orcid:" + orcid, name: name, worksCount: works.count, citedByCount: 0, hIndex: nil, topics: topics)
+    /// The papers behind an ORCID iD without OpenAlex: Europe PMC's records that carry the iD, with
+    /// their abstracts and MeSH headings. Papers where the iD was never linked are missing, so the
+    /// profile can be somewhat thinner than OpenAlex's.
+    static func papers(orcid: String, europePMC: EuropePMCClient) async throws -> (AuthorProfile, [Paper]) {
+        let (name, papers, total) = try await europePMC.papers(orcid: orcid)
+        let profile = AuthorProfile(id: "orcid:" + orcid, name: name ?? orcid, worksCount: total, citedByCount: 0, hIndex: nil, topics: [])
         return (profile, papers)
     }
 
@@ -45,7 +33,6 @@ enum OrcidProfile {
 struct ProfileFetcher {
     var openAlex: OpenAlexClient?
     var europePMC: EuropePMCClient?
-    var orcidClient = OrcidClient()
 
     /// The name the iD belongs to, its works reduced to what can be followed, and how large
     /// its journals are (only OpenAlex knows; otherwise empty).
@@ -63,7 +50,7 @@ struct ProfileFetcher {
             }
         }
         guard let europePMC else { throw EngineError.noSource }
-        let (profile, papers) = try await OrcidProfile.papers(orcid: orcid, europePMC: europePMC, orcidClient: orcidClient)
+        let (profile, papers) = try await OrcidProfile.papers(orcid: orcid, europePMC: europePMC)
         return (profile.name, OrcidProfile.profileWorks(from: papers, profileName: profile.name), [:])
     }
 }

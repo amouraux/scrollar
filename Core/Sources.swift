@@ -2,7 +2,7 @@ import Foundation
 
 // More than one place to ask. Everything here is pure: what to ask each source
 // for a seed, and how to read what comes back. The network halves are
-// EuropePMCClient and OrcidClient.
+// EuropePMCClient.
 
 /// The places a paper can come from. The raw value is what is stored on the
 /// paper and shown as "found in".
@@ -78,7 +78,31 @@ enum EuropePMCQuery {
 
 // MARK: - Reading Europe PMC
 
+extension EuropePMCQuery {
+    /// The papers whose author list carries this ORCID iD. The iD is only an identifier here, a
+    /// key into Europe PMC's own records; ORCID's own API is not used (its public licence is
+    /// non-commercial).
+    static func orcid(_ iD: String) -> String { "AUTHORID:\"\(iD)\"" }
+}
+
 enum EuropePMCParser {
+    /// The name Europe PMC gives the author who carries this ORCID iD in a response: the given and
+    /// family names where it has them, else the "Mouraux A" form.
+    static func authorName(orcid: String, in data: Data) -> String? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let list = (root["resultList"] as? [String: Any])?["result"] as? [[String: Any]] else { return nil }
+        for record in list {
+            let authors = ((record["authorList"] as? [String: Any])?["author"] as? [[String: Any]]) ?? []
+            for a in authors where ((a["authorId"] as? [String: Any])?["value"] as? String) == orcid {
+                let given = (a["firstName"] as? String) ?? ""
+                let family = (a["lastName"] as? String) ?? ""
+                let full = "\(given) \(family)".trimmingCharacters(in: .whitespaces)
+                return full.isEmpty ? a["fullName"] as? String : full
+            }
+        }
+        return nil
+    }
+
     /// Papers from a `resultType=core` JSON response.
     static func papers(from data: Data) -> [Paper] {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -197,42 +221,5 @@ enum Languages {
     static func iso1(_ code: String?) -> String? {
         guard let code = code?.lowercased(), !code.isEmpty else { return nil }
         return code.count == 2 ? code : table[code]
-    }
-}
-
-// MARK: - Reading ORCID
-
-struct OrcidWork: Equatable {
-    var title: String?
-    var doi: String?
-    var pmid: String?
-    var year: Int?
-}
-
-enum OrcidParser {
-    /// A person's works, one entry per group (ORCID groups the copies of one work).
-    static func works(from data: Data) -> [OrcidWork] {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let groups = root["group"] as? [[String: Any]] else { return [] }
-        return groups.compactMap { group in
-            let ids = ((group["external-ids"] as? [String: Any])?["external-id"] as? [[String: Any]]) ?? []
-            func id(_ type: String) -> String? {
-                ids.first { ($0["external-id-type"] as? String) == type }?["external-id-value"] as? String
-            }
-            let summary = (group["work-summary"] as? [[String: Any]])?.first
-            let title = ((summary?["title"] as? [String: Any])?["title"] as? [String: Any])?["value"] as? String
-            let year = ((summary?["publication-date"] as? [String: Any])?["year"] as? [String: Any])?["value"] as? String
-            let work = OrcidWork(title: title, doi: Identifiers.doi(id("doi")), pmid: id("pmid"), year: year.flatMap(Int.init))
-            return work.doi == nil && work.pmid == nil && work.title == nil ? nil : work
-        }
-    }
-
-    static func name(from data: Data) -> String? {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let name = root["name"] as? [String: Any] else { return nil }
-        let given = (name["given-names"] as? [String: Any])?["value"] as? String
-        let family = (name["family-name"] as? [String: Any])?["value"] as? String
-        let full = [given, family].compactMap { $0 }.joined(separator: " ")
-        return full.isEmpty ? nil : full
     }
 }

@@ -1,8 +1,7 @@
 import Foundation
 
 /// Europe PMC's REST search: no key, and it covers PubMed and MEDLINE records, the
-/// preprint servers and more. Only this file and OrcidClient reach the network
-/// for these two sources.
+/// preprint servers and more. Only this file reaches the network for it.
 struct EuropePMCClient {
     var session: URLSession = .shared
     private let base = "https://www.ebi.ac.uk/europepmc/webservices/rest/"
@@ -68,28 +67,23 @@ struct EuropePMCClient {
         }
         return found
     }
-}
 
-/// ORCID's public API: a person's name and the works they list. No key.
-struct OrcidClient {
-    var session: URLSession = .shared
-
-    private func fetch(_ path: String) async throws -> Data {
-        guard let url = URL(string: "https://pub.orcid.org/v3.0/" + path) else { throw OpenAlexError.notFound(path) }
-        var request = URLRequest(url: url)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 30
-        let (data, response) = try await session.data(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else { throw OpenAlexError.http(status, String(decoding: data.prefix(200), as: UTF8.self)) }
-        return data
+    /// The newest papers whose author list carries this ORCID iD (a hundred at most), with how
+    /// many there are in all, and the name Europe PMC gives that author. It finds a paper only
+    /// where Europe PMC has linked the iD to the author, which is most but not all of a record.
+    func papers(orcid: String) async throws -> (name: String?, papers: [Paper], total: Int) {
+        let data = try await fetch("search", [
+            "query": EuropePMCQuery.orcid(orcid), "format": "json", "resultType": "core",
+            "pageSize": "100", "sort": "P_PDATE_D desc",
+        ])
+        return (EuropePMCParser.authorName(orcid: orcid, in: data), EuropePMCParser.papers(from: data), EuropePMCParser.hitCount(in: data))
     }
 
-    func name(orcid: String) async throws -> String? {
-        OrcidParser.name(from: try await fetch("\(orcid)/person"))
-    }
-
-    func works(orcid: String) async throws -> [OrcidWork] {
-        OrcidParser.works(from: try await fetch("\(orcid)/works"))
+    /// Just the name, for checking an iD before someone is added.
+    func authorName(orcid: String) async throws -> String? {
+        let data = try await fetch("search", [
+            "query": EuropePMCQuery.orcid(orcid), "format": "json", "resultType": "core", "pageSize": "3",
+        ])
+        return EuropePMCParser.authorName(orcid: orcid, in: data)
     }
 }

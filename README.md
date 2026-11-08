@@ -62,12 +62,13 @@ Two, either of which can be switched off in Tune, and a paper found by both is s
 - **OpenAlex** (your own free key): every field. Needed for topics, authors by
   id, the impact and h-index options, muting by id, and complete citations.
 
-Without a key the profile comes from ORCID's public API (your works and their
-DOIs) and Europe PMC (abstracts, MeSH). `./run.sh <orcid> --no-openalex` tries
-that path alone; `--no-europepmc` the other.
+Without a key the profile comes from Europe PMC alone: the records whose author list carries your
+ORCID iD, with abstracts and MeSH headings (for the author's name too). **ORCID's own API is not
+used**: its public licence is non-commercial, so the iD is only an identifier, looked up in OpenAlex
+or in Europe PMC. `./run.sh <orcid> --no-openalex` tries that path alone; `--no-europepmc` the other.
 
 `Core/Sources.swift` routes each seed to the sources that can answer it, reads
-Europe PMC and ORCID, and `Merge.combine` (in `Model.swift`) is the deduplication:
+Europe PMC, and `Merge.combine` (in `Model.swift`) is the deduplication:
 copies are one paper if they share a DOI, a PMID or an id, or, for a preprint and
 the article it became, the same title and first author within eighteen months.
 The article, then the OpenAlex copy, is the base, so ids and the DOI history is
@@ -168,9 +169,8 @@ consortium paper's authors are ignored as co-authors; repositories are not journ
 The first time, and only then, when the follow lists are all empty and there is an iD, the ticked
 suggestions fill the lists (`profileFilled`, synced, so a second device does not repeat it, and
 nothing the user removes comes back); a notice says so. After that "Suggest what to follow…" in Tune
-shows what is not yet followed, to choose from. Without OpenAlex the same works from ORCID's list of
-works and Europe PMC (MeSH headings as topics, journals and co-authors by name; no institutions or
-funders). `./run.sh <orcid> --suggest [--also <orcid>]` prints the suggestions.
+shows what is not yet followed, to choose from. Without OpenAlex the same works from the Europe PMC records that carry the
+iD (MeSH headings as topics, journals and co-authors by name; no keywords, institutions or funders). `./run.sh <orcid> --suggest [--also <orcid>]` prints the suggestions.
 
 ## Reading state
 
@@ -231,7 +231,9 @@ checked on screen, and saving the key to the Keychain from the sandbox is untest
 
 ## Known gaps
 
-Citations of your work are thin without OpenAlex (Europe PMC knows far fewer). Sync has been
+Citations of your work are thin without OpenAlex (Europe PMC knows far fewer). Without OpenAlex the
+profile is only the papers where Europe PMC has linked the author's iD (174 of the 203 works the
+author's ORCID record lists), and recent papers have no MeSH headings yet, so topics lean older. Sync has been
 checked with a local file standing in for iCloud Drive, not with iCloud itself. Pull-to-refresh once
 failed to start in the simulator and was not reproduced. The summary sentence chosen without the
 model is a heuristic and is sometimes background, not a finding.
@@ -246,10 +248,10 @@ model is a heuristic and is sometimes background, not a finding.
     `Ranking.swift`, `FeedBuilder.swift` (what to ask for, and what to keep), `Engine.swift`
     (settings in, ranked feed out; the app and the command line both call it).
   - `Settings.swift`, `History.swift`, `Incremental.swift`, `Sync.swift`, `Sources.swift`
-    (routing, Europe PMC and ORCID parsing), `Summary.swift`, `Byline.swift`, `Why.swift`,
+    (routing, Europe PMC parsing), `Summary.swift`, `Byline.swift`, `Why.swift`,
     `Cover.swift`, `PubMed.swift`, `Profile.swift` (the ORCID check, and suggestions from publications).
-  - Network and Apple frameworks, each in one place: `OpenAlex.swift`, `EuropePMCClient.swift`
-    (with ORCID), `PubMedClient.swift`, `ProfileFetcher.swift` (a person's papers, for the profile and its suggestions), `Embedding.swift` (NaturalLanguage).
+  - Network and Apple frameworks, each in one place: `OpenAlex.swift`, `EuropePMCClient.swift`,
+    `PubMedClient.swift`, `ProfileFetcher.swift` (a person's papers, for the profile and its suggestions), `Embedding.swift` (NaturalLanguage).
 - `App/`: SwiftUI. `AppModel` holds the state, `Store` the files and the Keychain,
   `SyncFile` the sync file, `Summarizer` the on-device model, `FeedView`, `SavedView`, `SettingsView`, `ProfileViews` (others to learn from, and the suggestions sheet).
 - `CLI/main.swift`: the command-line driver. `Tests/`: the checks and their runner.

@@ -43,7 +43,6 @@ struct FeedEngine {
     var openAlex: OpenAlexClient?
     /// nil when the user switched it off.
     var europePMC: EuropePMCClient? = EuropePMCClient()
-    var orcid = OrcidClient()
     var pubmed = PubMedClient()
     var embedder: TextEmbedder? = NLTextEmbedder()
     /// Progress and numbers, for the command line; the app can ignore it.
@@ -71,7 +70,7 @@ struct FeedEngine {
         func lap() -> String { defer { clock = Date() }; return String(format: "%.1fs", Date().timeIntervalSince(clock)) }
 
         // 1. The user's own papers, and those of anyone they added to learn from: the profile.
-        //    OpenAlex knows them best; where it is off or fails, ORCID and Europe PMC do.
+        //    OpenAlex knows them best; where it is off or fails, Europe PMC's records that carry the iD do.
         var me: AuthorProfile?
         var own: [Paper] = []
         var others: [Paper] = []
@@ -210,8 +209,8 @@ struct FeedEngine {
                           newPapers: ranked.filter { !before.contains($0.paper.dedupeKey) }.count)
     }
 
-    /// One person's papers: OpenAlex when it is on and answers, else ORCID's list of their
-    /// works with Europe PMC supplying the abstracts.
+    /// One person's papers: OpenAlex when it is on and answers, else the Europe PMC records that
+    /// carry their ORCID iD.
     private func loadProfile(orcid: String) async throws -> (AuthorProfile, [Paper]) {
         if let openAlex {
             do {
@@ -221,11 +220,11 @@ struct FeedEngine {
                 return (author, papers)
             } catch {
                 if europePMC == nil { throw error }
-                log("OpenAlex could not give the profile (\(error)); using ORCID and Europe PMC")
+                log("OpenAlex could not give the profile (\(error)); using Europe PMC")
             }
         }
         guard let europePMC else { throw EngineError.noSource }
-        return try await OrcidProfile.papers(orcid: orcid, europePMC: europePMC, orcidClient: self.orcid)
+        return try await OrcidProfile.papers(orcid: orcid, europePMC: europePMC)
     }
 
     /// Journals' figures change slowly, so an incremental refresh reuses the ones it

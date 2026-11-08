@@ -44,6 +44,9 @@ test against a live service.
 - **Raise `SyncDocument.currentFormat` for any change an older app would misread**, and never
   remove the guard: an app writes only a format it knows, and never overwrites a file that is not
   a sync file.
+- **Do not call ORCID's API** (`pub.orcid.org`). Its public licence is non-commercial, which rules
+  it out for anything sold. An ORCID iD is only an identifier: OpenAlex (`authors/orcid:`) and Europe
+  PMC (`AUTHORID:`) take it as one, and `Orcid.normalised` checks it locally.
 - **Never put the OpenAlex key anywhere but the Keychain** (and `Secrets.local`, gitignored, for
   the command line). It is not in the settings file, the sync file, a log line or an error message.
 - **Do not trust a build.** `xcodebuild` can report success without relinking; compare the binary's

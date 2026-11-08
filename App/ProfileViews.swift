@@ -89,7 +89,7 @@ struct AddProfileSourceSheet: View {
                 defer { checking = false }
                 try? await Task.sleep(for: .milliseconds(300))
                 guard !Task.isCancelled else { return }
-                if let name = try? await OrcidClient().name(orcid: orcid) { found = name } else { lookupFailed = true }
+                if let name = (try? await EuropePMCClient().authorName(orcid: orcid)) ?? nil { found = name } else { lookupFailed = true }
             }
         }
     }
