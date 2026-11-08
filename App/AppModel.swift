@@ -1,5 +1,8 @@
 import Foundation
 import Observation
+import os
+
+private let log = Logger(subsystem: "com.andremouraux.scrollar", category: "feed")
 
 @MainActor
 @Observable
@@ -188,6 +191,7 @@ final class AppModel {
             }
         } catch {
             // Keep showing the last feed; only say what went wrong.
+            log.error("refresh failed: \(String(describing: error), privacy: .public)")
             phase = .failed("\(error)")
         }
     }
@@ -264,6 +268,7 @@ final class AppModel {
     }
 
     private func progress(_ message: String) {
+        log.info("\(message, privacy: .public)")
         if case .loading = phase { phase = .loading(message) }
     }
 

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @main
 struct ScrollarApp: App {
@@ -23,6 +24,14 @@ struct ScrollarApp: App {
             }
             .environment(model)
             .task { await model.refreshIfStale() }
+            #if targetEnvironment(macCatalyst)
+            // A window that is too small to hold a post is no use; keep it readable.
+            .onAppear {
+                for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+                    scene.sizeRestrictions?.minimumSize = CGSize(width: 480, height: 640)
+                }
+            }
+            #endif
             // What has been seen is written out when the app leaves the screen.
             .onChange(of: scenePhase) { _, new in
                 if new != .active { model.saveHistoryNow() }
@@ -34,6 +43,18 @@ struct ScrollarApp: App {
             // not on every tap.
             .onChange(of: tab) { _, new in
                 if new == .feed, model.needsRefresh { Task { await model.refresh() } }
+            }
+        }
+        // Menu items on the Mac, and the shortcut sheet on an iPad with a keyboard.
+        // There is no pull-to-refresh with a mouse, so refreshing needs a command.
+        .commands {
+            CommandGroup(after: .newItem) {
+                Button("Refresh Feed") { Task { await model.refresh() } }
+                    .keyboardShortcut("r")
+                Divider()
+                Button("Feed") { tab = .feed }.keyboardShortcut("1")
+                Button("Saved") { tab = .saved }.keyboardShortcut("2")
+                Button("Tune") { tab = .settings }.keyboardShortcut("3")
             }
         }
     }

@@ -122,10 +122,16 @@ private struct StatusBanner: View {
             switch model.phase {
             case .idle:
                 if let updated = model.updated {
-                    Text("Updated \(updated.formatted(.relative(presentation: .named)))"
-                         + (model.usedEmbeddings ? "" : " · matched by words only: this device has no Apple language model"))
-                        .font(.caption).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Updated \(updated.formatted(.relative(presentation: .named)))"
+                             + (model.usedEmbeddings ? "" : " · matched by words only: this device has no Apple language model"))
+                            .font(.caption).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        #if targetEnvironment(macCatalyst)
+                        // No pull-to-refresh with a mouse.
+                        Button("Refresh") { Task { await model.refresh() } }.font(.caption)
+                        #endif
+                    }
                 }
             case .loading(let message):
                 banner(icon: "arrow.triangle.2.circlepath", tint: .accentColor, text: "Building your feed. \(message)") { EmptyView() }
@@ -212,8 +218,7 @@ struct CoverBanner: View {
             .padding(12)
             .padding(.trailing, 60)
         }
-        .frame(height: 84)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .frame(height: 76)
         .accessibilityHidden(true)
     }
 }
@@ -235,24 +240,25 @@ struct PaperCard: View {
     private var people: [Byline] { Byline.people(of: paper, choice: choice) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let why = Why.main(for: paper) {
-                whyLine(why)
+        // The journal first, running to the card's edges like a cover; then who wrote
+        // it, what it says, and what to do with it.
+        VStack(alignment: .leading, spacing: 0) {
+            if showCovers { CoverBanner(paper: paper) }
+            VStack(alignment: .leading, spacing: 10) {
+                if let why = Why.main(for: paper) {
+                    whyLine(why)
+                    Divider()
+                }
+                header
+                post
+                if expanded { details.transition(.opacity) }
                 Divider()
+                actionBar
             }
-            header
-            post
-            // Out of the way once the reader is into the abstract.
-            if showCovers && !expanded {
-                CoverBanner(paper: paper)
-            }
-            if expanded { details.transition(.opacity) }
-            Divider()
-            actionBar
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 12)
-        .padding(.bottom, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 14))
