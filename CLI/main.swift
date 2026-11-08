@@ -94,7 +94,12 @@ func run() async throws {
             sizes.merge(journalSizes) { a, _ in a }
         }
         let year = Calendar.current.component(.year, from: Date())
-        let found = ProfileAnalysis.suggestions(sources, currentYear: year, journalSizes: sizes)
+        var found = ProfileAnalysis.suggestions(sources, currentYear: year, journalSizes: sizes)
+        if let openAlex = engine.openAlex, let phrases = found[.keyword]?.map(\.entity.name) {
+            let monthAgo = Ranker.dayString(Date().addingTimeInterval(-30 * 86_400))
+            let volumes = await openAlex.keywordVolumes(phrases: phrases, since: monthAgo)
+            found = ProfileAnalysis.suggestions(sources, currentYear: year, journalSizes: sizes, keywordVolumes: volumes)
+        }
         for kind in SuggestionKind.allCases {
             print("\n\(kind.title)")
             for s in (found[kind] ?? []).prefix(12) {

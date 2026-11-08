@@ -88,9 +88,30 @@ struct OpenAlexClient {
             "filter": "author.id:\(authorID)",
             "per-page": String(perPage),
             "sort": "publication_date:desc",
-            "select": "id,publication_date,primary_location,authorships,topics,awards",
+            "select": "id,publication_date,primary_location,authorships,topics,keywords,awards",
         ])
         return try JSONDecoder().decode(ProfileWorksDTO.self, from: data).results.compactMap { $0.profileWork(me: authorID) }
+    }
+
+    /// How many papers a month match each phrase (searched in titles and abstracts), by lower-case
+    /// phrase. One small request per phrase, a few at a time.
+    func keywordVolumes(phrases: [String], since: String) async -> [String: Int] {
+        var out: [String: Int] = [:]
+        for start in stride(from: 0, to: phrases.count, by: 5) {
+            await withTaskGroup(of: (String, Int?).self) { group in
+                for phrase in phrases[start..<min(start + 5, phrases.count)] {
+                    group.addTask {
+                        let filter = "title_and_abstract.search:" + phrase.replacingOccurrences(of: ",", with: " ")
+                            + ",from_publication_date:" + since
+                        guard let data = try? await self.fetch("works", ["filter": filter, "per-page": "1", "select": "id"]),
+                              let count = try? JSONDecoder().decode(CountDTO.self, from: data).meta.count else { return (phrase, nil) }
+                        return (phrase, count)
+                    }
+                }
+                for await (phrase, count) in group { if let count { out[phrase.lowercased()] = count } }
+            }
+        }
+        return out
     }
 
     /// How many papers each journal has published in all, by id. A general journal with a
@@ -218,6 +239,11 @@ private struct AutocompleteDTO: Decodable {
     }
 }
 
+private struct CountDTO: Decodable {
+    let meta: Meta
+    struct Meta: Decodable { let count: Int }
+}
+
 private struct SourceSizesDTO: Decodable {
     let results: [Source]
     struct Source: Decodable { let id: String; let works_count: Int? }
@@ -231,8 +257,10 @@ private struct ProfileWorksDTO: Decodable {
         let primary_location: Location?
         let authorships: [Authorship]?
         let topics: [Ref]?
+        let keywords: [Keyword]?
         let awards: [Award]?
 
+        struct Keyword: Decodable { let display_name: String?; let score: Double? }
         struct Location: Decodable { let source: Source? }
         struct Source: Decodable { let id: String?; let display_name: String?; let type: String? }
         struct Authorship: Decodable { let author: Ref?; let institutions: [Ref]? }
@@ -252,6 +280,15 @@ private struct ProfileWorksDTO: Decodable {
             let team = authorships ?? []
             var work = ProfileWork(year: year)
             work.topics = (topics ?? []).compactMap(entity)
+            // Strongest few: the weaker ones are guesses about the paper, not what it is about.
+            work.keywords = (keywords ?? [])
+                .filter { ($0.score ?? 0) >= 0.4 }
+                .sorted { ($0.score ?? 0) > ($1.score ?? 0) }
+                .prefix(6)
+                .compactMap { k -> Entity? in
+                    guard let name = k.display_name?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return nil }
+                    return Entity(id: name.lowercased(), name: name)
+                }
             if let source = primary_location?.source, source.type != "repository" {
                 work.journal = entity(Ref(id: source.id, display_name: source.display_name))
             }

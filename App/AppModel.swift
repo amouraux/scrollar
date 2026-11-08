@@ -513,13 +513,24 @@ final class AppModel {
         }
         if sources.isEmpty { throw failure ?? ProfileError.noOrcid }
         let year = Calendar.current.component(.year, from: Date())
-        return ProfileSuggestions(byKind: ProfileAnalysis.suggestions(sources, currentYear: year, journalSizes: sizes), names: names,
+        var byKind = ProfileAnalysis.suggestions(sources, currentYear: year, journalSizes: sizes)
+        // How broad each candidate keyword is, so one that matches hundreds of papers a month
+        // is offered with a warning and not ticked. Only OpenAlex can say; without it, no warning.
+        if usesOpenAlex, let phrases = byKind[.keyword]?.map(\.entity.name), !phrases.isEmpty {
+            let monthAgo = Ranker.dayString(Date().addingTimeInterval(-30 * 86_400))
+            let volumes = await openAlex.keywordVolumes(phrases: phrases, since: monthAgo)
+            if !volumes.isEmpty {
+                byKind = ProfileAnalysis.suggestions(sources, currentYear: year, journalSizes: sizes, keywordVolumes: volumes)
+            }
+        }
+        return ProfileSuggestions(byKind: byKind, names: names,
                                   paperCount: sources.reduce(0) { $0 + $1.works.count })
     }
 
     func isFollowed(_ s: ProfileSuggestion) -> Bool {
         switch s.kind {
         case .topic: return settings.followedTopics.contains { $0.id == s.entity.id }
+        case .keyword: return settings.followedKeywords.contains { $0.phrase.lowercased() == s.entity.id }
         case .journal: return settings.followedJournals.contains { $0.id == s.entity.id }
         case .researcher: return settings.followedAuthors.contains { $0.id == s.entity.id }
         case .institution: return settings.followedInstitutions.contains { $0.id == s.entity.id }
@@ -534,6 +545,7 @@ final class AppModel {
         for item in chosen where !isFollowed(item) {
             switch item.kind {
             case .topic: s.followedTopics.append(item.entity)
+            case .keyword: s.followedKeywords.append(KeywordRule(phrase: item.entity.name))
             case .journal: s.followedJournals.append(item.entity)
             case .researcher: s.followedAuthors.append(item.entity)
             case .institution: s.followedInstitutions.append(item.entity)
@@ -561,7 +573,7 @@ final class AppModel {
             let found = try await loadProfileSuggestions()
             let chosen = SuggestionKind.allCases.flatMap { found.byKind[$0] ?? [] }.filter(\.selected)
             follow(chosen)
-            notice = "Filled what you follow from \(found.paperCount) publications: \(chosen.count) topics, journals and researchers. They are under Follow in Tune, where you can change them."
+            notice = "Filled what you follow from \(found.paperCount) publications: \(chosen.count) topics, keywords, journals and researchers. They are under Follow in Tune, where you can change them."
         } catch {
             log.error("could not fill the follows from the publications: \(String(describing: error), privacy: .public)")
         }

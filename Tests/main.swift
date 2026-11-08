@@ -839,5 +839,19 @@ check(sized[.journal]?.first(where: { $0.entity.id == "S9" })?.selected == false
 check(sized[.journal]?.first(where: { $0.entity.id == "S8" })?.selected == true && sized[.journal]?.first(where: { $0.entity.id == "S8" })?.note == nil, "suggestions: a specialist journal is ticked without a warning")
 check(ProfileAnalysis.suggestions([ProfileSourceWorks(label: "you", works: sizedWorks)], currentYear: 2026)[.journal]?.allSatisfy { $0.note == nil } == true, "suggestions: with no sizes known there is no warning")
 
+func kw(_ s: String) -> Entity { Entity(id: s.lowercased(), name: s) }
+let keywordWorks = (0..<4).map { _ in ProfileWork(year: 2026, keywords: [kw("Nociception"), kw("pain perception"), kw("laser-evoked potentials")]) }
+    + [ProfileWork(year: 2026, keywords: [kw("nociception")]), ProfileWork(year: 2010, keywords: [kw("Old method")]), ProfileWork(year: 2010, keywords: [kw("Old method")]), ProfileWork(year: 2010, keywords: [kw("Old method")])]
+let keywordSuggestions = ProfileAnalysis.suggestions([ProfileSourceWorks(label: "you", works: keywordWorks)], currentYear: 2026,
+                                                     keywordVolumes: ["pain perception": 900, "laser-evoked potentials": 12, "nociception": 60])
+check(keywordSuggestions[.keyword]?.first(where: { $0.entity.id == "nociception" })?.count == 5, "keywords: the same phrase in different cases is one keyword")
+check(keywordSuggestions[.keyword]?.first(where: { $0.entity.id == "laser-evoked potentials" })?.selected == true, "keywords: a specific recurrent keyword is ticked")
+check(keywordSuggestions[.keyword]?.first(where: { $0.entity.id == "pain perception" })?.selected == false && keywordSuggestions[.keyword]?.first(where: { $0.entity.id == "pain perception" })?.note != nil, "keywords: one matching hundreds of papers a month is offered with a warning, unticked")
+check(keywordSuggestions[.keyword]?.first(where: { $0.entity.id == "old method" })?.selected == false, "keywords: an old one is not ticked")
+let onceKeyword = ProfileAnalysis.suggestions([ProfileSourceWorks(label: "you", works: [ProfileWork(year: 2026, keywords: [kw("rare"), kw("rare")]), ProfileWork(year: 2026, keywords: [kw("rare")])])], currentYear: 2026)
+check(onceKeyword[.keyword]?.first?.count == 2 && onceKeyword[.keyword]?.first?.selected == false, "keywords: a phrase in two papers is not enough to tick")
+check(ProfileAnalysis.suggestions([ProfileSourceWorks(label: "you", works: keywordWorks)], currentYear: 2026)[.keyword]?.allSatisfy { $0.note == nil } == true, "keywords: without volumes there is no warning")
+check(ProfileAnalysis.suggestions([ProfileSourceWorks(label: "you", works: [ProfileWork(year: 2026)])], currentYear: 2026)[.keyword]?.isEmpty == true, "keywords: none from a source that has none (Europe PMC)")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

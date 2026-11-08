@@ -193,6 +193,7 @@ struct SuggestionsView: View {
     private static func note(for kind: SuggestionKind) -> String? {
         switch kind {
         case .topic: return "Topics are broad, so what they find is ranked with everything else."
+        case .keyword: return "A keyword is searched in titles and abstracts and listed in full. After adding one you can require other words with it under Follow, Keywords."
         case .journal: return "Following a journal lists everything it publishes. Untick large general journals."
         case .researcher: return "Following someone lists every paper they appear on, in any field."
         case .institution: return "An institution publishes in every field, so what it finds is ranked, not listed in full."

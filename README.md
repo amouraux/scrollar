@@ -147,13 +147,15 @@ measure, which comes only from the user's own and saved papers. The section is a
 The ORCID iD under You, and up to three more under Also learn from (a supervisor or group leader:
 most useful to a PhD student with few papers), are read for two things. They are the profile that
 defines similarity. And they suggest what to follow (`Core/Profile.swift`, `ProfileFetcher.swift`,
-`App/ProfileViews.swift`): topics, journals, co-authors, institutions and funders, each with how many
+`App/ProfileViews.swift`): topics, keywords, journals, co-authors, institutions and funders, each with how many
 papers it appears in and the latest year, counted with recent papers weighing more (a weight that
 halves about every two years), so what the user still works on comes first. Ticked to begin with:
-recent (within four years) and recurrent, at most eight topics, six journals and five co-authors
-(three papers together are needed); institutions and funders are listed, never ticked, and a very
+recent (within four years) and recurrent, at most eight topics, six keywords, six journals and five co-authors
+(a keyword needs three papers, a co-author three together); institutions and funders are listed, never ticked, and a very
 large general journal (over 100,000 papers) is listed with a warning and unticked, because following
-one would list a flood. Old interests are listed unticked in case the user still follows them. A
+one would list a flood, and so is a keyword that matches 150 or more papers a month (OpenAlex counts
+them; "chronic pain" matches about two thousand), which can be followed with conditions added afterwards.
+Keywords are the phrases OpenAlex finds in each paper (the strongest six); Europe PMC offers none. Old interests are listed unticked in case the user still follows them. A
 consortium paper's authors are ignored as co-authors; repositories are not journals.
 
 The first time, and only then, when the follow lists are all empty and there is an iD, the ticked

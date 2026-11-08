@@ -54,6 +54,8 @@ struct ProfileSource: Codable, Hashable {
 struct ProfileWork: Equatable {
     var year: Int
     var topics: [Entity] = []
+    /// The phrases OpenAlex finds in the paper, strongest first. The id is the phrase in lower case.
+    var keywords: [Entity] = []
     /// nil for a repository (a university library is not a journal to follow).
     var journal: Entity?
     /// Everyone on the paper except the profile's own person.
@@ -70,11 +72,12 @@ struct ProfileSourceWorks {
 }
 
 enum SuggestionKind: String, CaseIterable {
-    case topic, journal, researcher, institution, funder
+    case topic, keyword, journal, researcher, institution, funder
 
     var title: String {
         switch self {
         case .topic: return "Topics"
+        case .keyword: return "Keywords"
         case .journal: return "Journals"
         case .researcher: return "Researchers (co-authors)"
         case .institution: return "Institutions"
@@ -86,6 +89,7 @@ enum SuggestionKind: String, CaseIterable {
     var defaultCount: Int {
         switch self {
         case .topic: return 8
+        case .keyword: return 6
         case .journal: return 6
         case .researcher: return 5
         // Following an institution or a funder lists a very large and mixed set of papers
@@ -100,7 +104,7 @@ enum SuggestionKind: String, CaseIterable {
     var minimumPapers: Int {
         switch self {
         case .institution: return 1
-        case .researcher: return 3
+        case .researcher, .keyword: return 3
         default: return 2
         }
     }
@@ -135,9 +139,15 @@ enum ProfileAnalysis {
     /// list a flood from every field. It is offered, unticked, with a note saying so.
     static let largeJournal = 100_000
 
+    /// A keyword that matches more papers than this in a month is too broad to follow as it
+    /// stands: a follow can list only the newest few hundred, and most would be beside the point.
+    static let broadKeyword = 150
+
     /// `journalSizes` is how many papers each journal has published, by id, where known.
+    /// `keywordVolumes` is how many papers a month match each phrase (by lower-case phrase), where known.
     static func suggestions(_ sources: [ProfileSourceWorks], currentYear: Int,
-                            journalSizes: [String: Int] = [:]) -> [SuggestionKind: [ProfileSuggestion]] {
+                            journalSizes: [String: Int] = [:],
+                            keywordVolumes: [String: Int] = [:]) -> [SuggestionKind: [ProfileSuggestion]] {
         var out: [SuggestionKind: [ProfileSuggestion]] = [:]
         for kind in SuggestionKind.allCases {
             var byID: [String: ProfileSuggestion] = [:]
@@ -168,6 +178,10 @@ enum ProfileAnalysis {
                     ordered[i].note = "A large general journal (about \(size / 1000) thousand papers): following it lists a great many."
                     continue
                 }
+                if kind == .keyword, let volume = keywordVolumes[s.entity.id], volume >= broadKeyword {
+                    ordered[i].note = "Broad: about \(volume) papers a month match it. Leave it out, or add conditions to it afterwards."
+                    continue
+                }
                 if ticked < kind.defaultCount, s.count >= kind.minimumPapers, s.latestYear >= currentYear - recentYears {
                     ordered[i].selected = true
                     ticked += 1
@@ -181,6 +195,7 @@ enum ProfileAnalysis {
     private static func entities(of kind: SuggestionKind, in work: ProfileWork) -> [Entity] {
         switch kind {
         case .topic: return work.topics
+        case .keyword: return work.keywords
         case .journal: return work.journal.map { [$0] } ?? []
         case .researcher: return work.people
         case .institution: return work.institutions
