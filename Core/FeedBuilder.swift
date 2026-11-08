@@ -30,11 +30,7 @@ enum FeedBuilder {
         }
         for e in s.followedTopics {
             // A topic taken from a paper's MeSH headings has no OpenAlex id.
-            if e.id.hasPrefix("mesh:") {
-                if !MeSH.isGeneric(e.name) { add(.mesh(e.name), explicit: true) }
-            } else {
-                add(.topic(id: e.id, name: e.name), explicit: true)
-            }
+            if let seed = Seed.forTopic(e) { add(seed, explicit: true) }
         }
         for e in s.followedJournals { add(.journal(id: e.id, name: e.name), explicit: true) }
         for e in s.followedAuthors { add(.author(id: e.id, name: e.name), explicit: true) }

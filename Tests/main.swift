@@ -989,5 +989,48 @@ check((try! JSONDecoder().decode(KeywordRule.self, from: Data("{\"phrase\": \"ta
 check(Seed.keyword("pain", also: ["EEG", "MRI"]).filter(since: "d") == "title_and_abstract.search:\"pain\" AND \"EEG\" AND \"MRI\",from_publication_date:d", "OpenAlex is asked for all the words")
 check(EuropePMCQuery.build(.keyword("pain", also: ["EEG"]), since: window.0, until: window.1) == "((TITLE:\"pain\" OR ABSTRACT:\"pain\") AND (TITLE:\"EEG\" OR ABSTRACT:\"EEG\")) AND FIRST_PDATE:[2026-10-01 TO 2026-11-08]", "Europe PMC is asked for all the words")
 
+// MARK: backup
+var bk = FeedSettings()
+bk.orcid = "0000-0003-1056-5980"
+bk.followedTopics = [Entity(id: "T1", name: "Pain")]; bk.followedJournals = [Entity(id: "S1", name: "Pain"), Entity(id: "S2", name: "Neuron")]
+bk.followedKeywords = [KeywordRule(phrase: "pain", alsoRequire: ["EEG"], importance: .high), KeywordRule(phrase: "pain", alsoRequire: ["MRI"], id: "second")]
+bk.mutedKeywords = ["homeopathy"]; bk.daysBack = 60; bk.recency = 0.2; bk.feedback.hidden = ["doi:x"]
+let backupAt = Date(timeIntervalSince1970: 1_800_000_000)
+let backupData = try! Backup.encode(bk, at: backupAt)
+if case .settings(let restored, let savedAt) = Backup.decode(backupData) {
+    check(restored == bk, "backup: restoring gives back exactly what was saved")
+    check(savedAt == backupAt, "backup: it says when it was saved")
+    check(restored.followedKeywords.map(\.id) == ["pain", "second"] && restored.followedKeywords[0].importance == .high, "backup: two rules on one phrase come back as two, with their importance")
+} else { check(false, "backup: a backup decodes") }
+check(!String(decoding: backupData, as: UTF8.self).lowercased().contains("apikey") && !String(decoding: backupData, as: UTF8.self).contains("openalex_key"), "backup: it holds no key")
+check(Backup.decode(Data("{}".utf8)) == .notABackup && Backup.decode(Data("not json".utf8)) == .notABackup, "backup: a file that is not one is refused")
+check(Backup.decode((try? SyncDocument().encoded()) ?? Data()) == .notABackup, "backup: the sync file is not a backup, and is refused rather than read as default settings")
+check(Backup.decode(try! bk.encoded()) == .notABackup, "backup: a bare settings file is refused too")
+let futureBackup = String(decoding: backupData, as: UTF8.self).replacingOccurrences(of: "\"format\" : 1", with: "\"format\" : 99")
+check(Backup.decode(Data(futureBackup.utf8)) == .newerFormat, "backup: one from a newer app is refused, not half read")
+check(Backup.filename(at: backupAt).hasPrefix("Scrollar settings 20"), "backup: the file is named with its date")
+check(Backup.summary(of: bk) == ["1 topic", "2 journals", "2 keywords", "1 mute", "1 hidden paper"], "backup: the summary names what it holds, and leaves out what is empty")
+check(Backup.summary(of: FeedSettings()).isEmpty, "backup: nothing to say about empty settings")
+
+// MARK: preview
+var pv = FeedSettings(); pv.mutedKeywords = ["homeopathy"]
+let pvSeed = Seed.keyword("pain", also: ["EEG"])
+let pvFound = [
+    ok("p1") { $0.title = "Pain and EEG in humans"; $0.date = "2026-11-01" },
+    ok("p2") { $0.title = "Pain, EEG and rats"; $0.date = "2026-11-05" },
+    ok("p3") { $0.title = "Homeopathy for pain and EEG"; $0.date = "2026-11-03" },
+    ok("p1") { $0.title = "Pain and EEG in humans"; $0.date = "2026-11-01" },
+]
+let pvRule = KeywordRule(phrase: "pain", alsoRequire: ["EEG"], exclude: ["rats"])
+let pvResult = Previews.make(pvFound, seed: pvSeed, rule: pvRule, settings: pv, fullPage: false)
+check(pvResult.papers.map(\.id) == ["p1"] && pvResult.matched == 1, "preview: what the keyword's words and the mutes allow, and nothing else")
+check(pvResult.removed == 2, "preview: it counts what the conditions and mutes took out, a duplicate not counted")
+let pvLoose = Previews.make(pvFound, seed: pvSeed, rule: nil, settings: FeedSettings(), fullPage: true)
+check(pvLoose.papers.map(\.id) == ["p2", "p3", "p1"] && pvLoose.mayHaveMore, "preview: newest first, and it says when there is more than was fetched")
+let pvMany = (0..<80).map { n in ok("m\(n)") { $0.title = "Paper \(n)"; $0.date = "2026-10-\(String(format: "%02d", 1 + n % 28))" } }
+let pvMore = Previews.make(pvMany, seed: .keyword("x"), settings: FeedSettings(), fullPage: false)
+check(pvMore.papers.count == Previews.shown && pvMore.matched == 80, "preview: it shows a screenful and counts the rest")
+check(Seed.forTopic(Entity(id: "T1", name: "Pain")) == .topic(id: "T1", name: "Pain") && Seed.forTopic(Entity(id: "mesh:Pain", name: "Pain")) == .mesh("Pain") && Seed.forTopic(Entity(id: "mesh:Humans", name: "Humans")) == nil, "preview: a topic is the search the feed would run, and a heading too general to follow is none")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

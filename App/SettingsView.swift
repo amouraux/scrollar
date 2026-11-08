@@ -31,6 +31,10 @@ struct SettingsView: View {
     @State private var creatingSyncFile = false
     @State private var joiningSyncFile = false
     @State private var suggesting = false
+    @State private var creatingBackup = false
+    @State private var restoringBackup = false
+    @State private var pendingRestore: PendingRestore?
+    @State private var restoreError: String?
 
     var body: some View {
         @Bindable var model = appModel
@@ -63,15 +67,19 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    entityLink("Topics", kind: .topics, items: $model.settings.followedTopics,
+                    entityLink("Topics", kind: .topics, items: $model.settings.followedTopics, seedFor: Seed.forTopic,
                                explanation: "Papers OpenAlex files under a topic (each paper has up to three). A topic is broad, a few hundred papers a month, so what it finds is ranked with everything else and gets a small bonus, not listed in full. Searched in OpenAlex; a topic taken from a paper's MeSH headings is searched in Europe PMC.")
                     entityLink("Journals", kind: .sources, items: $model.settings.followedJournals, byName: true,
+                               seedFor: { .journal(id: $0.id, name: $0.name) },
                                explanation: "Everything these journals publish in your look-back window is kept in your feed, however low it would score. Large general journals publish a lot: remove any you do not want in full.")
                     entityLink("Researchers", kind: .authors, items: $model.settings.followedAuthors, byName: true,
+                               seedFor: { .author(id: $0.id, name: $0.name) },
                                explanation: "Every paper where this person appears anywhere in the author list is kept in your feed, however low it would score. Chosen from the search, they are matched by OpenAlex id; added by name, they are searched in Europe PMC and a namesake may slip in.")
                     entityLink("Institutions", kind: .institutions, items: $model.settings.followedInstitutions, byName: true,
+                               seedFor: { .institution(id: $0.id, name: $0.name) },
                                explanation: "Papers with an author at this institution or one of its departments or hospitals. An institution publishes in every field, so what it finds is ranked with everything else and gets a small bonus, not listed in full.")
                     entityLink("Funders", kind: .funders, items: $model.settings.followedFunders, byName: true,
+                               seedFor: { .funder(id: $0.id, name: $0.name) },
                                explanation: "Papers acknowledging this funder. A funder's papers are many and mixed, so what it finds is ranked with everything else and gets a small bonus, not listed in full.")
                     NavigationLink {
                         KeywordListView(rules: $model.settings.followedKeywords)
@@ -249,6 +257,15 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Button("Save a backup of my settings…") { creatingBackup = true }
+                    Button("Restore settings from a backup…") { restoringBackup = true }
+                } header: {
+                    Text("Backup")
+                } footer: {
+                    Text("A file you keep: your follows, mutes, keywords, sliders, and saved and hidden papers as they are now. It does not hold your OpenAlex key, the feed, or what you have read. Restoring replaces your current settings after asking, and with syncing on the other devices follow. Sync keeps your devices the same; a backup is how you go back.")
+                }
+
+                Section {
                     Toggle("Europe PMC and PubMed", isOn: $model.settings.useEuropePMC)
                     Toggle("OpenAlex", isOn: $model.settings.useOpenAlex)
                     if model.settings.useOpenAlex {
@@ -274,12 +291,62 @@ struct SettingsView: View {
                 if case .success(let url) = result { Task { await model.adoptSyncFile(url) } }
             }
         }
+        // On the stack, not the form: a view takes one exporter and one importer, and the sync
+        // file's are on the form.
+        .fileExporter(isPresented: $creatingBackup,
+                      document: SyncFileDocument(data: creatingBackup ? model.backupData() : Data()),
+                      contentType: .json, defaultFilename: Backup.filename(at: Date())) { _ in }
+        .fileImporter(isPresented: $restoringBackup, allowedContentTypes: [.json]) { result in
+            readBackup(result)
+        }
+        .confirmationDialog("Replace your settings with this backup?", isPresented: Binding(
+            get: { pendingRestore != nil }, set: { if !$0 { pendingRestore = nil } }), titleVisibility: .visible) {
+            Button("Replace my settings", role: .destructive) {
+                if let restored = pendingRestore { model.restore(restored.settings) }
+                pendingRestore = nil
+            }
+            Button("Cancel", role: .cancel) { pendingRestore = nil }
+        } message: {
+            if let pending = pendingRestore {
+                let when = pending.savedAt.map { "Saved " + $0.formatted(date: .abbreviated, time: .omitted) + ". " } ?? ""
+                let what = pending.lines.isEmpty ? "It holds only default settings." : "It holds " + pending.lines.joined(separator: ", ") + "."
+                Text(when + what + " Your current follows, mutes, keywords and sliders, and your saved and hidden papers, are replaced.")
+            }
+        }
+        .alert("Could not restore", isPresented: Binding(get: { restoreError != nil }, set: { if !$0 { restoreError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(restoreError ?? "") }
+    }
+
+    private struct PendingRestore {
+        let settings: FeedSettings
+        let savedAt: Date?
+        let lines: [String]
+    }
+
+    /// Read the chosen file and ask before replacing anything.
+    private func readBackup(_ result: Result<URL, Error>) {
+        guard case .success(let url) = result else { return }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else {
+            restoreError = "That file could not be read."
+            return
+        }
+        switch Backup.decode(data) {
+        case .settings(let restored, let savedAt):
+            pendingRestore = PendingRestore(settings: restored, savedAt: savedAt, lines: Backup.summary(of: restored))
+        case .newerFormat:
+            restoreError = "That backup was made by a newer version of Scrollar. Update the app, then try again."
+        case .notABackup:
+            restoreError = "That is not a Scrollar settings backup. The sync file and other files cannot be restored this way."
+        }
     }
 
     private func entityLink(_ title: String, kind: OpenAlexClient.EntityKind, items: Binding<[Entity]>,
-                            byName: Bool = false, explanation: String? = nil) -> some View {
+                            byName: Bool = false, seedFor: ((Entity) -> Seed?)? = nil, explanation: String? = nil) -> some View {
         NavigationLink {
-            EntityListView(title: title, kind: kind, items: items, byName: byName, explanation: explanation)
+            EntityListView(title: title, kind: kind, items: items, byName: byName, seedFor: seedFor, explanation: explanation)
         } label: {
             LabeledContent(title, value: count(items.wrappedValue.count))
         }
@@ -310,6 +377,8 @@ struct EntityListView: View {
     /// Whether a name can be typed in and searched by Europe PMC, for when there is
     /// no OpenAlex key or OpenAlex does not know it.
     var byName = false
+    /// The search each entry stands for, so a tap shows what it finds. nil for a list of mutes.
+    var seedFor: ((Entity) -> Seed?)?
     /// What this list does to the feed, in plain words, under the list.
     var explanation: String?
     @State private var adding = false
@@ -320,10 +389,18 @@ struct EntityListView: View {
                 if items.isEmpty {
                     Text("Nothing yet. Tap Add to search.").foregroundStyle(.secondary)
                 }
-                ForEach(items, id: \.id) { Text($0.name) }
-                    .onDelete { items.remove(atOffsets: $0) }
+                ForEach(items, id: \.id) { item in
+                    if let seed = seedFor?(item) {
+                        NavigationLink { SeedPreviewView(title: item.name, seed: seed) } label: { Text(item.name) }
+                    } else {
+                        Text(item.name)
+                    }
+                }
+                .onDelete { items.remove(atOffsets: $0) }
             } footer: {
-                if let explanation { Text(explanation) }
+                if let explanation {
+                    Text(explanation + (seedFor == nil ? "" : " Tap one to see the papers it finds."))
+                }
             }
         }
         .navigationTitle(title)
@@ -333,7 +410,7 @@ struct EntityListView: View {
             }
         }
         .sheet(isPresented: $adding) {
-            EntitySearchSheet(kind: kind, title: title, byName: byName, chosen: items) { entity in
+            EntitySearchSheet(kind: kind, title: title, byName: byName, seedFor: seedFor, chosen: items) { entity in
                 if !items.contains(entity) { items.append(entity) }
             }
         }
@@ -346,6 +423,7 @@ struct EntitySearchSheet: View {
     let kind: OpenAlexClient.EntityKind
     let title: String
     var byName = false
+    var seedFor: ((Entity) -> Seed?)?
     let chosen: [Entity]
     let pick: (Entity) -> Void
 
@@ -353,6 +431,20 @@ struct EntitySearchSheet: View {
     @State private var results: [OpenAlexClient.EntityHit] = []
     @State private var failure: String?
     @State private var added: Set<String> = []
+    @State private var previewing: PreviewTarget?
+
+    private struct PreviewTarget: Hashable { let title: String; let seed: Seed }
+
+    /// The eye beside a result: see what following it would bring before following it.
+    @ViewBuilder private func previewButton(_ entity: Entity) -> some View {
+        if let seed = seedFor?(entity) {
+            Button { previewing = PreviewTarget(title: entity.name, seed: seed) } label: {
+                Image(systemName: "eye")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Preview the papers it finds")
+        }
+    }
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespaces) }
 
@@ -375,23 +467,28 @@ struct EntitySearchSheet: View {
                 if byName, trimmedQuery.count >= 2 {
                     let id = SourceRouting.namedID(trimmedQuery)
                     let done = added.contains(id) || chosen.contains { $0.id == id }
-                    Button {
-                        pick(Entity(id: id, name: trimmedQuery))
-                        added.insert(id)
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Add “\(trimmedQuery)” by name").foregroundStyle(.primary)
-                                Text(nameHint).font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Button {
+                            pick(Entity(id: id, name: trimmedQuery))
+                            added.insert(id)
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Add “\(trimmedQuery)” by name").foregroundStyle(.primary)
+                                    Text(nameHint).font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if done { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
                             }
-                            Spacer()
-                            if done { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        previewButton(Entity(id: id, name: trimmedQuery))
                     }
-                    .buttonStyle(.plain)
                 }
                 ForEach(results) { hit in
                     let done = added.contains(hit.id) || chosen.contains(hit.entity)
+                    HStack {
                     Button {
                         pick(hit.entity)
                         added.insert(hit.id)
@@ -409,10 +506,14 @@ struct EntitySearchSheet: View {
                             Spacer()
                             if done { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
                         }
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    previewButton(hit.entity)
+                    }
                 }
             }
+            .navigationDestination(item: $previewing) { SeedPreviewView(title: $0.title, seed: $0.seed) }
             .overlay {
                 if results.isEmpty, query.count >= 2, failure == nil, !byName {
                     ContentUnavailableView.search(text: query)
@@ -536,6 +637,15 @@ struct KeywordRuleEditor: View {
             } footer: {
                 Text("Papers found only through this keyword are dropped if any of these appear.")
             }
+            if !rule.phrase.trimmingCharacters(in: .whitespaces).isEmpty {
+                Section {
+                    NavigationLink("Preview the papers it finds") {
+                        SeedPreviewView(title: rule.phrase, seed: rule.seed, rule: rule)
+                    }
+                } footer: {
+                    Text("Try it before you decide: the newest papers this keyword, with its words, would put in your feed.")
+                }
+            }
         }
         .navigationTitle(rule.phrase)
         .navigationBarTitleDisplayMode(.inline)
@@ -569,6 +679,95 @@ struct MutedWordsView: View {
                 if !word.isEmpty, !words.contains(word) { words.append(word) }
             }
             Button("Cancel", role: .cancel) {}
+        }
+    }
+}
+
+// MARK: - Preview of what a follow finds
+
+/// The newest papers a follow would put in the feed, asked for now and not stored, so the
+/// reader can judge a keyword as broad as "pain", or a journal, before keeping it.
+struct SeedPreviewView: View {
+    @Environment(AppModel.self) private var model
+    let title: String
+    let seed: Seed
+    var rule: KeywordRule?
+
+    private enum Load {
+        case loading
+        case loaded(SeedPreview)
+        case failed(String)
+    }
+    @State private var load = Load.loading
+
+    /// A topic, an institution or a funder is ranked with the rest, not listed in full.
+    private var isBroad: Bool { Paper.broadReasonPrefixes.contains { seed.reason.hasPrefix($0) } }
+
+    var body: some View {
+        List {
+            switch load {
+            case .loading:
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Asking the sources…").foregroundStyle(.secondary)
+                }
+            case .failed(let message):
+                Text(message).foregroundStyle(.orange)
+                Button("Try again") { Task { await run() } }
+            case .loaded(let preview):
+                Section {
+                    Text(summary(preview))
+                    if preview.removed > 0 {
+                        Text("\(preview.removed) more \(preview.removed == 1 ? "was" : "were") removed by this keyword's own words, your mutes or your filters.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                if !preview.papers.isEmpty {
+                    Section {
+                        ForEach(preview.papers, id: \.dedupeKey) { PreviewRow(paper: $0) }
+                    } footer: {
+                        Text(preview.matched > preview.papers.count
+                             ? "The newest \(preview.papers.count) of \(preview.matched)\(preview.mayHaveMore ? " or more" : "")."
+                             : "Newest first.")
+                    }
+                }
+            }
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .task(id: seed) { await run() }
+    }
+
+    private func summary(_ p: SeedPreview) -> String {
+        let days = model.settings.daysBack
+        if p.matched == 0 { return "Nothing in the last \(days) days." }
+        let count = "\(p.matched)\(p.mayHaveMore ? " or more" : "") \(p.matched == 1 ? "paper" : "papers")"
+        return isBroad
+            ? "\(count) in the last \(days) days. It is broad, so they are ranked with everything else and the best reach your feed, with a small bonus."
+            : "\(count) in the last \(days) days, all of which would be in your feed, however low they score."
+    }
+
+    private func run() async {
+        load = .loading
+        do { load = .loaded(try await model.preview(seed, rule: rule)) }
+        catch is CancellationError {}
+        catch { load = .failed("\(error)") }
+    }
+}
+
+private struct PreviewRow: View {
+    let paper: Paper
+
+    var body: some View {
+        let content = VStack(alignment: .leading, spacing: 3) {
+            Text(paper.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+            Text([paper.journal, paper.date].compactMap { $0 }.joined(separator: " · "))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        if let url = paper.link {
+            Link(destination: url) { content }
+        } else {
+            content
         }
     }
 }

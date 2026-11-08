@@ -4,6 +4,7 @@ enum EngineError: Error, CustomStringConvertible {
     case nothingToFollow
     case noSource
     case nothingOlder
+    case cannotSearch
 
     var description: String {
         switch self {
@@ -13,6 +14,8 @@ enum EngineError: Error, CustomStringConvertible {
             return "No source is on: turn on Europe PMC, or OpenAlex with your key, in Tune."
         case .nothingOlder:
             return "There is nothing older to ask for."
+        case .cannotSearch:
+            return "The sources that are on cannot search for this. Topics, and researchers, institutions and funders chosen from the search, need OpenAlex with your free key, in Tune."
         }
     }
 }
@@ -239,6 +242,39 @@ struct FeedEngine {
                           newPapers: ranked.filter { !before.contains($0.paper.dedupeKey) }.count,
                           // A seed that failed leaves a gap in what was just fetched: ask for it again.
                           extraDays: older && !complete ? heldExtra : extraDays)
+    }
+
+    /// What following `seed` would find: one request per source that can answer it, over the
+    /// look-back, run through the same words, mutes and filters as the feed. Nothing is stored.
+    func preview(_ seed: Seed, rule: KeywordRule? = nil, settings: FeedSettings, today: Date = Date()) async throws -> SeedPreview {
+        guard openAlex != nil || europePMC != nil else { throw EngineError.noSource }
+        let since = Ranker.dayString(today.addingTimeInterval(-Double(settings.daysBack) * 86_400))
+        let until = Ranker.dayString(today)
+        let targets = SourceRouting.targets(for: seed, openAlex: openAlex != nil, europePMC: europePMC != nil, hasOwnPMIDs: false)
+        guard !targets.isEmpty else { throw EngineError.cannotSearch }
+        var found: [Paper] = []
+        var fullPage = false
+        var firstError: Error?
+        for target in targets {
+            do {
+                var list: [Paper] = []
+                switch target {
+                case .openAlex:
+                    guard let openAlex else { continue }
+                    list = try await openAlex.papers(for: seed, since: since, perPage: Previews.pageSize, maxPages: 1)
+                case .europePMC:
+                    guard let europePMC, let query = EuropePMCQuery.build(seed, since: since, until: until) else { continue }
+                    list = try await europePMC.papers(query: query, maxPages: 1)
+                }
+                fullPage = fullPage || list.count >= Previews.pageSize
+                found += list
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+        // One source failing leaves the other's answer; both failing is an error to show.
+        if found.isEmpty, let firstError { throw firstError }
+        return Previews.make(found, seed: seed, rule: rule, settings: settings, fullPage: fullPage)
     }
 
     /// One person's papers: OpenAlex when it is on and answers, else the Europe PMC records that

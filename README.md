@@ -172,6 +172,25 @@ MRI find papers that have either. Each rule is its own search and its own reason
 (`KeywordRule.id`; a rule saved earlier takes its phrase). A follow never changes the similarity measure, which comes only from the user's own and
 saved papers.
 
+## Preview, and backup
+
+**Preview.** Following something blind is how a broad keyword floods a feed, so Tune can show what a
+follow finds before and after it is kept (`Core/Preview.swift`, `FeedEngine.preview`). Open a keyword
+and choose "Preview the papers it finds"; tap any topic, journal, researcher, institution or funder in
+its list; or tap the eye beside a search result before adding it. It asks each source that can answer
+for one page (100) over the look-back, applies the same words, mutes and filters as the feed
+(`FeedBuilder.keep`), and shows the newest 30, how many there are ("or more" when a source returned
+a full page), and how many the keyword's own words, mutes or filters removed. Nothing is stored and
+nothing is followed. Topics need OpenAlex and its key, and say so when they cannot be asked.
+
+**Backup.** Tune, Backup saves the settings to a file you keep (`Core/Backup.swift`) and restores one,
+after showing what it holds and asking. It holds the follows, mutes, keywords, sliders and the saved
+and hidden papers; never the OpenAlex key (a credential), the feed (a cache) or what was read. A file
+that is not a backup, such as the sync file, is refused, because decoding it leniently would replace the
+settings with defaults; one from a newer app is refused too. Restoring is an ordinary edit, so with
+syncing on the other devices follow. It is a snapshot to go back to; the sync file is what keeps devices
+together.
+
 ## Learning from publications
 
 The ORCID iD under You, and up to three more under Also learn from (a supervisor or group leader:

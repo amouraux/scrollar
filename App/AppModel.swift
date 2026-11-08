@@ -385,6 +385,22 @@ final class AppModel {
 
     // MARK: Sync between devices
 
+    // MARK: Backup and preview
+
+    /// The settings as a file to keep. Not the key, the feed or the read record: see `SettingsBackup`.
+    func backupData() -> Data { (try? Backup.encode(settings, at: Date())) ?? Data() }
+
+    /// Replace the settings with a backup's. It goes through the same path as any edit, so it is
+    /// saved, recorded for sync and fetched for.
+    func restore(_ restored: FeedSettings) { settings = restored }
+
+    /// What following `seed` would find, without following it.
+    func preview(_ seed: Seed, rule: KeywordRule? = nil) async throws -> SeedPreview {
+        let engine = FeedEngine(openAlex: usesOpenAlex ? openAlex : nil,
+                                europePMC: settings.useEuropePMC ? EuropePMCClient() : nil, embedder: nil)
+        return try await engine.preview(seed, rule: rule, settings: settings)
+    }
+
     /// What the "create the sync file" dialog saves: everything, as it is now.
     func initialSyncData() -> Data {
         var doc = ledger
