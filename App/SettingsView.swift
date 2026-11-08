@@ -26,7 +26,6 @@ extension Weight {
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var appModel
-    @AppStorage("byline") private var bylineRaw = BylineChoice.last.rawValue
     @AppStorage("showCovers") private var showCovers = true
 
     var body: some View {
@@ -119,17 +118,10 @@ struct SettingsView: View {
                             Text("Strongly").font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    if model.settings.authorWeight > 0 {
-                        Picker("Whose h-index", selection: $model.settings.authorFocus) {
-                            Text("Senior (last) author").tag(BylineChoice.last)
-                            Text("First author").tag(BylineChoice.first)
-                            Text("Either: the higher").tag(BylineChoice.both)
-                        }
-                    }
                 } header: {
                     Text("Time and balance")
                 } footer: {
-                    Text("The h-index is OpenAlex's, computed from its own record of each author, so it can be wrong for common names. It favours established researchers over early-career ones, and varies by field. Authors with no figure are neither favoured nor penalised. Impact is OpenAlex's two-year mean citedness: how often a journal's recent papers are cited. It is an open measure close to the impact factor, which is Clarivate's and not available here. Preprints and journals without a figure are neither favoured nor penalised.")
+                    Text("The h-index is that of the author(s) heading each post (see Posts), taken from OpenAlex's own record of each author, so it can be wrong for common names. It favours established researchers over early-career ones, and varies by field. Authors with no figure are neither favoured nor penalised. Impact is OpenAlex's two-year mean citedness: how often a journal's recent papers are cited. It is an open measure close to the impact factor, which is Clarivate's and not available here. Preprints and journals without a figure are neither favoured nor penalised.")
                 }
 
                 Section {
@@ -144,14 +136,14 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Picker("Post is headed by", selection: $bylineRaw) {
-                        ForEach(BylineChoice.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
+                    Picker("Post is headed by", selection: $model.settings.byline) {
+                        ForEach(BylineChoice.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
                     Toggle("Show the journal on each post", isOn: $showCovers)
                 } header: {
                     Text("Posts")
                 } footer: {
-                    Text("Badges show initials: open scholarly data has no author photographs. Which end of the author list leads depends on your field. The picture carries the journal's name.")
+                    Text("Badges show initials: open scholarly data has no author photographs. Which end of the author list leads depends on your field. The h-index option below follows this choice: the higher of the two when both are shown. The picture carries the journal's name.")
                 }
 
                 Section("Content") {

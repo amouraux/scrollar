@@ -217,7 +217,7 @@ enum Ranker {
             if paper.isRepository && paper.kind != .preprint { score -= repositoryPenalty }
             score += settings.weight(for: paper.kind).adjustment
             score += impactBoost(paper.journalImpact, weight: settings.impactWeight)
-            score += authorBoost(paper, weight: settings.authorWeight, focus: settings.authorFocus)
+            score += authorBoost(paper, weight: settings.authorWeight, focus: settings.byline)
             ranked.append(RankedPaper(paper: paper, score: score, similarity: similarity[i]))
         }
         return ranked.sorted {

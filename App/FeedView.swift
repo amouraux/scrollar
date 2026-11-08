@@ -224,7 +224,6 @@ struct CoverBanner: View {
 struct PaperCard: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
-    @AppStorage("byline") private var bylineRaw = BylineChoice.last.rawValue
     @AppStorage("showCovers") private var showCovers = true
     let ranked: RankedPaper
     @State private var expanded = false
@@ -232,7 +231,7 @@ struct PaperCard: View {
 
     private var paper: Paper { ranked.paper }
     private var status: History.Status { model.status(of: paper) }
-    private var choice: BylineChoice { BylineChoice(rawValue: bylineRaw) ?? .last }
+    private var choice: BylineChoice { model.settings.byline }
     private var people: [Byline] { Byline.people(of: paper, choice: choice) }
 
     var body: some View {
@@ -350,14 +349,12 @@ struct PaperCard: View {
     private var hIndexLabel: String? {
         let s = model.settings
         guard s.authorWeight > 0 else { return nil }
-        switch s.authorFocus {
-        case .last: return paper.lastAuthorH.map { "last author h-index \($0)" }
-        case .first: return paper.firstAuthorH.map { "first author h-index \($0)" }
-        case .both:
-            guard paper.firstAuthorH != nil || paper.lastAuthorH != nil else { return nil }
-            return "h-index " + [paper.firstAuthorH.map { "\($0) first" }, paper.lastAuthorH.map { "\($0) last" }]
-                .compactMap { $0 }.joined(separator: ", ")
+        guard let h = Ranker.chosenH(paper, focus: s.byline) else { return nil }
+        // Say whose it is when two authors are shown and it is the higher one.
+        guard s.byline == .both, let first = paper.firstAuthorH, let last = paper.lastAuthorH, first != last else {
+            return "h-index \(h)" + (s.byline == .both ? "" : s.byline == .last ? " (last author)" : " (first author)")
         }
+        return "h-index \(h) (\(first > last ? "first" : "last") author)"
     }
 
     /// The journal is on the picture; here only when it was and what kind of paper.

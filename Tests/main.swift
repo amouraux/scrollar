@@ -532,9 +532,9 @@ var authorsOn = FeedSettings(); authorsOn.authorWeight = 1
 let seniorStar = ok("h1") { $0.firstAuthorH = 3; $0.lastAuthorH = 80; $0.date = "2026-10-01" }
 let juniorStar = ok("h2") { $0.firstAuthorH = 60; $0.lastAuthorH = 4; $0.date = "2026-10-01" }
 check(Ranker.rank([juniorStar, seniorStar], profileTexts: profile, settings: authorsOn, today: now).first?.paper.id == "h1", "h-index: by default the senior (last) author counts")
-authorsOn.authorFocus = .first
+authorsOn.byline = .first
 check(Ranker.rank([seniorStar, juniorStar], profileTexts: profile, settings: authorsOn, today: now).first?.paper.id == "h2", "h-index: the first author can be chosen instead")
-authorsOn.authorFocus = .both
+authorsOn.byline = .both
 check(abs(Ranker.authorBoost(seniorStar, weight: 1, focus: .both) - Ranker.authorBoost(juniorStar, weight: 1, focus: .both)) < 0.5, "h-index: 'either' takes the higher of the two, so both papers count as established")
 check(Ranker.chosenH(seniorStar, focus: .both) == 80 && Ranker.chosenH(ok("h3") { $0.lastAuthorH = 7 }, focus: .both) == 7, "h-index: either, with only one known")
 check(Ranker.authorBoost(ok("h4"), weight: 1, focus: .last) == 0, "h-index: an unknown author is neutral")
@@ -543,9 +543,15 @@ check(Ranker.authorBoost(ok("h5") { $0.lastAuthorH = 2 }, weight: 1, focus: .las
 check(Ranker.authorBoost(ok("h7") { $0.lastAuthorH = 900 }, weight: 1, focus: .last) == Ranker.authorBoost(ok("h8") { $0.lastAuthorH = 100 }, weight: 1, focus: .last), "h-index: capped at a hundred")
 check(ok("l1") { $0.authors = ["A", "B"]; $0.authorIDs = ["A1", "A2"] }.leadAuthorIDs?.last == "A2", "lead ids: the last author's id")
 check(ok("l2") { $0.authors = ["A", "B", "C"]; $0.authorIDs = ["A1", "A2"] }.leadAuthorIDs == nil, "lead ids: not guessed when names and ids do not line up")
-var slid2 = baseSettings; slid2.authorWeight = 1; slid2.authorFocus = .first
+var slid2 = baseSettings; slid2.authorWeight = 1; slid2.byline = .first
 check(Incremental.mode(previous: prev(), settings: slid2, now: tNow).isIncremental, "choosing the author h-index re-ranks incrementally")
-check(try FeedSettings.decode(Data("{\"authorFocus\": \"nonsense\"}".utf8)).authorFocus == .last, "an unknown author focus falls back to the senior author")
+check(try FeedSettings.decode(Data("{\"byline\": \"nonsense\"}".utf8)).byline == .last, "an unknown byline falls back to the last author")
+var bylineOnly = baseSettings; bylineOnly.byline = .both
+check(bylineOnly.forRanking == baseSettings.forRanking, "which author heads a post is display only while the h-index is off")
+bylineOnly.authorWeight = 0.5
+var bylineOther = bylineOnly; bylineOther.byline = .first
+check(bylineOnly.forRanking != bylineOther.forRanking, "and a ranking choice once the h-index counts")
+check(Ranker.authorBoost(seniorStar, weight: 1, focus: .both) == Ranker.authorBoost(ok("h9") { $0.lastAuthorH = 80 }, weight: 1, focus: .last), "both authors shown: the higher h-index counts")
 
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

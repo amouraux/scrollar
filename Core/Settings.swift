@@ -139,8 +139,9 @@ struct FeedSettings: Codable, Equatable {
     /// 0 ignores who wrote it; 1 gives a strong premium to papers whose chosen
     /// author has a high h-index.
     var authorWeight = 0.0
-    /// Whose h-index counts: the senior (last) author, the first, or the higher of the two.
-    var authorFocus = BylineChoice.last
+    /// Which author(s) head a post, and so whose h-index counts when it is wanted:
+    /// the last (senior) author, the first, or, for both, the higher of the two.
+    var byline = BylineChoice.last
 
     // MARK: Content
     var requireAbstract = false
@@ -177,7 +178,16 @@ struct FeedSettings: Codable, Equatable {
         s.closeness = d.closeness
         s.impactWeight = d.impactWeight
         s.authorWeight = d.authorWeight
-        s.authorFocus = d.authorFocus
+        s.byline = d.byline
+        return s
+    }
+
+    /// What the feed's contents and order depend on. Which author heads a post is
+    /// only a matter of display until the h-index is asked to count, so until then
+    /// changing it must not trigger a refresh.
+    var forRanking: FeedSettings {
+        var s = withoutFeedback
+        if s.authorWeight == 0 { s.byline = FeedSettings().byline }
         return s
     }
 
@@ -235,7 +245,7 @@ extension FeedSettings {
         case followedTopics, followedJournals, followedAuthors, followedInstitutions
         case followedFunders, followedKeywords, trackedPapers
         case mutedJournals, mutedAuthors, mutedTopics, mutedKeywords
-        case kindWeights, daysBack, recency, closeness, impactWeight, authorWeight, authorFocus
+        case kindWeights, daysBack, recency, closeness, impactWeight, authorWeight, byline
         case requireAbstract, openAccessOnly, seenExpiryDays, showReadPapers, languages, feedback
     }
 
@@ -265,7 +275,7 @@ extension FeedSettings {
         closeness = min(max(get(.closeness, closeness), 0), 1)
         impactWeight = min(max(get(.impactWeight, impactWeight), 0), 1)
         authorWeight = min(max(get(.authorWeight, authorWeight), 0), 1)
-        authorFocus = get(.authorFocus, authorFocus)
+        byline = get(.byline, byline)
         requireAbstract = get(.requireAbstract, requireAbstract)
         openAccessOnly = get(.openAccessOnly, openAccessOnly)
         seenExpiryDays = min(max(get(.seenExpiryDays, seenExpiryDays), 1), 60)

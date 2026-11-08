@@ -24,7 +24,7 @@ final class AppModel {
             store.saveSettings(settings)
             // Following something new or muting something means fetching again;
             // hiding one paper does not.
-            if settings.withoutFeedback != oldValue.withoutFeedback { needsRefresh = true }
+            if settings.forRanking != oldValue.forRanking { needsRefresh = true }
             if settings.seenExpiryDays != oldValue.seenExpiryDays { rearrange() }
         }
     }
@@ -94,7 +94,16 @@ final class AppModel {
             fetchedThrough = cached.fetchedThrough
             fullBuildAt = cached.fullBuildAt
             // A follow added just before the app was closed must not wait six hours.
-            if let built = cached.builtWith, built != settings.withoutFeedback { needsRefresh = true }
+            if let built = cached.builtWith, built.forRanking != settings.forRanking { needsRefresh = true }
+        }
+        // Which author heads a post used to be kept in the app's defaults. It is a
+        // setting now, because the h-index ranking follows it; carry the old choice over.
+        if let old = UserDefaults.standard.string(forKey: "byline") {
+            if let choice = BylineChoice(rawValue: old) {
+                settings.byline = choice
+                store.saveSettings(settings)
+            }
+            UserDefaults.standard.removeObject(forKey: "byline")
         }
         rearrange()
     }
@@ -209,7 +218,7 @@ final class AppModel {
             fullBuildAt = nil
         }
         // Settings changed while this was building: it is already out of date.
-        if settings.withoutFeedback != builtFor { needsRefresh = true }
+        if settings.forRanking != builtFor.forRanking { needsRefresh = true }
 
         history.prune(now: Date())
         let keys = Set((citedYou + forYou).map { $0.paper.dedupeKey })
