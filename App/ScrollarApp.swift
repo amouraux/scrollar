@@ -26,6 +26,9 @@ struct ScrollarApp: App {
             // What has been seen is written out when the app leaves the screen.
             .onChange(of: scenePhase) { _, new in
                 if new != .active { model.saveHistoryNow() }
+                // The app is often resumed, not launched: a feed more than six hours
+                // old is refreshed then too, behind the "new papers" pill.
+                if new == .active { Task { await model.refreshIfStale() } }
             }
             // Changes made in Tune are applied when the user goes back to the feed,
             // not on every tap.

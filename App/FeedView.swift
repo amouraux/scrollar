@@ -38,12 +38,9 @@ struct FeedView: View {
                 }
                 .animation(.default, value: model.pendingNew)
             }
-            .navigationTitle("Scrollar")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    if model.isLoading { ProgressView() }
-                }
-            }
+            // No title bar: the stream starts at the top of the screen. Progress is
+            // shown by the banner at the head of the list.
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 
