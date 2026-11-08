@@ -25,9 +25,11 @@ struct ReferenceFile: Transferable {
     }
 }
 
-/// Share on a post and in the pane: the link, or the reference as a file that a reference manager
-/// opens (Zotero, EndNote, Mendeley and the others all read RIS).
+/// Share on a post and in the pane: the link, the reference as a file that a reference manager
+/// opens (Zotero, EndNote, Mendeley and the others all read RIS), or, with a Zotero account
+/// connected in Tune, straight into the Zotero library.
 struct ShareMenu<Label: View>: View {
+    @Environment(AppModel.self) private var model
     let paper: Paper
     @ViewBuilder var label: () -> Label
 
@@ -38,6 +40,11 @@ struct ShareMenu<Label: View>: View {
             if let url = paper.link {
                 ShareLink(item: url, subject: Text(paper.title)) {
                     SwiftUI.Label("Share link", systemImage: "link")
+                }
+            }
+            if model.zotero != nil {
+                Button { Task { await model.saveToZotero(paper) } } label: {
+                    SwiftUI.Label("Save to Zotero", systemImage: "tray.and.arrow.down")
                 }
             }
             ShareLink(item: ReferenceFile(name: name, make: { [reference] }),

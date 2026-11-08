@@ -24,6 +24,20 @@ struct FeedView: View {
                 }
             }
             .onChange(of: wide, initial: true) { _, now in model.readerShown = now }
+            // The answer to Save to Zotero and the like: a post far down the list cannot show it.
+            .overlay(alignment: .bottom) {
+                if let toast = model.toast {
+                    Text(toast)
+                        .font(.subheadline.weight(.medium))
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .background(.regularMaterial, in: Capsule())
+                        .shadow(radius: 4, y: 2)
+                        .padding(.bottom, 90).padding(.horizontal, 16)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
+            }
+            .animation(.default, value: model.toast)
         }
     }
 

@@ -19,12 +19,15 @@ enum RIS {
         var keywords: [String] = []
         var language: String? = nil
         var isConference = false
+        /// A preprint is a journal article in RIS, whose journal is the server; Zotero has a type for it.
+        var isPreprint = false
     }
 
     static func reference(_ p: Paper) -> Reference {
         Reference(title: p.title, authors: p.authors, journal: p.journal, date: p.date, abstract: p.abstract,
                   doi: p.doi, pmid: p.pmid, url: p.link?.absoluteString, keywords: p.topics,
-                  language: p.language, isConference: p.kind == .conferenceAbstract)
+                  language: p.language, isConference: p.kind == .conferenceAbstract,
+                  isPreprint: p.kind == .preprint)
     }
 
     /// A saved or read paper holds an id, a title, an abstract, a date and (since later saves)

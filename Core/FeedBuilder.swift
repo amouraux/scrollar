@@ -42,10 +42,12 @@ enum FeedBuilder {
     }
 
     /// The text that stands for the user's interests: their own papers (if
-    /// enabled) and everything they have saved.
-    static func profileTexts(_ s: FeedSettings, own: [Paper]) -> [String] {
+    /// enabled), everything they have saved and, if they connected one, their reference library.
+    static func profileTexts(_ s: FeedSettings, own: [Paper], library: [String] = []) -> [String] {
         var texts = s.useMyPublications ? own.map { $0.title + ". " + ($0.abstract ?? "") } : []
         texts += s.feedback.saved.map { $0.title + ". " + ($0.abstract ?? "") }
+        // The reference library, already chosen and turned to text; empty unless the user connected one.
+        if s.useZotero { texts += library }
         return texts
     }
 

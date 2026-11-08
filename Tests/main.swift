@@ -1108,5 +1108,126 @@ check((try? JSONDecoder().decode(SavedPaper.self, from: Data(#"{"id":"doi:1","ti
 check(RIS.references([risSavedOld, SavedPaper(ok("zz"))], known: [risPaper.withDOI("10.1/old")]).map(\.authors) == [["Valéry Legrain", "Smith JA"], []], "ris: a list of saved papers is filled from the feed by key, and one the feed no longer holds keeps what it has")
 check(RIS.fileName(for: RIS.reference(risPaper)) == "Legrain-2026-Cortical-gamma-responses-a.ris" && RIS.fileName(for: RIS.Reference(title: "???", date: "")) == "reference.ris", "ris: the file is named for who, when and what, and never empty")
 
+// MARK: Zotero
+let zoteroJSON = Data("""
+[
+ {"key":"AAA","version":9,"data":{"itemType":"journalArticle","title":"  Cortical gamma responses  ","abstractNote":"We recorded EEG.","DOI":"https://doi.org/10.1000/ABC","dateAdded":"2026-11-02T09:14:05Z","publicationTitle":"Pain","tags":[{"tag":"EEG"},{"tag":"pain","type":1}]}},
+ {"key":"BBB","data":{"itemType":"preprint","title":"A preprint","repository":"bioRxiv","dateAdded":"2026-10-01T10:00:00Z","tags":[]}},
+ {"key":"CCC","data":{"itemType":"attachment","title":"Full Text PDF","dateAdded":"2026-11-03T10:00:00Z"}},
+ {"key":"DDD","data":{"itemType":"note","note":"<p>hi</p>","dateAdded":"2026-11-04T10:00:00Z"}},
+ {"key":"EEE","data":{"itemType":"book","title":"","dateAdded":"2026-11-05T10:00:00Z"}},
+ {"key":"FFF","data":{"itemType":"journalArticle","title":"Newest, no abstract","dateAdded":"2026-11-06T10:00:00Z","tags":[{"tag":"nociception"}]}}
+]
+""".utf8)
+let zItems = Zotero.items(from: zoteroJSON)
+check(zItems.map(\.key) == ["AAA", "BBB", "FFF"], "zotero: papers are read; attachments, notes and untitled items are not")
+check(zItems[0].title == "Cortical gamma responses" && zItems[0].doi == "10.1000/abc" && zItems[0].journal == "Pain" && zItems[0].tags == ["EEG", "pain"], "zotero: title trimmed, DOI made bare, journal and tags kept")
+check(zItems[1].journal == "bioRxiv" && zItems[1].abstract == nil, "zotero: a preprint's server stands in for the journal")
+check(Zotero.items(from: Data("{}".utf8)).isEmpty && Zotero.items(from: Data("nope".utf8)).isEmpty, "zotero: an answer that is not a list gives nothing, not an error")
+check(Zotero.profileText(zItems[0]) == "Cortical gamma responses. We recorded EEG.. EEG, pain" || Zotero.profileText(zItems[0]).hasSuffix("EEG, pain"), "zotero: the text is title, abstract and the user's own tags, tags last")
+let zTexts = Zotero.profileTexts(zItems, recent: 2)
+check(zTexts.count == 2 && zTexts[0].hasPrefix("Newest, no abstract") && zTexts[1].hasPrefix("Cortical gamma"), "zotero: the most recently added come first, and only as many as asked")
+check(Zotero.profileTexts(zItems, recent: 0).isEmpty && Zotero.profileTexts([], recent: 50).isEmpty, "zotero: none asked, or none held, is none")
+var zSettings = FeedSettings(); zSettings.useZotero = true
+check(FeedBuilder.profileTexts(zSettings, own: [], library: ["a library text"]).contains("a library text") && !FeedBuilder.profileTexts(FeedSettings(), own: [], library: ["a library text"]).contains("a library text"), "zotero: the library joins the profile only when the user switched it on")
+check(FeedSettings().useZotero == false && FeedSettings().zoteroRecent == 100, "zotero: off by default")
+var zClamped = Data(#"{"useZotero":true,"zoteroRecent":100000}"#.utf8)
+check((try? FeedSettings.decode(zClamped))?.zoteroRecent == 500 && (try? FeedSettings.decode(Data("{}".utf8)))?.useZotero == false, "zotero: the count is clamped when read, and an older settings file means off")
+var zOn = FeedSettings(); zOn.useZotero = true
+check(zOn.forFetching == FeedSettings().forFetching && zOn.forRanking != FeedSettings().forRanking, "zotero: switching it on re-ranks what is held and fetches nothing again")
+check(device(zOn, stamp: at(1)).apply(to: FeedSettings()).useZotero, "zotero: the choice syncs")
+let zKey = Data(#"{"key":"k","userID":123,"username":"ada","access":{"user":{"library":true,"files":true,"notes":true,"write":true}}}"#.utf8)
+check(Zotero.account(key: "secret", from: zKey) == ZoteroAccount(key: "secret", userID: 123, username: "ada", canWrite: true), "zotero: the account and write access are read from the key's description")
+check(Zotero.account(key: "k", from: Data(#"{"userID":5,"access":{"user":{"library":true}}}"#.utf8))?.canWrite == false && Zotero.account(key: "k", from: Data("{}".utf8)) == nil, "zotero: a read-only key says so, and a refusal is no account")
+var zRef = RIS.Reference(title: "A paper", authors: ["Valéry Legrain", "Smith JA"], journal: "Pain", date: "2026-10-03", abstract: "Abs.", doi: "10.1/x", url: "https://doi.org/10.1/x", keywords: ["EEG"], language: "en")
+let zNew = (try! JSONSerialization.jsonObject(with: Zotero.newItems(zRef)) as! [[String: Any]])[0]
+check(zNew["itemType"] as? String == "journalArticle" && zNew["publicationTitle"] as? String == "Pain" && zNew["DOI"] as? String == "10.1/x" && zNew["date"] as? String == "2026-10-03", "zotero: a paper is saved as a journal article with its journal, DOI and date")
+let zCreators = zNew["creators"] as! [[String: String]]
+check(zCreators[0] == ["creatorType": "author", "lastName": "Legrain", "firstName": "Valéry"] && zCreators[1]["lastName"] == "Smith" && zCreators[1]["firstName"] == "JA", "zotero: authors are split into first and last names")
+check((zNew["tags"] as! [[String: String]]) == [["tag": "EEG"]], "zotero: the topics become tags")
+zRef.isPreprint = true
+let zPre = (try! JSONSerialization.jsonObject(with: Zotero.newItems(zRef)) as! [[String: Any]])[0]
+check(zPre["itemType"] as? String == "preprint" && zPre["repository"] as? String == "Pain" && zPre["publicationTitle"] == nil, "zotero: a preprint is a preprint, its server in the repository field")
+check(Zotero.writeFailure(from: Data(#"{"successful":{"0":{"key":"X"}},"failed":{}}"#.utf8)) == nil && Zotero.writeFailure(from: Data(#"{"successful":{},"failed":{"0":{"code":400,"message":"'x' is not a valid field"}}}"#.utf8)) == "'x' is not a valid field" && Zotero.writeFailure(from: Data("x".utf8)) != nil, "zotero: a write that created nothing says why")
+
+// MARK: Zotero client, against a stub that answers instead of the network
+final class ZoteroStub: URLProtocol {
+    nonisolated(unsafe) static var seen: [URLRequest] = []
+    nonisolated(unsafe) static var answer: (URLRequest) -> (Int, [String: String], Data) = { _ in (200, [:], Data()) }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        var req = request
+        if req.httpBody == nil, let stream = req.httpBodyStream {
+            stream.open(); var data = Data(); var buf = [UInt8](repeating: 0, count: 4096)
+            while stream.hasBytesAvailable { let n = stream.read(&buf, maxLength: buf.count); if n <= 0 { break }; data.append(buf, count: n) }
+            req.httpBody = data
+        }
+        Self.seen.append(req)
+        let (code, headers, body) = Self.answer(req)
+        let response = HTTPURLResponse(url: req.url!, statusCode: code, httpVersion: "HTTP/1.1", headerFields: headers)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+let zConfig = URLSessionConfiguration.ephemeral; zConfig.protocolClasses = [ZoteroStub.self]
+let zSession = URLSession(configuration: zConfig)
+let zAccount = ZoteroAccount(key: "SECRETKEY", userID: 77, username: "ada", canWrite: true)
+let zClient = ZoteroClient(account: zAccount, session: zSession)
+func zPage(_ n: Int, from: Int = 0) -> Data {
+    let items = (from..<(from + n)).map { #"{"key":"K\#($0)","data":{"itemType":"journalArticle","title":"Paper \#($0)","dateAdded":"2026-11-\#(String(format: "%02d", 30 - $0 % 28))T10:00:00Z"}}"# }
+    return Data(("[" + items.joined(separator: ",") + "]").utf8)
+}
+ZoteroStub.answer = { _ in (200, [:], zKey) }
+let zConnected = try? await ZoteroClient.connect(key: "SECRETKEY", session: zSession)
+check(zConnected?.userID == 123 && zConnected?.canWrite == true && ZoteroStub.seen.last?.value(forHTTPHeaderField: "Zotero-API-Key") == "SECRETKEY" && ZoteroStub.seen.last?.url?.absoluteString.contains("SECRETKEY") == false, "zotero client: the key is sent in a header and never in the address")
+ZoteroStub.answer = { _ in (403, [:], Data()) }
+var zRefused = false
+do { _ = try await ZoteroClient.connect(key: "bad", session: zSession) } catch let e as ZoteroError { if case .refused = e { zRefused = true } } catch {}
+check(zRefused, "zotero client: a refused key is reported as refused")
+ZoteroStub.seen = []
+ZoteroStub.answer = { req in
+    let start = Int(URLComponents(url: req.url!, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "start" }!.value!)!
+    return start == 0 ? (200, ["Last-Modified-Version": "42"], zPage(100)) : (200, ["Last-Modified-Version": "42"], zPage(30, from: 100))
+}
+let zRecent = try? await zClient.recent(limit: 250, cache: nil)
+check(zRecent?.items.count == 130 && zRecent?.version == 42 && ZoteroStub.seen.count == 2, "zotero client: it pages by a hundred and stops at the end of the library")
+let zFirst = ZoteroStub.seen[0].url!.absoluteString
+check(zFirst.contains("sort=dateAdded") && zFirst.contains("direction=desc") && zFirst.contains("/users/77/items") && ZoteroStub.seen[0].value(forHTTPHeaderField: "Zotero-API-Version") == "3", "zotero client: it asks for the newest added first, as API version 3")
+ZoteroStub.seen = []
+ZoteroStub.answer = { _ in (304, [:], Data()) }
+let zUnchanged = try? await zClient.recent(limit: 100, cache: zRecent)
+check(zUnchanged == zRecent && ZoteroStub.seen.count == 1 && ZoteroStub.seen[0].value(forHTTPHeaderField: "If-Modified-Since-Version") == "42", "zotero client: an unchanged library costs one request and is answered from the copy held")
+ZoteroStub.seen = []
+ZoteroStub.answer = { _ in (200, ["Last-Modified-Version": "43"], zPage(3)) }
+let zBigger = try? await zClient.recent(limit: 100, cache: ZoteroCache(userID: 77, version: 42, asked: 10, items: []))
+check(zBigger?.items.count == 3 && ZoteroStub.seen[0].value(forHTTPHeaderField: "If-Modified-Since-Version") == nil, "zotero client: a copy made for fewer items than are wanted now is not trusted")
+ZoteroStub.answer = { _ in (429, ["Retry-After": "30"], Data()) }
+var zSlow = ""
+do { _ = try await zClient.recent(limit: 10, cache: nil) } catch { zSlow = "\(error)" }
+check(zSlow.contains("30 seconds") && !zSlow.contains("SECRETKEY"), "zotero client: a request to wait is passed on, and no error carries the key")
+ZoteroStub.seen = []
+ZoteroStub.answer = { _ in (200, [:], zoteroJSON) }
+let zHasYes = try? await zClient.has(doi: "10.1000/ABC")
+let zHasNo = try? await zClient.has(doi: "10.9/none")
+check(zHasYes == true && zHasNo == false, "zotero client: a paper already in the library is found by its DOI")
+ZoteroStub.seen = []
+ZoteroStub.answer = { _ in (200, [:], Data(#"{"successful":{"0":{"key":"NEW"}},"failed":{}}"#.utf8)) }
+var zAdded = false
+do { try await zClient.add(zRef); zAdded = true } catch {}
+let zPost = ZoteroStub.seen.last
+check(zAdded && zPost?.httpMethod == "POST" && zPost?.url?.path == "/users/77/items" && (zPost?.value(forHTTPHeaderField: "Zotero-Write-Token") ?? "").count == 32 && zPost?.httpBody != nil, "zotero client: saving is one POST with a write token, so a retry cannot make two")
+ZoteroStub.answer = { _ in (200, [:], Data(#"{"successful":{},"failed":{"0":{"code":400,"message":"bad field"}}}"#.utf8)) }
+var zFail = ""
+do { try await zClient.add(zRef) } catch { zFail = "\(error)" }
+check(zFail.contains("bad field"), "zotero client: when Zotero refuses an item the reason is shown")
+var zRead = zAccount; zRead.canWrite = false
+ZoteroStub.seen = []
+var zReadOnly = ""
+do { try await ZoteroClient(account: zRead, session: zSession).add(zRef) } catch { zReadOnly = "\(error)" }
+check(zReadOnly.contains("only read") && ZoteroStub.seen.isEmpty, "zotero client: a read-only key is told so before anything is sent")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

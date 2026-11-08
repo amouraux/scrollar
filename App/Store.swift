@@ -1,20 +1,21 @@
 import Foundation
 import Security
 
-/// The OpenAlex key lives in the Keychain: it is a credential, so it is not in
-/// the settings file, the feed cache, a backup or the binary.
+/// Credentials live in the Keychain: they are not in the settings file, the feed cache, a backup or
+/// the binary. One item per service, so the OpenAlex key and the Zotero key never meet.
 enum Keychain {
-    private static let service = "com.andremouraux.scrollar.openalex"
+    private static let openAlex = "com.andremouraux.scrollar.openalex"
+    static let zotero = "com.andremouraux.scrollar.zotero"
     private static let account = "api-key"
 
-    private static var query: [String: Any] {
+    private static func query(_ service: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service,
          kSecAttrAccount as String: account]
     }
 
-    static func load() -> String {
-        var q = query
+    static func load(service: String = openAlex) -> String {
+        var q = query(service)
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: AnyObject?
@@ -22,11 +23,11 @@ enum Keychain {
         return String(decoding: data, as: UTF8.self)
     }
 
-    static func save(_ key: String) {
-        SecItemDelete(query as CFDictionary)
-        guard !key.isEmpty else { return }
-        var q = query
-        q[kSecValueData as String] = Data(key.utf8)
+    static func save(_ value: String, service: String = openAlex) {
+        SecItemDelete(query(service) as CFDictionary)
+        guard !value.isEmpty else { return }
+        var q = query(service)
+        q[kSecValueData as String] = Data(value.utf8)
         q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         SecItemAdd(q as CFDictionary, nil)
     }
@@ -65,6 +66,7 @@ struct Store {
     private var historyURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("history.json") }
     private var ledgerURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("sync-ledger.json") }
     private var summariesURL: URL { folder(.cachesDirectory).appendingPathComponent("summaries.json") }
+    private var zoteroURL: URL { folder(.cachesDirectory).appendingPathComponent("zotero.json") }
     private var embeddingsURL: URL { folder(.cachesDirectory).appendingPathComponent("embeddings.plist") }
 
     enum SettingsResult {
@@ -146,6 +148,17 @@ struct Store {
 
     func saveLedger(_ ledger: SyncDocument) {
         if let data = try? ledger.encoded() { try? data.write(to: ledgerURL, options: .atomic) }
+    }
+
+    /// What was last read of the user's Zotero library. A cache: it is read again when Zotero says it changed.
+    func loadZotero() -> ZoteroCache? {
+        guard let data = try? Data(contentsOf: zoteroURL) else { return nil }
+        return try? JSONDecoder().decode(ZoteroCache.self, from: data)
+    }
+
+    func saveZotero(_ cache: ZoteroCache?) {
+        guard let cache, let data = try? JSONEncoder().encode(cache) else { try? fm.removeItem(at: zoteroURL); return }
+        try? data.write(to: zoteroURL, options: .atomic)
     }
 
     func loadEmbeddings() -> Data? { try? Data(contentsOf: embeddingsURL) }

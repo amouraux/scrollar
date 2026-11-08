@@ -253,7 +253,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Sync between devices")
                 } footer: {
-                    Text("Make the file in iCloud Drive on one device, then on each other device join that same file. Follows, mutes, keywords, sliders, saved and hidden papers and what you have read are shared and merged, so nothing is lost if you change things on two devices. The OpenAlex key and the feed itself stay on each device.")
+                    Text("Make the file in iCloud Drive on one device, then on each other device join that same file. Follows, mutes, keywords, sliders, saved and hidden papers and what you have read are shared and merged, so nothing is lost if you change things on two devices. The OpenAlex and Zotero keys and the feed itself stay on each device.")
                 }
 
                 Section {
@@ -262,8 +262,10 @@ struct SettingsView: View {
                 } header: {
                     Text("Backup")
                 } footer: {
-                    Text("A file you keep: your follows, mutes, keywords, sliders, and saved and hidden papers as they are now. It does not hold your OpenAlex key, the feed, or what you have read. Restoring replaces your current settings after asking, and with syncing on the other devices follow. Sync keeps your devices the same; a backup is how you go back.")
+                    Text("A file you keep: your follows, mutes, keywords, sliders, and saved and hidden papers as they are now. It does not hold your OpenAlex or Zotero key, the feed, or what you have read. Restoring replaces your current settings after asking, and with syncing on the other devices follow. Sync keeps your devices the same; a backup is how you go back.")
                 }
+
+                ZoteroSection()
 
                 Section {
                     Toggle("Europe PMC and PubMed", isOn: $model.settings.useEuropePMC)
@@ -768,6 +770,63 @@ private struct PreviewRow: View {
             Link(destination: url) { content }
         } else {
             content
+        }
+    }
+}
+
+
+/// Connecting a Zotero library: its newest items stand for what the user is into now, like the
+/// papers they save. The key is checked with Zotero, kept in the Keychain and sent only there.
+struct ZoteroSection: View {
+    @Environment(AppModel.self) private var appModel
+    @State private var key = ""
+    @State private var connecting = false
+    @State private var problem: String?
+
+    var body: some View {
+        @Bindable var model = appModel
+        Section {
+            if let account = model.zotero {
+                LabeledContent("Connected as", value: account.username.isEmpty ? "user \(account.userID)" : account.username)
+                Text(account.canWrite ? "This key can read your library and save papers to it."
+                                      : "This key can only read your library. Saving papers to it needs a key that may also write.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Toggle("Learn from my library", isOn: $model.settings.useZotero)
+                if model.settings.useZotero {
+                    Stepper("Newest items used: \(model.settings.zoteroRecent)",
+                            value: $model.settings.zoteroRecent, in: 10...500, step: 10)
+                    if let status = model.zoteroStatus {
+                        Text(status).font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                Button("Disconnect", role: .destructive) { model.disconnectZotero() }
+            } else {
+                SecureField("Zotero API key", text: $key)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button(connecting ? "Connecting…" : "Connect") { connect() }
+                    .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty || connecting)
+                if let problem { Text(problem).font(.footnote).foregroundStyle(.red) }
+                Link("Create a key at zotero.org", destination: URL(string: "https://www.zotero.org/settings/keys/new")!)
+            }
+        } header: {
+            Text("Zotero library")
+        } footer: {
+            Text("Your most recently added items (title, abstract and tags) are read and compared on this device, as your saved papers are, to judge which new papers are close to your work. Only the newest ones count, so what you are reading now outweighs what you filed years ago. Nothing is followed because of it: Follow lists stay yours. The key stays in this device's Keychain and is sent only to Zotero. A read-only key is enough to learn from the library; to also save papers from a post it must be allowed to write.")
+        }
+    }
+
+    private func connect() {
+        connecting = true
+        problem = nil
+        Task {
+            do {
+                try await appModel.connectZotero(key: key)
+                key = ""
+            } catch {
+                problem = "\(error)"
+            }
+            connecting = false
         }
     }
 }

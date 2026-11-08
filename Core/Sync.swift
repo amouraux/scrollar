@@ -183,6 +183,7 @@ enum SyncProjection {
         scalar("feedOrder", \.feedOrder), scalar("highlightCount", \.highlightCount),
         scalar("highlightCloseness", \.highlightCloseness), scalar("highlightImpact", \.highlightImpact),
         scalar("highlightAuthorH", \.highlightAuthorH), scalar("profileFilled", \.profileFilled),
+        scalar("useZotero", \.useZotero), scalar("zoteroRecent", \.zoteroRecent),
     ]
 
     /// Every decision a settings value holds, by key. An empty string is an item with no payload.

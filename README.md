@@ -319,6 +319,38 @@ The EndNote desktop app and the mobile apps open the file by tapping it; I could
 managers here (the simulator has none), only the file itself, which is checked in `Tests/main.swift`
 and by reading what the app wrote.
 
+## Zotero
+
+Tune, Zotero library connects an account with an API key made at zotero.org/settings/keys. The
+key is checked with Zotero (`GET /keys/current`, which says whose it is and whether it may write),
+kept with that answer in the Keychain, and sent only to api.zotero.org, in a header, never in an
+address, a log line or an error. It is not a setting, so it is in no sync file or backup.
+
+**Learning from it.** The newest items added (not modified: `sort=dateAdded`) are read, title,
+abstract and the user's own tags, and join the profile that defines "close to my work", exactly as
+saved papers do, so a paper is judged against what the user is filing now. How many count is a setting
+(10 to 500, 100 by default); old interests fade because only the newest are used. Nothing is
+followed because of it: Follow lists stay the user's, and it changes only how what is held is ranked,
+so switching it on costs a re-rank, not a rebuild (`FeedSettings.useZotero`, `zoteroRecent`, both
+synced; `forFetching` ignores them). The texts are embedded on the device; what leaves it is the
+request to Zotero. A library is read on each refresh but costs one request when nothing changed:
+Zotero answers "not modified" to `If-Modified-Since-Version` and the copy in the caches
+(`zotero.json`) is used, which is also what ranks when Zotero cannot be reached (and the feed says so
+when there is no copy). Going further back asks Zotero for nothing. Attachments, notes and untitled items
+are skipped; an item with no abstract still counts by its title and tags.
+
+**Saving to it.** With an account connected, the Share menu on a post and in the pane has Save to
+Zotero. It checks the DOI against the library first ("Already in your Zotero library"), then posts the
+paper as a journal article (a preprint or conference paper with its own type and venue field) with its
+authors, abstract, DOI, link and topics as tags, under a write token so a retry cannot make two. A key
+that can only read says so before anything is sent. The PDF is not attached; Zotero's own Find
+Available PDF does that. The answer shows briefly over the feed.
+
+Not built: group libraries (only the account's own), filling a missing abstract from the DOI, suggesting
+follows from the library's tags, and EndNote or Mendeley, for which there is no reading API I could
+use (the RIS export covers writing to them). The client is tested against a stub that answers instead
+of the network; a real library has not been read here.
+
 ## Tune
 
 Everything the user can enter is in `Core/Settings.swift`, with what each does: ORCID, up to three others to learn from, and whether

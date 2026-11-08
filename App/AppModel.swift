@@ -50,6 +50,12 @@ final class AppModel {
     }
 
     private(set) var layout = Layout()
+    /// The connected Zotero account, with its key: from the Keychain, never from a file.
+    private(set) var zotero: ZoteroAccount?
+    /// What the last read of the library did, for Tune; nil before one.
+    private(set) var zoteroStatus: String?
+    /// A one-line answer to something the user just did, shown briefly over the feed.
+    private(set) var toast: String?
     /// The paper open in the reader pane, if the window is wide enough to have one.
     private(set) var readerPaper: Paper?
     /// Set by the feed while it has room for the pane; a card taps through to the pane only then.
@@ -128,6 +134,7 @@ final class AppModel {
             settings = s
         }
         apiKey = Keychain.load()
+        zotero = Keychain.load(service: Keychain.zotero).data(using: .utf8).flatMap { try? JSONDecoder().decode(ZoteroAccount.self, from: $0) }
         history = store.loadHistory()
         summaries = store.loadSummaries()
         if let cached = store.loadFeed() {
@@ -239,6 +246,8 @@ final class AppModel {
         phase = .loading(older ? "Looking further back…" : "Starting…")
         if !older { needsRefresh = false }
         let settings = self.settings
+        // Going back asks for nothing from Zotero: the copy already held ranks what it fetches.
+        let library = await zoteroTexts(allowNetwork: !older)
         let useOpenAlex = usesOpenAlex
         // What this feed is built for, taken now: the user may change a follow
         // while it runs, and the result must not claim to match that.
@@ -255,7 +264,7 @@ final class AppModel {
                 let engine = FeedEngine(openAlex: useOpenAlex ? OpenAlexClient(apiKey: key) : nil,
                                         europePMC: settings.useEuropePMC ? EuropePMCClient() : nil,
                                         embedder: cache, log: report)
-                let result = try await engine.build(settings, previous: previous, older: older)
+                let result = try await engine.build(settings, previous: previous, older: older, library: library)
                 let used = result.profileTexts + (result.citedYou + result.forYou).map { Ranker.text($0.paper) }
                 return (result, cache?.snapshot(keeping: used))
             }.value
@@ -633,6 +642,69 @@ final class AppModel {
             notice = "Filled what you follow from \(found.paperCount) publications: \(chosen.count) topics, keywords, journals and researchers. They are under Follow in Tune, where you can change them."
         } catch {
             log.error("could not fill the follows from the publications: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    // MARK: Zotero
+
+    /// Check a key with Zotero and keep it. The key and who it belongs to go to the Keychain.
+    func connectZotero(key: String) async throws {
+        let account = try await ZoteroClient.connect(key: key.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard let data = try? JSONEncoder().encode(account) else { return }
+        Keychain.save(String(decoding: data, as: UTF8.self), service: Keychain.zotero)
+        zotero = account
+        zoteroStatus = nil
+        // Pasting a key is asking to use the library.
+        settings.useZotero = true
+    }
+
+    func disconnectZotero() {
+        Keychain.save("", service: Keychain.zotero)
+        store.saveZotero(nil)
+        zotero = nil
+        zoteroStatus = nil
+        settings.useZotero = false
+    }
+
+    /// The library as profile texts: read again only if Zotero says it changed, and the last copy
+    /// stands in when it cannot be reached, so a bad connection never costs the feed its ranking.
+    private func zoteroTexts(allowNetwork: Bool) async -> [String] {
+        guard settings.useZotero, let account = zotero else { return [] }
+        var cache = store.loadZotero()
+        if allowNetwork {
+            do {
+                let fresh = try await ZoteroClient(account: account).recent(limit: settings.zoteroRecent, cache: cache)
+                if fresh != cache { store.saveZotero(fresh) }
+                cache = fresh
+                zoteroStatus = "Read \(min(fresh.items.count, settings.zoteroRecent)) items at \(Date().formatted(date: .omitted, time: .shortened))."
+            } catch {
+                log.error("zotero read failed: \(String(describing: error), privacy: .public)")
+                zoteroStatus = "\(error)" + (cache == nil ? "" : " The last copy is in use.")
+                if cache == nil { notice = "Your Zotero library could not be read, so the feed was ranked without it. \(error)" }
+            }
+        }
+        return Zotero.profileTexts(cache?.items ?? [], recent: settings.zoteroRecent)
+    }
+
+    /// Add a paper to the user's Zotero library, unless its DOI is already there.
+    func saveToZotero(_ p: Paper) async {
+        guard let account = zotero else { return }
+        let client = ZoteroClient(account: account)
+        do {
+            if let doi = p.doi, try await client.has(doi: doi) { show("Already in your Zotero library"); return }
+            try await client.add(RIS.reference(p))
+            show("Saved to Zotero")
+        } catch {
+            show("\(error)")
+        }
+    }
+
+    /// Say something for a few seconds, over whatever is on screen.
+    func show(_ text: String) {
+        toast = text
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            if self?.toast == text { self?.toast = nil }
         }
     }
 
