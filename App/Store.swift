@@ -61,6 +61,7 @@ struct Store {
     private var settingsURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("settings.json") }
     private var feedURL: URL { folder(.cachesDirectory).appendingPathComponent("feed.json") }
     private var historyURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("history.json") }
+    private var summariesURL: URL { folder(.cachesDirectory).appendingPathComponent("summaries.json") }
     private var embeddingsURL: URL { folder(.cachesDirectory).appendingPathComponent("embeddings.plist") }
 
     enum SettingsResult {
@@ -115,6 +116,16 @@ struct Store {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         if let data = try? encoder.encode(history) { try? data.write(to: historyURL, options: .atomic) }
+    }
+
+    /// Takeaways the on-device model wrote, by paper. Regenerable, so a cache.
+    func loadSummaries() -> [String: String] {
+        guard let data = try? Data(contentsOf: summariesURL) else { return [:] }
+        return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
+    }
+
+    func saveSummaries(_ summaries: [String: String]) {
+        if let data = try? JSONEncoder().encode(summaries) { try? data.write(to: summariesURL, options: .atomic) }
     }
 
     func loadEmbeddings() -> Data? { try? Data(contentsOf: embeddingsURL) }

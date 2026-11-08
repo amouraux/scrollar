@@ -8,28 +8,56 @@ import Foundation
 /// in the life sciences the last author leads the lab; in much of physics and
 /// computing the first author did the work.
 enum BylineChoice: String, CaseIterable {
-    case last, first
+    case last, first, both
 
     var label: String {
         switch self {
         case .last: return "Last author (the lab)"
         case .first: return "First author"
+        case .both: return "First and last author"
         }
     }
 }
 
 struct Byline: Equatable {
     var name: String
+    /// Where this person stands in the paper's author list, so their OpenAlex id
+    /// can be looked up for muting.
+    var index: Int
     var institution: String?
     var initials: String
     /// 0...1, from the name, so the same person has the same colour everywhere.
     var hue: Double
 
-    static func of(_ paper: Paper, choice: BylineChoice) -> Byline? {
-        guard let name = (choice == .last ? paper.authors.last : paper.authors.first), !name.isEmpty else { return nil }
-        // A one-author paper has one answer whichever is asked for.
-        let institution = (choice == .last ? paper.lastInstitution : paper.firstInstitution)
-        return Byline(name: name, institution: institution, initials: initials(name), hue: hue(for: name))
+    /// The people a post is headed by: one, or the first and the last. A paper
+    /// with a single author has one whichever is asked for.
+    static func people(of paper: Paper, choice: BylineChoice) -> [Byline] {
+        guard !paper.authors.isEmpty else { return [] }
+        let first = person(paper, last: false)
+        let last = person(paper, last: true)
+        switch choice {
+        case .first: return first.map { [$0] } ?? []
+        case .last: return last.map { [$0] } ?? []
+        case .both:
+            let both = [first, last].compactMap { $0 }
+            return paper.authors.count > 1 ? both : Array(both.prefix(1))
+        }
+    }
+
+    private static func person(_ paper: Paper, last: Bool) -> Byline? {
+        let index = last ? paper.authors.count - 1 : 0
+        guard paper.authors.indices.contains(index), !paper.authors[index].isEmpty else { return nil }
+        let name = paper.authors[index]
+        return Byline(name: name, index: index,
+                      institution: last ? paper.lastInstitution : paper.firstInstitution,
+                      initials: initials(name), hue: hue(for: name))
+    }
+
+    /// "Ghent University · UCLouvain", or one name where they share it.
+    static func places(_ people: [Byline]) -> String? {
+        var seen: [String] = []
+        for p in people { if let i = p.institution, !seen.contains(i) { seen.append(i) } }
+        return seen.isEmpty ? nil : seen.joined(separator: " · ")
     }
 
     /// "Valéry Legrain" -> "VL", "Ludwig van der Berg" -> "LB", "Madonna" -> "MA".

@@ -120,11 +120,11 @@ struct SettingsView: View {
                     Picker("Post is headed by", selection: $bylineRaw) {
                         ForEach(BylineChoice.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
                     }
-                    Toggle("Show a picture on each post", isOn: $showCovers)
+                    Toggle("Show the journal on each post", isOn: $showCovers)
                 } header: {
                     Text("Posts")
                 } footer: {
-                    Text("The badge shows the initials of that author: open scholarly data has no photographs. The picture is drawn from the paper's topic.")
+                    Text("Badges show initials: open scholarly data has no author photographs. Which end of the author list leads depends on your field. The picture carries the journal's name.")
                 }
 
                 Section("Content") {

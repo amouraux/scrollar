@@ -22,6 +22,18 @@ enum Cover {
         return CoverSpec(hueA: a, hueB: b, symbol: symbol(for: paper))
     }
 
+    /// The same picture, coloured by the journal, for a post that shows the
+    /// journal's name: every paper from one journal then looks alike, so a
+    /// journal can be recognised before it is read. Without a journal, the topic.
+    static func spec(for paper: Paper, byJournal: Bool) -> CoverSpec {
+        var spec = self.spec(for: paper)
+        guard byJournal, let journal = paper.journal, !journal.isEmpty else { return spec }
+        let h = CachingEmbedder.hash(journal.lowercased())
+        spec.hueA = Double(h % 360) / 360
+        spec.hueB = (spec.hueA + 0.06 + Double((h >> 20) % 14) / 100).truncatingRemainder(dividingBy: 1)
+        return spec
+    }
+
     // First match wins, so the more specific words come first.
     private static let symbols: [(words: [String], symbol: String)] = [
         (["ion channel", "receptor", "molecul", "protein", "enzyme"], "atom"),

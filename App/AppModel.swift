@@ -43,6 +43,11 @@ final class AppModel {
     private(set) var updated: Date?
     private(set) var usedEmbeddings = true
     private(set) var phase: Phase = .idle
+    /// Takeaways written by the on-device model, by paper. Where there is none,
+    /// a post shows sentences chosen from the abstract instead.
+    private(set) var summaries: [String: String]
+    private var summaryFailures: Set<String> = []
+    private var saveSummariesTask: Task<Void, Never>?
     /// How many papers a background refresh found that are not on screen yet.
     private(set) var pendingNew = 0
     /// Something the user should be told once, such as a settings file that would not load.
@@ -78,6 +83,7 @@ final class AppModel {
         }
         apiKey = Keychain.load()
         history = store.loadHistory()
+        summaries = store.loadSummaries()
         if let cached = store.loadFeed() {
             citedYou = cached.citedYou
             forYou = cached.forYou
@@ -206,6 +212,9 @@ final class AppModel {
         if settings.withoutFeedback != builtFor { needsRefresh = true }
 
         history.prune(now: Date())
+        let keys = Set((citedYou + forYou).map { $0.paper.dedupeKey })
+        summaries = summaries.filter { keys.contains($0.key) }
+        store.saveSummaries(summaries)
         rearrange()
         store.saveHistory(history)
         store.saveFeed(CachedFeed(citedYou: citedYou, forYou: forYou, authorName: authorName,
@@ -238,6 +247,39 @@ final class AppModel {
 
     private func progress(_ message: String) {
         if case .loading = phase { phase = .loading(message) }
+    }
+
+    // MARK: Takeaways
+
+    /// What a post says: the model's takeaway if there is one, else the
+    /// sentences the abstract itself offers.
+    func takeaway(for p: Paper) -> (text: String, writtenByModel: Bool)? {
+        if let written = summaries[p.dedupeKey] { return (written, true) }
+        if let chosen = Summary.takeaway(from: p.abstract) { return (chosen, false) }
+        return nil
+    }
+
+    /// Ask the model for a post that has been on screen a moment. It runs when the
+    /// post appears and is cancelled when it leaves, so scrolling fast costs nothing.
+    func writeTakeaway(for p: Paper) async {
+        let key = p.dedupeKey
+        guard summaries[key] == nil, !summaryFailures.contains(key),
+              let abstract = p.abstract, Summarizer.isAvailable else { return }
+        if let text = await Summarizer.shared.takeaway(title: p.title, abstract: abstract) {
+            summaries[key] = text
+            saveSummariesSoon()
+        } else if !Task.isCancelled {
+            summaryFailures.insert(key)   // refused or failed: do not ask again this run
+        }
+    }
+
+    private func saveSummariesSoon() {
+        saveSummariesTask?.cancel()
+        saveSummariesTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled, let self else { return }
+            self.store.saveSummaries(self.summaries)
+        }
     }
 
     // MARK: What the user does with a paper

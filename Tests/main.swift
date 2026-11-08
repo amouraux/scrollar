@@ -451,9 +451,29 @@ check(Byline.initials("") == "?", "initials: no name, no letters")
 check(Byline.hue(for: "Valéry Legrain") == Byline.hue(for: "valéry legrain"), "the colour does not depend on case")
 check(Byline.hue(for: "Valéry Legrain") != Byline.hue(for: "André Mouraux"), "two people get different colours")
 let bylined = ok("by1") { $0.authors = ["Ada First", "Mid Author", "Zoe Last"]; $0.firstInstitution = "Ghent University"; $0.lastInstitution = "UCLouvain" }
-check(Byline.of(bylined, choice: .last)?.name == "Zoe Last" && Byline.of(bylined, choice: .last)?.institution == "UCLouvain", "last author leads with their own institution")
-check(Byline.of(bylined, choice: .first)?.name == "Ada First" && Byline.of(bylined, choice: .first)?.institution == "Ghent University", "first author leads with their own institution")
-check(Byline.of(ok("by2") { $0.authors = [] }, choice: .last) == nil, "a paper with no authors has no byline")
+check(Byline.people(of: bylined, choice: .last).first?.name == "Zoe Last" && Byline.people(of: bylined, choice: .last).first?.institution == "UCLouvain", "last author leads with their own institution")
+check(Byline.people(of: bylined, choice: .first).first?.name == "Ada First" && Byline.people(of: bylined, choice: .first).first?.institution == "Ghent University", "first author leads with their own institution")
+check(Byline.people(of: ok("by2") { $0.authors = [] }, choice: .last).isEmpty, "a paper with no authors has no byline")
+let both = Byline.people(of: bylined, choice: .both)
+check(both.map(\.name) == ["Ada First", "Zoe Last"] && both.map(\.index) == [0, 2], "both: the first author, then the last, with their places in the list")
+check(Byline.places(both) == "Ghent University · UCLouvain", "both: each person's institution, once")
+let sameLab = ok("by4") { $0.authors = ["A One", "B Two"]; $0.firstInstitution = "UCLouvain"; $0.lastInstitution = "UCLouvain" }
+check(Byline.places(Byline.people(of: sameLab, choice: .both)) == "UCLouvain", "both: a shared institution is named once")
+check(Byline.people(of: ok("by5") { $0.authors = ["Solo Author"] }, choice: .both).count == 1, "both: a single author is shown once")
+check(Cover.spec(for: ok("j1") { $0.journal = "Pain" }, byJournal: true).hueA == Cover.spec(for: ok("j2") { $0.journal = "PAIN"; $0.topics = ["Other"] }, byJournal: true).hueA, "one journal, one colour, whatever the topic")
+check(Cover.spec(for: ok("j3") { $0.journal = "Pain" }, byJournal: true).hueA != Cover.spec(for: ok("j4") { $0.journal = "Nature" }, byJournal: true).hueA, "two journals, two colours")
+check(Cover.spec(for: ok("j5") { $0.journal = nil }, byJournal: true) == Cover.spec(for: ok("j5") { $0.journal = nil }), "no journal: the topic colour")
+
+// MARK: takeaway
+let abstractA = "Background: Chronic pain is common and costly. We aimed to test whether cold relieves it. Cold significantly reduced pain in treated mice. The effect was mediated by TRPM8 channels. Further work is needed."
+let taken = Summary.takeaway(from: abstractA)
+check(taken == "Cold significantly reduced pain in treated mice. The effect was mediated by TRPM8 channels.", "takeaway: two result sentences, in the abstract's order, no background or aims")
+check(taken?.hasSuffix("…") == false, "takeaway: a whole sentence is never cut off")
+let longOne = "We found that " + String(repeating: "a very long clause about the experiment, ", count: 9) + "was significant."
+check(Summary.takeaway(from: longOne + " Cold reduced pain significantly in treated mice.") == "Cold reduced pain significantly in treated mice.", "takeaway: a short result beats a rambling one")
+check(Summary.takeaway(from: nil) == nil && Summary.takeaway(from: "Too short.") == nil, "takeaway: nothing to say, nothing returned")
+check((Summary.takeaway(from: "Cold reduced pain significantly in treated mice. Heat increased it significantly in the same animals.") ?? "").count <= 300, "takeaway: stays within its budget")
+
 let withInstitution = ok("by3") { $0.firstInstitution = "X" }
 let withoutInstitution = ok("by3")
 check(Merge.combine([withoutInstitution, withInstitution]).first?.firstInstitution == "X", "an institution one copy lacks is filled from the other")
@@ -462,6 +482,11 @@ check(!Incremental.mode(previous: staleCache, settings: baseSettings, now: tNow)
 var freshCache = staleCache
 freshCache.papers = [ok("new") { $0.lastInstitution = "UCLouvain" }]
 check(Incremental.mode(previous: freshCache, settings: baseSettings, now: tNow).isIncremental, "and an up-to-date cache is not")
+
+let wordy = "The study found that cold reduced pain.\n\nIt also showed that heat did not.\n\nA third sentence is not wanted. A fourth neither."
+check(Summary.limited(wordy) == "The study found that cold reduced pain. It also showed that heat did not.", "limited: two sentences, one paragraph")
+check(Summary.limited("   ") == nil, "limited: nothing in, nothing out")
+check(Summary.limited(String(repeating: "word ", count: 120) + "end.", maxLength: 80)?.hasSuffix("…") == true, "limited: one endless sentence is clipped, not passed on")
 
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

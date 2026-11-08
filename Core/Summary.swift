@@ -6,13 +6,7 @@ import Foundation
 /// (see the notes in the README); this is what works on every device.
 enum Summary {
     static func sentence(from abstract: String?, maxLength: Int = 200) -> String? {
-        guard let abstract, !abstract.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-
-        var sentences: [String] = []
-        abstract.enumerateSubstrings(in: abstract.startIndex..., options: .bySentences) { s, _, _, _ in
-            if let s { sentences.append(strippingHeading(s.trimmingCharacters(in: .whitespacesAndNewlines))) }
-        }
-        sentences = sentences.filter { $0.count >= 25 }
+        let sentences = cleanSentences(abstract)
         guard !sentences.isEmpty else { return nil }
 
         // Highest score wins; on a tie the later sentence does, because an
@@ -24,6 +18,56 @@ enum Summary {
             if score >= bestScore { best = i; bestScore = score }
         }
         return clip(sentences[best], to: maxLength)
+    }
+
+    /// One or two whole sentences saying what the paper found, for a post that
+    /// has room for them. Never cut off mid-sentence: a sentence that is too long
+    /// loses to a shorter one, and only if every sentence is too long is one
+    /// clipped. Two sentences only when both state a result and both fit.
+    static func takeaway(from abstract: String?, maxLength: Int = 300) -> String? {
+        let all = cleanSentences(abstract)
+        guard !all.isEmpty else { return nil }
+        let scored = all.enumerated().map { (index: $0.offset, text: $0.element,
+                                              score: score($0.element, position: $0.offset, of: all.count)) }
+        let fitting = scored.filter { $0.text.count <= 240 }
+        let pool = fitting.isEmpty ? scored : fitting
+
+        // Highest score; on a tie the later sentence, as in `sentence`.
+        func better(_ a: (index: Int, text: String, score: Int), _ b: (index: Int, text: String, score: Int)) -> Bool {
+            (a.score, a.index) < (b.score, b.index)
+        }
+        guard let best = pool.max(by: better) else { return nil }
+        var chosen = [best]
+        if let second = pool.filter({ $0.index != best.index && $0.score > 0 }).max(by: better),
+           best.text.count + second.text.count + 1 <= maxLength {
+            chosen.append(second)
+        }
+        let text = chosen.sorted { $0.index < $1.index }.map(\.text).joined(separator: " ")
+        return clip(text, to: maxLength)
+    }
+
+    /// A language model asked for two sentences sometimes writes five, in
+    /// paragraphs. Keep the first `n`, as one paragraph, and never cut mid-sentence
+    /// unless the first sentence alone is too long.
+    static func limited(_ text: String, sentences n: Int = 2, maxLength: Int = 320) -> String? {
+        let flat = text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        var found: [String] = []
+        flat.enumerateSubstrings(in: flat.startIndex..., options: .bySentences) { s, _, _, stop in
+            if let s = s?.trimmingCharacters(in: .whitespaces), !s.isEmpty { found.append(s) }
+            if found.count == n { stop = true }
+        }
+        guard var out = found.first else { return nil }
+        for s in found.dropFirst() where out.count + s.count + 1 <= maxLength { out += " " + s }
+        return clip(out, to: maxLength)
+    }
+
+    private static func cleanSentences(_ abstract: String?) -> [String] {
+        guard let abstract, !abstract.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+        var sentences: [String] = []
+        abstract.enumerateSubstrings(in: abstract.startIndex..., options: .bySentences) { s, _, _, _ in
+            if let s { sentences.append(strippingHeading(s.trimmingCharacters(in: .whitespacesAndNewlines))) }
+        }
+        return sentences.filter { $0.count >= 25 }
     }
 
     // MARK: Scoring
