@@ -16,6 +16,7 @@ enum ZoteroError: Error, CustomStringConvertible {
     case server(Int)
     case unreadable
     case cannotWrite
+    case storageFull
     case failed(String)
 
     var description: String {
@@ -25,6 +26,7 @@ enum ZoteroError: Error, CustomStringConvertible {
         case .server(let code): return "Zotero answered with an error (\(code))."
         case .unreadable: return "Zotero's answer could not be read."
         case .cannotWrite: return "This key can only read your library. Make one that may also write, to save papers here."
+        case .storageFull: return "Your Zotero file storage is full."
         case .failed(let why): return "Zotero did not add it: \(why)"
         }
     }
@@ -102,17 +104,111 @@ struct ZoteroClient {
         return Zotero.items(from: data).contains { $0.doi == Identifiers.doi(doi) }
     }
 
-    /// Adds a paper to the library's top level. The write token makes a retry of the same request
-    /// safe: Zotero ignores a token it has already seen.
-    func add(_ reference: RIS.Reference) async throws {
+    /// A PDF on this device to put with the item, and its MD5, which Zotero asks for. The hash is
+    /// the caller's because Foundation has none.
+    struct PDF {
+        var file: URL
+        var md5: String
+    }
+
+    /// What saving did: the item's key, and how the PDF went. The item is the point; a PDF that
+    /// could not be attached (storage full, too large) never makes the save fail.
+    struct Added: Equatable {
+        var key: String
+        var pdf: PDFOutcome
+    }
+
+    enum PDFOutcome: Equatable {
+        case notOffered, attached
+        case skipped(String)
+    }
+
+    /// Largest file sent in one piece; bigger ones are left for the reader to attach in Zotero.
+    static let largestPDF = 40_000_000
+
+    /// Adds a paper to a collection (or the library's top level), with its PDF when there is one.
+    /// The write token makes a retry of the same request safe: Zotero ignores a token it has
+    /// already seen.
+    @discardableResult
+    func add(_ reference: RIS.Reference, collection: String? = nil, pdf: PDF? = nil) async throws -> Added {
         guard account.canWrite else { throw ZoteroError.cannotWrite }
-        var r = request("/users/\(account.userID)/items")
+        let data = try await write("/users/\(account.userID)/items", Zotero.newItems(reference, collection: collection))
+        if let why = Zotero.writeFailure(from: data) { throw ZoteroError.failed(why) }
+        guard let key = Zotero.createdKey(from: data) else { return Added(key: "", pdf: .notOffered) }
+        guard let pdf else { return Added(key: key, pdf: .notOffered) }
+        do {
+            try await attach(pdf, to: key)
+            return Added(key: key, pdf: .attached)
+        } catch ZoteroError.storageFull {
+            return Added(key: key, pdf: .skipped("Your Zotero file storage is full, so the PDF was not attached."))
+        } catch {
+            return Added(key: key, pdf: .skipped("The PDF could not be attached (\(error))."))
+        }
+    }
+
+    private func write(_ path: String, _ body: Data) async throws -> Data {
+        var r = request(path)
         r.httpMethod = "POST"
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        r.setValue(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased(), forHTTPHeaderField: "Zotero-Write-Token")
-        r.httpBody = Zotero.newItems(reference)
+        r.setValue(Self.token(), forHTTPHeaderField: "Zotero-Write-Token")
+        r.httpBody = body
         let (data, response) = try await session.data(for: r)
         _ = try Self.check(response)
+        return data
+    }
+
+    private static func token() -> String { UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased() }
+
+    /// The three steps Zotero's file upload takes: make the attachment item, ask where to send the
+    /// file, send it and say it arrived.
+    private func attach(_ pdf: PDF, to parent: String) async throws {
+        let size = (try FileManager.default.attributesOfItem(atPath: pdf.file.path)[.size] as? Int) ?? 0
+        guard size > 0, size <= Self.largestPDF else { throw ZoteroError.failed("the file is too large to send from here") }
+        let filename = "paper.pdf"
+        let made = try await write("/users/\(account.userID)/items", Zotero.pdfAttachment(parent: parent, filename: filename))
+        if let why = Zotero.writeFailure(from: made) { throw ZoteroError.failed(why) }
+        guard let item = Zotero.createdKey(from: made) else { throw ZoteroError.unreadable }
+
+        var ask = request("/users/\(account.userID)/items/\(item)/file")
+        ask.httpMethod = "POST"
+        ask.setValue("*", forHTTPHeaderField: "If-None-Match")
+        ask.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        let mtime = Int((try? pdf.file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?.timeIntervalSince1970 ?? Date().timeIntervalSince1970) * 1000
+        ask.httpBody = Data("md5=\(pdf.md5)&filename=\(filename)&filesize=\(size)&mtime=\(mtime)".utf8)
+        let (answer, askResponse) = try await session.data(for: ask)
+        do { _ = try Self.check(askResponse) } catch ZoteroError.server(413) { throw ZoteroError.storageFull }
+        switch Zotero.uploadAnswer(from: answer) {
+        case .exists: return
+        case .none: throw ZoteroError.unreadable
+        case .send(let url, let type, let prefix, let suffix, let uploadKey)?:
+            var upload = URLRequest(url: url, timeoutInterval: 120)
+            upload.httpMethod = "POST"
+            upload.setValue(type, forHTTPHeaderField: "Content-Type")
+            upload.httpBody = Data(prefix.utf8) + (try Data(contentsOf: pdf.file)) + Data(suffix.utf8)
+            let (_, sent) = try await session.data(for: upload)
+            guard let http = sent as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw ZoteroError.server((sent as? HTTPURLResponse)?.statusCode ?? 0) }
+            var done = request("/users/\(account.userID)/items/\(item)/file")
+            done.httpMethod = "POST"
+            done.setValue("*", forHTTPHeaderField: "If-None-Match")
+            done.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            done.httpBody = Data("upload=\(uploadKey)".utf8)
+            let (_, registered) = try await session.data(for: done)
+            _ = try Self.check(registered)
+        }
+    }
+
+    /// The library's top-level collections.
+    func collections() async throws -> [Zotero.Collection] {
+        let (data, response) = try await session.data(for: request("/users/\(account.userID)/collections", query: ["format": "json", "limit": "100"]))
+        _ = try Self.check(response)
+        return Zotero.collections(from: data)
+    }
+
+    func createCollection(named name: String) async throws -> Zotero.Collection {
+        guard account.canWrite else { throw ZoteroError.cannotWrite }
+        let data = try await write("/users/\(account.userID)/collections", Zotero.newCollection(name))
         if let why = Zotero.writeFailure(from: data) { throw ZoteroError.failed(why) }
+        guard let key = Zotero.createdKey(from: data) else { throw ZoteroError.unreadable }
+        return Zotero.Collection(key: key, name: name)
     }
 }

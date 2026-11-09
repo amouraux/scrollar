@@ -1433,5 +1433,54 @@ sfOld.id = sfFeed.dedupeKey
 check(SavedFilter.enriched([sfOld], from: [sfFeed]).first?.reasons == ["Keyword: sleep"] && SavedFilter.enriched([sfA], from: [sfFeed]).first == sfA, "enrich: an older entry learns its reasons from the feed, and a classified one is left alone")
 check((try? JSONDecoder().decode(SavedPaper.self, from: Data(#"{"id":"doi:1","title":"t","date":"2026-01-01"}"#.utf8)))?.reasons == nil, "kept: an entry from before reasons were stored still loads")
 
+// MARK: PDF cache, EndNote format, Zotero attachments and collections
+func pe(_ name: String, _ mb: Int, _ age: Int) -> PDFCachePlan.Entry { .init(name: name, size: mb * 1_000_000, used: at(-Double(age))) }
+let pcEntries = [pe("a", 100, 5), pe("b", 100, 3), pe("c", 100, 1), pe("d", 100, 9)]
+check(PDFCachePlan.eviction(pcEntries, limit: 500_000_000).isEmpty && PDFCachePlan.eviction(pcEntries, limit: 400_000_000).isEmpty, "pdf cache: nothing is deleted while the files fit")
+check(PDFCachePlan.eviction(pcEntries, limit: 250_000_000) == ["d", "a"], "pdf cache: the least recently used go first, only as many as needed")
+check(PDFCachePlan.eviction(pcEntries, limit: 250_000_000, protected: ["d"]) == ["a", "b"], "pdf cache: the PDF of a saved paper is kept while others can go")
+check(PDFCachePlan.eviction(pcEntries, limit: 0, protected: ["d"]) == ["a", "b", "c", "d"] && PDFCachePlan.total(pcEntries) == 400_000_000, "pdf cache: a protected file goes last when nothing else is left to delete")
+let enRef = RIS.Reference(title: "Machine learning\nfor sleep", authors: ["Ada Lovelace", "Salido-Ruiz RA"], journal: "Life", date: "2026-10-18", abstract: "Line one.\nLine two.", doi: "10.3390/x", pmid: "123", url: "https://doi.org/10.3390/x", keywords: ["sleep", "EEG"], language: "en")
+let enText = EndNote.record(enRef)
+check(enText.hasPrefix("%0 Journal Article\n%A Lovelace, Ada\n%A Salido-Ruiz, RA\n%T Machine learning for sleep\n%J Life\n%D 2026\n%8 October 18\n%R 10.3390/x"), "endnote: the record starts with its type, the authors surname first, the title on one line")
+check(enText.contains("%K sleep\n%K EEG\n%X Line one. Line two.\n") && enText.hasSuffix("\n") && !enText.contains("\n\n"), "endnote: one field a line, a value never carries a newline, no blank line inside a record")
+check(EndNote.document([enRef, enRef]).components(separatedBy: "\n\n").count == 2 && EndNote.fileName(for: enRef).hasSuffix(".enw"), "endnote: records are separated by a blank line, the file is .enw")
+check(Zotero.createdKey(from: Data(#"{"successful":{"0":{"key":"AB12"}},"failed":{}}"#.utf8)) == "AB12" && Zotero.createdKey(from: Data("{}".utf8)) == nil, "zotero: the key of a created item is read from the answer")
+check(Zotero.uploadAnswer(from: Data(#"{"exists":1}"#.utf8)) == .exists && Zotero.uploadAnswer(from: Data(#"{"url":"https://s3.example/up","contentType":"multipart/form-data; boundary=x","prefix":"P","suffix":"S","uploadKey":"UK"}"#.utf8)) == .send(url: URL(string: "https://s3.example/up")!, contentType: "multipart/form-data; boundary=x", prefix: "P", suffix: "S", uploadKey: "UK") && Zotero.uploadAnswer(from: Data("x".utf8)) == nil, "zotero: an upload answer is either 'exists' or where to send the file")
+let zColl = Zotero.collections(from: Data(#"[{"key":"B","data":{"name":"thesis","parentCollection":false}},{"key":"A","data":{"name":"Alpha"}},{"key":"C","data":{"name":"sub","parentCollection":"A"}}]"#.utf8))
+check(zColl.map(\.name) == ["Alpha", "thesis"], "zotero: the picker lists top-level collections by name")
+let zInColl = (try! JSONSerialization.jsonObject(with: Zotero.newItems(zRef, collection: "COLLKEY")) as! [[String: Any]])[0]
+check(zInColl["collections"] as? [String] == ["COLLKEY"] && (try! JSONSerialization.jsonObject(with: Zotero.newItems(zRef)) as! [[String: Any]])[0]["collections"] == nil, "zotero: an item goes into the chosen collection, and into none by default")
+let pdfDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+try? FileManager.default.createDirectory(at: pdfDir, withIntermediateDirectories: true)
+let pdfFile = pdfDir.appendingPathComponent("x.pdf"); try? Data("%PDF-1.4 test".utf8).write(to: pdfFile)
+ZoteroStub.seen = []
+ZoteroStub.answer = { req in
+    let path = req.url!.path
+    if req.url!.host == "s3.example" { return (201, [:], Data()) }
+    if path.hasSuffix("/file") && String(decoding: req.httpBody ?? Data(), as: UTF8.self).hasPrefix("md5=") {
+        return (200, [:], Data(#"{"url":"https://s3.example/up","contentType":"multipart/form-data; boundary=x","prefix":"PRE","suffix":"SUF","uploadKey":"UK"}"#.utf8))
+    }
+    if path.hasSuffix("/file") { return (204, [:], Data()) }
+    return (200, [:], Data(#"{"successful":{"0":{"key":"KEY1"}},"failed":{}}"#.utf8))
+}
+let zWithPDF = try? await zClient.add(zRef, collection: "COLL", pdf: ZoteroClient.PDF(file: pdfFile, md5: "abc123"))
+let zPaths = ZoteroStub.seen.map { $0.url!.path }
+let zUpload = ZoteroStub.seen.first { $0.url!.host == "s3.example" }
+check(zWithPDF == ZoteroClient.Added(key: "KEY1", pdf: .attached) && zPaths == ["/users/77/items", "/users/77/items", "/users/77/items/KEY1/file", "/up", "/users/77/items/KEY1/file"], "zotero client: the item, its attachment, the upload request, the file and the confirmation, in that order")
+check(String(decoding: zUpload?.httpBody ?? Data(), as: UTF8.self) == "PRE%PDF-1.4 testSUF" && ZoteroStub.seen[2].value(forHTTPHeaderField: "If-None-Match") == "*" && String(decoding: ZoteroStub.seen[2].httpBody ?? Data(), as: UTF8.self).hasPrefix("md5=abc123&filename=paper.pdf&filesize=13"), "zotero client: the file is sent between Zotero's prefix and suffix, after announcing its hash and size")
+check(String(decoding: ZoteroStub.seen[0].httpBody ?? Data(), as: UTF8.self).contains("\"collections\":[\"COLL\"]") && String(decoding: ZoteroStub.seen[1].httpBody ?? Data(), as: UTF8.self).contains("\"parentItem\":\"KEY1\""), "zotero client: the item goes in the collection and the attachment under the item")
+ZoteroStub.answer = { req in
+    if req.url!.path.hasSuffix("/file") { return (413, [:], Data()) }
+    return (200, [:], Data(#"{"successful":{"0":{"key":"KEY2"}},"failed":{}}"#.utf8))
+}
+let zFull = try? await zClient.add(zRef, pdf: ZoteroClient.PDF(file: pdfFile, md5: "abc"))
+check(zFull?.key == "KEY2" && { if case .skipped(let why)? = zFull?.pdf { return why.contains("storage is full") } else { return false } }(), "zotero client: when file storage is full the item is still saved and the reader is told the PDF was not")
+ZoteroStub.seen = []
+let zNoPDF = try? await zClient.add(zRef)
+check(zNoPDF?.pdf == .notOffered && ZoteroStub.seen.count == 1, "zotero client: without a PDF it is one request, as before")
+ZoteroStub.answer = { _ in (200, [:], Data(#"[{"key":"B","data":{"name":"thesis"}}]"#.utf8)) }
+check((try? await zClient.collections())?.map(\.name) == ["thesis"], "zotero client: it lists the collections")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

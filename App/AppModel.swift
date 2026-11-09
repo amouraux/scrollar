@@ -185,6 +185,7 @@ final class AppModel {
         syncStatus = syncFile == nil ? .off : .idle(nil)
         rearrange()
         if let remote = remoteSummary { Task { await Summarizer.shared.configure(remote: remote) } }
+        PDFCache.savedKeys = { [weak self] in self?.settings.feedback.saved.map(\.id) ?? [] }
     }
 
     /// The key to use. In a debug build an environment variable stands in when
@@ -810,14 +811,39 @@ final class AppModel {
         return Zotero.profileTexts(file.items, recent: settings.zoteroRecent)
     }
 
-    /// Add a paper to the user's Zotero library, unless its DOI is already there.
+    /// Where in Zotero a saved paper goes (a collection of the library; nil is the top level) and
+    /// whether its PDF goes with it. On this device only: like the key, they belong to the account
+    /// connected here, and a collection's key means nothing in another library.
+    var zoteroCollection: Zotero.Collection? = UserDefaults.standard.data(forKey: "zoteroCollection")
+        .flatMap { try? JSONDecoder().decode(Zotero.Collection.self, from: $0) } {
+        didSet { UserDefaults.standard.set(zoteroCollection.flatMap { try? JSONEncoder().encode($0) }, forKey: "zoteroCollection") }
+    }
+    var zoteroAttachPDF: Bool = (UserDefaults.standard.object(forKey: "zoteroAttachPDF") as? Bool) ?? true {
+        didSet { UserDefaults.standard.set(zoteroAttachPDF, forKey: "zoteroAttachPDF") }
+    }
+
+    /// Add a paper to the user's Zotero library, unless its DOI is already there, in the chosen
+    /// collection and with its PDF when one can be had (the kept copy, or a direct download).
     func saveToZotero(_ p: Paper) async {
         guard let account = zotero else { return }
         let client = ZoteroClient(account: account)
+        show("Saving to Zotero…")
         do {
             if let doi = p.doi, try await client.has(doi: doi) { show("Already in your Zotero library"); return }
-            try await client.add(RIS.reference(p))
-            show("Saved to Zotero")
+            let link = PDFLink.clean(p.pdfURL).flatMap(URL.init(string:))
+            var pdf: ZoteroClient.PDF?
+            if zoteroAttachPDF, let link, let file = await PDFCache.file(for: p.dedupeKey, url: link, referer: p.link),
+               let md5 = PDFCache.md5(of: file) {
+                pdf = ZoteroClient.PDF(file: file, md5: md5)
+            }
+            let added = try await client.add(RIS.reference(p), collection: zoteroCollection?.key, pdf: pdf)
+            var text = "Saved to Zotero" + (zoteroCollection.map { " in “\($0.name)”" } ?? "")
+            switch added.pdf {
+            case .attached: text += ", with its PDF"
+            case .skipped(let why): text += ". " + why
+            case .notOffered: if zoteroAttachPDF && link != nil { text += ". Its PDF could not be fetched, so none was attached." }
+            }
+            show(text)
         } catch {
             show("\(error)")
         }

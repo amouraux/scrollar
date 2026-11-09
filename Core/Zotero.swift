@@ -87,7 +87,7 @@ enum Zotero {
     /// The body that saves a paper: a one-element list of Zotero items, which is what `POST /items`
     /// takes. A preprint and a conference paper get their own types, and their venue goes in the
     /// field Zotero keeps it in.
-    static func newItems(_ r: RIS.Reference) -> Data {
+    static func newItems(_ r: RIS.Reference, collection: String? = nil) -> Data {
         let type = r.isPreprint ? "preprint" : r.isConference ? "conferencePaper" : "journalArticle"
         var item: [String: Any] = ["itemType": type, "title": r.title]
         item["creators"] = r.authors.map { name -> [String: String] in
@@ -105,6 +105,7 @@ enum Zotero {
         if let url = r.url { item["url"] = url }
         if let language = r.language { item["language"] = language }
         item["tags"] = r.keywords.map { ["tag": $0] }
+        if let collection { item["collections"] = [collection] }
         return (try? JSONSerialization.data(withJSONObject: [item], options: [.sortedKeys])) ?? Data()
     }
 
@@ -115,5 +116,57 @@ enum Zotero {
         if let failed = o["failed"] as? [String: Any],
            let first = failed.values.first as? [String: Any], let message = first["message"] as? String { return message }
         return "Zotero did not add it."
+    }
+
+    /// The key of the first item a write created.
+    static func createdKey(from data: Data) -> String? {
+        guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let ok = o["successful"] as? [String: Any],
+              let first = ok.sorted(by: { $0.key < $1.key }).first?.value as? [String: Any] else { return nil }
+        return first["key"] as? String
+    }
+
+    /// The PDF as a child of the item: stored in Zotero's own file storage, so the reader has it in
+    /// the Zotero app. (A link to the publisher's address would cost no storage but is not the file.)
+    static func pdfAttachment(parent: String, filename: String) -> Data {
+        let item: [String: Any] = ["itemType": "attachment", "parentItem": parent, "linkMode": "imported_file",
+                                   "title": "Full text PDF", "contentType": "application/pdf", "filename": filename]
+        return (try? JSONSerialization.data(withJSONObject: [item], options: [.sortedKeys])) ?? Data()
+    }
+
+    /// What Zotero says to an upload request: either "I already have this file" or where to send it.
+    enum UploadAnswer: Equatable {
+        case exists
+        case send(url: URL, contentType: String, prefix: String, suffix: String, uploadKey: String)
+    }
+
+    static func uploadAnswer(from data: Data) -> UploadAnswer? {
+        guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        if (o["exists"] as? Int) == 1 { return .exists }
+        guard let u = (o["url"] as? String).flatMap(URL.init(string:)), let type = o["contentType"] as? String,
+              let prefix = o["prefix"] as? String, let suffix = o["suffix"] as? String,
+              let key = o["uploadKey"] as? String else { return nil }
+        return .send(url: u, contentType: type, prefix: prefix, suffix: suffix, uploadKey: key)
+    }
+
+    struct Collection: Equatable, Hashable, Codable {
+        var key: String
+        var name: String
+    }
+
+    /// The top-level collections of a library, by name. Sub-collections are left out: a picker of a
+    /// whole tree is more than saving a paper needs.
+    static func collections(from data: Data) -> [Collection] {
+        guard let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+        return rows.compactMap { row in
+            guard let key = row["key"] as? String, let d = row["data"] as? [String: Any],
+                  let name = d["name"] as? String, !name.isEmpty else { return nil }
+            if let parent = d["parentCollection"] as? String, !parent.isEmpty { return nil }
+            return Collection(key: key, name: name)
+        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    static func newCollection(_ name: String) -> Data {
+        (try? JSONSerialization.data(withJSONObject: [["name": name]])) ?? Data()
     }
 }

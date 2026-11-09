@@ -337,6 +337,34 @@ The EndNote desktop app and the mobile apps open the file by tapping it; I could
 managers here (the simulator has none), only the file itself, which is checked in `Tests/main.swift`
 and by reading what the app wrote.
 
+## PDF storage, and reaching each reference manager
+
+**Downloaded PDFs are kept** in the app's Caches folder (`App/PDFCache.swift`), so a paper opens again at
+once and without a connection. Tune → Downloaded PDFs shows the space used, a limit (200 MB to 2 GB,
+or none; 500 MB by default) and Clear. When the limit is passed the least recently used go first, and
+the PDFs of papers you saved only after every other (`Core/PDFCachePlan.swift`, tested). The system may
+also empty Caches by itself; then it is a download again. Only a direct download is kept: a PDF shown by
+the web view fallback is not a file the app holds.
+
+How each manager is reached, and why:
+
+- **Zotero** has a real write interface, so with an account connected (Tune) Save to Zotero creates the
+  item with its full metadata, in the collection chosen there (or one named Scrollar that the app can
+  create), and attaches the PDF: the kept copy, or a direct download made at that moment. The file
+  goes into Zotero's own storage and counts against its quota (300 MB free); if it is full or too
+  large the item is still saved and the message says the PDF was not. Without an account, the share sheet's link or
+  PDF goes to the Zotero app, which has its own importer.
+- **EndNote** has no way in from outside the app, but opens its own `.enw` import format with a tap or
+  a double-click, so the menu offers that (`Core/EndNote.swift`). Its RIS import works too, through a
+  menu. I could not run EndNote here: the file is checked against the format, not against EndNote.
+- **Mendeley** has a web interface only for an app registered with Elsevier and signed in with OAuth,
+  which is not something to ask of a reader, and I found no endpoint that reads RIS. So: the `.ris`
+  file and the PDF, which its import and drag-and-drop take. Tell me if you want a registered-app
+  route anyway.
+
+The pieces I could only test against a stand-in for Zotero (`Tests/main.swift`, the whole upload
+sequence); I have not saved to a real Zotero library from here.
+
 ## Filtering what you kept
 
 Saved, For me and Read share a **Filter** panel (the button at the top right; on a wide window it

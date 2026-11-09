@@ -278,6 +278,8 @@ struct SettingsView: View {
 
                 LibraryFileSection()
 
+                PDFStorageSection()
+
                 Section {
                     Toggle("Europe PMC and PubMed", isOn: $model.settings.useEuropePMC)
                     Toggle("OpenAlex", isOn: $model.settings.useOpenAlex)
@@ -793,6 +795,23 @@ struct ZoteroSection: View {
     @State private var key = ""
     @State private var connecting = false
     @State private var problem: String?
+    @State private var collections: [Zotero.Collection] = []
+    @State private var collectionNote: String?
+
+    private func loadCollections() async {
+        guard let account = appModel.zotero, account.canWrite else { return }
+        do { collections = try await ZoteroClient(account: account).collections(); collectionNote = nil }
+        catch { collectionNote = "The collections could not be listed: \(error)" }
+    }
+
+    private func createCollection() async {
+        guard let account = appModel.zotero else { return }
+        do {
+            let made = try await ZoteroClient(account: account).createCollection(named: "Scrollar")
+            collections = (collections + [made]).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            appModel.zoteroCollection = made
+        } catch { collectionNote = "\(error)" }
+    }
 
     var body: some View {
         @Bindable var model = appModel
@@ -802,6 +821,23 @@ struct ZoteroSection: View {
                 Text(account.canWrite ? "This key can read your library and save papers to it."
                                       : "This key can only read your library. Saving papers to it needs a key that may also write.")
                     .font(.footnote).foregroundStyle(.secondary)
+                if account.canWrite {
+                    Picker("Save papers into", selection: Binding(
+                        get: { model.zoteroCollection?.key ?? "" },
+                        set: { key in model.zoteroCollection = collections.first { $0.key == key } })) {
+                        Text("My Library (no collection)").tag("")
+                        // The chosen one stays listed while the list loads, or if it was renamed.
+                        if let chosen = model.zoteroCollection, !collections.contains(chosen) {
+                            Text(chosen.name).tag(chosen.key)
+                        }
+                        ForEach(collections, id: \.key) { Text($0.name).tag($0.key) }
+                    }
+                    if !collections.contains(where: { $0.name == "Scrollar" }) {
+                        Button("Create a “Scrollar” collection and use it") { Task { await createCollection() } }
+                    }
+                    Toggle("Attach the PDF when one is free to read", isOn: $model.zoteroAttachPDF)
+                    if let note = collectionNote { Text(note).font(.footnote).foregroundStyle(.secondary) }
+                }
                 Toggle("Learn from my library", isOn: $model.settings.useZotero)
                 if model.settings.useZotero {
                     Stepper("Newest items used: \(model.settings.zoteroRecent)",
@@ -810,7 +846,7 @@ struct ZoteroSection: View {
                         Text(status).font(.footnote).foregroundStyle(.secondary)
                     }
                 }
-                Button("Disconnect", role: .destructive) { model.disconnectZotero() }
+                Button("Disconnect", role: .destructive) { model.zoteroCollection = nil; model.disconnectZotero() }
             } else {
                 SecureField("Zotero API key", text: $key)
                     .textInputAutocapitalization(.never)
@@ -823,8 +859,9 @@ struct ZoteroSection: View {
         } header: {
             Text("Zotero library")
         } footer: {
-            Text("Your most recently added items (title, abstract and tags) are read and compared on this device, as your saved papers are, to judge which new papers are close to your work. Only the newest ones count, so what you are reading now outweighs what you filed years ago. Nothing is followed because of it: Follow lists stay yours. The key stays in this device's Keychain and is sent only to Zotero. A read-only key is enough to learn from the library; to also save papers from a post it must be allowed to write.")
+            Text("Your most recently added items (title, abstract and tags) are read and compared on this device, as your saved papers are, to judge which new papers are close to your work. Only the newest ones count, so what you are reading now outweighs what you filed years ago. Nothing is followed because of it: Follow lists stay yours. The key stays in this device's Keychain and is sent only to Zotero. A read-only key is enough to learn from the library; to also save papers from a post it must be allowed to write. A PDF attached to an item is stored in your Zotero file storage and counts against its quota (300 MB on the free plan); if it is full the paper is still saved, without the PDF.")
         }
+        .task(id: model.zotero?.userID) { await loadCollections() }
     }
 
     private func connect() {
@@ -1021,5 +1058,38 @@ struct PasteReferencesSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+/// The PDFs kept for the reader: how much room they take, a cap, and a way to empty them.
+struct PDFStorageSection: View {
+    @State private var usage = PDFCache.usage()
+    @State private var limit: Int? = PDFCache.limit
+    @State private var clearing = false
+
+    var body: some View {
+        Section {
+            LabeledContent("Kept on this device",
+                           value: usage.count == 0 ? "Nothing" :
+                           "\(ByteCountFormatter.string(fromByteCount: Int64(usage.bytes), countStyle: .file)) in \(usage.count) PDF" + (usage.count == 1 ? "" : "s"))
+            Picker("Keep up to", selection: $limit) {
+                ForEach(PDFCachePlan.limits, id: \.label) { Text($0.label).tag($0.bytes) }
+            }
+            .onChange(of: limit) { PDFCache.limit = limit; PDFCache.trim(); usage = PDFCache.usage() }
+            Button("Clear downloaded PDFs…", role: .destructive) { clearing = true }
+                .disabled(usage.count == 0)
+        } header: {
+            Text("Downloaded PDFs")
+        } footer: {
+            Text("A PDF opened in the reader is kept here, so it opens again at once, without a connection, and can be sent to a reference manager. When the limit is passed the ones you used longest ago are deleted first, and those of papers you saved last. The system may also empty this space when the device is short of it. Nothing here is part of your settings or sync.")
+        }
+        .onAppear { usage = PDFCache.usage() }
+        .confirmationDialog("Delete the downloaded PDFs?", isPresented: $clearing, titleVisibility: .visible) {
+            Button("Delete all", role: .destructive) { PDFCache.clear(keepingSaved: false); usage = PDFCache.usage() }
+            Button("Delete all except saved papers", role: .destructive) { PDFCache.clear(keepingSaved: true); usage = PDFCache.usage() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("They can be downloaded again from the paper.")
+        }
     }
 }
