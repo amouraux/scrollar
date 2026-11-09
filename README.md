@@ -337,6 +337,23 @@ The EndNote desktop app and the mobile apps open the file by tapping it; I could
 managers here (the simulator has none), only the file itself, which is checked in `Tests/main.swift`
 and by reading what the app wrote.
 
+## Filtering what you kept
+
+Saved, For me and Read share a **Filter** panel (the button at the top right; on a wide window it
+sits beside the list, on a narrow one it opens as a sheet). It groups the list by why each paper
+reached your feed, the same reasons the posts show: cites your work, an author you follow, a keyword,
+a journal, an institution, a funder, a topic you follow, a topic from your own papers. Under a kind
+are the names within it (which author, which topic) with a count; choosing one filters the list,
+choosing it again clears it. Sort by latest kept, publication date, or relevance to me (the most
+specific reason first, then papers with more reasons), and search by title, author or journal. Each
+row says its top reason. Export always takes the whole list, whatever the filter shows.
+
+A saved paper now keeps its reasons (`SavedPaper.reasons`, `.followed`, optional, so older entries
+and older apps are unaffected, and the sync format is unchanged). Papers kept before this get them
+from the feed while it still holds the paper, and are listed under Other otherwise; they are not
+guessed. The logic is `Core/SavedFilter.swift`, tested in `Tests/main.swift`. I checked the panel on
+the iPad simulator with made-up saved papers; the Mac window itself I only built.
+
 ## Without Apple Intelligence
 
 Apple Intelligence is not switched on everywhere (not on iPhones in the EU, at the time of writing), and

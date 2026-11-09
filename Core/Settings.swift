@@ -136,6 +136,11 @@ struct SavedPaper: Codable, Hashable {
     /// reads one simply ignores them.
     var authors: [String]?
     var journal: String?
+    /// Why the paper was in the feed when it was kept, and whether the topic was one the user follows.
+    /// Lets a list be filtered by what makes a paper relevant to the user. Optional for the same
+    /// reason as the two above; `SavedFilter.enriched` fills them in from the feed for older entries.
+    var reasons: [String]?
+    var followed: Bool?
 
     init(_ p: Paper) {
         id = p.dedupeKey
@@ -144,6 +149,8 @@ struct SavedPaper: Codable, Hashable {
         date = p.date
         authors = p.authors.isEmpty ? nil : p.authors
         journal = p.journal
+        reasons = p.reasons.isEmpty ? nil : p.reasons
+        followed = p.reasons.isEmpty ? nil : p.followed
     }
 }
 

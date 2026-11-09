@@ -35,23 +35,92 @@ struct Why: Equatable {
             .map { Why(text: $0.element.text, symbol: $0.element.symbol, others: 0, isCitation: $0.element.rank <= 1) }
     }
 
-    private static func describe(_ reason: String, followed: Bool) -> (rank: Int, text: String, symbol: String) {
+    /// The kinds of reason, in the order the user's own choices outrank one another. The raw value
+    /// is the rank, so sorting by it puts the most specific first.
+    enum Kind: Int, CaseIterable, Comparable {
+        case citesYou, citesTracked, author, keyword, journal, institution, funder, followedTopic, ownTopic, other
+
+        static func < (a: Kind, b: Kind) -> Bool { a.rawValue < b.rawValue }
+
+        /// A heading for a group of papers that share it (the filter panel).
+        var title: String {
+            switch self {
+            case .citesYou: return "Cites your work"
+            case .citesTracked: return "Cites a paper you track"
+            case .author: return "Author you follow"
+            case .keyword: return "Keyword you follow"
+            case .journal: return "Journal you follow"
+            case .institution: return "Institution you follow"
+            case .funder: return "Funder you follow"
+            case .followedTopic: return "Topic you follow"
+            case .ownTopic: return "Topic from your own papers"
+            case .other: return "Other"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .citesYou, .citesTracked: return "quote.bubble"
+            case .author: return "person"
+            case .keyword: return "magnifyingglass"
+            case .journal: return "newspaper"
+            case .institution: return "building.columns"
+            case .funder: return "banknote"
+            case .followedTopic: return "tag"
+            case .ownTopic: return "person.text.rectangle"
+            case .other: return fallbackSymbol
+            }
+        }
+    }
+
+    /// One reason, taken apart: what kind it is and the name it carries (the author, the topic, the
+    /// tracked paper's title; empty for "Cites your work"). Two papers found for the same name share a tag.
+    struct Tag: Hashable {
+        var kind: Kind
+        var detail: String
+    }
+
+    /// The reasons as tags, most specific first, a paper's own order breaking a tie.
+    static func tags(reasons: [String], followed: Bool) -> [Tag] {
+        let tags = reasons.map { tag($0, followed: followed) }
+        // Sorted by rank alone and stable, so a paper's own order breaks a tie.
+        return tags.enumerated().sorted { l, r in
+            l.element.kind == r.element.kind ? l.offset < r.offset : l.element.kind < r.element.kind
+        }.map { $0.element }
+    }
+
+    static func tag(_ reason: String, followed: Bool) -> Tag {
         func after(_ prefix: String) -> String? {
             reason.hasPrefix(prefix) ? String(reason.dropFirst(prefix.count)) : nil
         }
-        if reason == "Cites your work" { return (0, "Cites your work", "quote.bubble") }
-        if let title = after("Cites: ") { return (1, "Cites a paper you track: \(title)", "quote.bubble") }
-        if let name = after("Author: ") { return (2, "Author you follow: \(name)", "person") }
-        if let name = after("Keyword: ") { return (3, "Keyword you follow: \(name)", "magnifyingglass") }
-        if after("Journal: ") != nil { return (4, "From a journal you follow", "newspaper") }
-        if let name = after("Institution: ") { return (5, "Institution you follow: \(name)", "building.columns") }
-        if let name = after("Funder: ") { return (6, "Funder you follow: \(name)", "banknote") }
+        if reason == "Cites your work" { return Tag(kind: .citesYou, detail: "") }
+        if let title = after("Cites: ") { return Tag(kind: .citesTracked, detail: title) }
+        if let name = after("Author: ") { return Tag(kind: .author, detail: name) }
+        if let name = after("Keyword: ") { return Tag(kind: .keyword, detail: name) }
+        if let name = after("Journal: ") { return Tag(kind: .journal, detail: name) }
+        if let name = after("Institution: ") { return Tag(kind: .institution, detail: name) }
+        if let name = after("Funder: ") { return Tag(kind: .funder, detail: name) }
         if let name = after("Topic: ") {
             // A followed topic and one inferred from the user's own papers read alike
             // in the reasons; the paper's `followed` flag says which.
-            return followed ? (7, "Topic you follow: \(name)", "tag")
-                            : (8, "Topic from your own papers: \(name)", "person.text.rectangle")
+            return Tag(kind: followed ? .followedTopic : .ownTopic, detail: name)
         }
-        return (9, reason, fallbackSymbol)
+        return Tag(kind: .other, detail: reason)
+    }
+
+    /// The sentence a post or a saved row says for a tag.
+    static func text(for tag: Tag) -> String {
+        switch tag.kind {
+        case .citesYou: return "Cites your work"
+        case .citesTracked: return "Cites a paper you track: \(tag.detail)"
+        case .journal: return "From a journal you follow"
+        case .other: return tag.detail
+        default: return "\(tag.kind.title): \(tag.detail)"
+        }
+    }
+
+    private static func describe(_ reason: String, followed: Bool) -> (rank: Int, text: String, symbol: String) {
+        let t = tag(reason, followed: followed)
+        return (t.kind.rawValue, text(for: t), t.kind.symbol)
     }
 }

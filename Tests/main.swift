@@ -1403,5 +1403,35 @@ fmFeedback.unlike(fmPaper.dedupeKey)
 check(!fmFeedback.isLiked(fmPaper) && (try? JSONDecoder().decode(Feedback.self, from: Data(#"{"saved":[],"hidden":[]}"#.utf8)))?.liked.isEmpty == true, "for me: it can be taken back, and a settings file from before it still loads")
 check(SyncDocument.currentFormat == 2, "sync: the format is raised, so an app that does not know the newer entries leaves the file alone instead of erasing them")
 
+func keptPaper(_ id: String, _ reasons: [String], followed: Bool = true, age: Int = 3) -> SavedPaper {
+    var p = paper(id, "Paper \(id)", age: age); p.reasons = reasons; p.followed = followed
+    p.authors = ["Ada Lovelace"]
+    return SavedPaper(p)
+}
+let sfA = keptPaper("a", ["Topic: Electroencephalography"], age: 5)
+let sfB = keptPaper("b", ["Author: Marie Curie", "Topic: Electroencephalography"], age: 2)
+let sfC = keptPaper("c", ["Cites your work"], age: 9)
+let sfD = keptPaper("d", ["Topic: Pain"], followed: false, age: 1)
+var sfOld = SavedPaper(paper("e", "Paper e", age: 4))
+let sfAll = [sfA, sfB, sfC, sfD, sfOld]
+check(SavedPaper(paper("x", "x")).reasons == nil && sfA.reasons == ["Topic: Electroencephalography"] && sfD.followed == false, "kept: a paper keeps why it was in the feed, and nothing when it had no reason")
+check(Why.tags(reasons: ["Topic: Pain", "Author: Marie Curie", "Cites your work"], followed: true).map(\.kind) == [.citesYou, .author, .followedTopic], "classes: reasons come out as kinds, the most specific first")
+check(Why.tag("Topic: Pain", followed: false).kind == .ownTopic && Why.text(for: Why.tag("Journal: Pain", followed: true)) == "From a journal you follow", "classes: a topic from the user's papers is its own kind, and the journal sentence is unchanged")
+let sfFacets = SavedFilter.facets(sfAll)
+check(sfFacets.first { $0.kind == .followedTopic && $0.detail == nil }?.count == 2, "filter: a kind counts the papers that have it")
+check(sfFacets.first { $0.kind == .followedTopic && $0.detail == "Electroencephalography" } == nil, "filter: a kind with one name does not list that name again")
+check(sfFacets.first { $0.kind == .other }?.count == 1 && sfFacets.map(\.kind).first == .citesYou, "filter: a paper without a reason is counted as other, and the kinds run most specific first")
+check(SavedFilter(kind: .author).apply(sfAll).map(\.id) == [sfB.id], "filter: by kind")
+check(SavedFilter(kind: .followedTopic, detail: "Electroencephalography").apply(sfAll).map(\.id) == [sfA.id, sfB.id], "filter: by a name within a kind")
+check(SavedFilter(kind: .other).apply(sfAll).map(\.id) == [sfOld.id], "filter: the unclassified can be asked for")
+check(SavedFilter(query: "curie lovelace").apply(sfAll).isEmpty && SavedFilter(query: "LOVELACE paper").apply(sfAll).count == 4, "filter: the search words must all match the title, journal or authors")
+check(SavedFilter(sort: .published).apply(sfAll).map(\.id) == [sfD.id, sfB.id, sfOld.id, sfA.id, sfC.id], "sort: by publication date, newest first")
+check(SavedFilter(sort: .relevance).apply(sfAll).map(\.id) == [sfC.id, sfB.id, sfA.id, sfD.id, sfOld.id], "sort: by relevance, the most specific reason first, then more reasons, and the unclassified last")
+check(SavedFilter(sort: .kept).apply(sfAll).map(\.id) == sfAll.map(\.id), "sort: the list's own order is kept")
+var sfFeed = ok("e"); sfFeed.reasons = ["Keyword: sleep"]; sfFeed.followed = true
+sfOld.id = sfFeed.dedupeKey
+check(SavedFilter.enriched([sfOld], from: [sfFeed]).first?.reasons == ["Keyword: sleep"] && SavedFilter.enriched([sfA], from: [sfFeed]).first == sfA, "enrich: an older entry learns its reasons from the feed, and a classified one is left alone")
+check((try? JSONDecoder().decode(SavedPaper.self, from: Data(#"{"id":"doi:1","title":"t","date":"2026-01-01"}"#.utf8)))?.reasons == nil, "kept: an entry from before reasons were stored still loads")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)
