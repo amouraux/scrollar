@@ -268,6 +268,8 @@ struct FeedSettings: Codable, Equatable {
     /// physics, mathematics and computer science, off until the user wants it.
     var useCrossref = true
     var useArXiv = false
+    /// The Open Science Framework's preprint servers (PsyArXiv, SocArXiv…), off until the user wants them.
+    var useOSF = false
 
     // MARK: What the thumbs count for
     /// How many of the newest hides count (the newest counts fully, the oldest of them a quarter), and
@@ -476,7 +478,7 @@ extension FeedSettings {
     enum CodingKeys: String, CodingKey {
         case formatVersion, orcid, profileOrcids, profileFilled, useMyPublications, useOpenAlex, useEuropePMC
         case hideMemory, hideHalfLifeMonths, likeMemory, likeHalfLifeMonths, hideStrength, likeStrength
-        case useCrossref, useArXiv
+        case useCrossref, useArXiv, useOSF
         case useZotero, useLibraryFile, zoteroRecent
         case followedTopics, followedJournals, followedAuthors, followedInstitutions
         case followedFunders, followedKeywords, trackedPapers, feedOrder, highlightCount, highlightCloseness, highlightImpact, highlightAuthorH, dwellSeconds
@@ -500,6 +502,7 @@ extension FeedSettings {
         useEuropePMC = get(.useEuropePMC, useEuropePMC)
         useCrossref = get(.useCrossref, useCrossref)
         useArXiv = get(.useArXiv, useArXiv)
+        useOSF = get(.useOSF, useOSF)
         hideMemory = min(max(get(.hideMemory, hideMemory), 10), 500)
         hideHalfLifeMonths = min(max(get(.hideHalfLifeMonths, hideHalfLifeMonths), 0), 36)
         likeMemory = min(max(get(.likeMemory, likeMemory), 20), 1000)

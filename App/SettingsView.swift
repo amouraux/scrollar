@@ -111,7 +111,7 @@ struct SettingsView: View {
         let s = appModel.settings
         let openAlex = s.useOpenAlex ? (appModel.hasKey ? "OpenAlex" : "OpenAlex (no key)") : nil
         let on = [s.useEuropePMC ? "Europe PMC" : nil, openAlex,
-                  s.useCrossref ? "Crossref" : nil, s.useArXiv ? "arXiv" : nil].compactMap { $0 }
+                  s.useCrossref ? "Crossref" : nil, s.useArXiv ? "arXiv" : nil, s.useOSF ? "OSF" : nil].compactMap { $0 }
         return on.isEmpty ? "None on" : on.joined(separator: ", ")
     }
 }

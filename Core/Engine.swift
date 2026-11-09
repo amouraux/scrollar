@@ -57,6 +57,8 @@ struct FeedEngine {
     var crossref: CrossrefClient?
     /// nil unless the user switched it on.
     var arXiv: ArxivClient?
+    /// nil unless the user switched it on.
+    var osf: OsfClient?
     var pubmed = PubMedClient()
     var embedder: TextEmbedder? = NLTextEmbedder()
     /// Progress and numbers, for the command line; the app can ignore it.
@@ -67,7 +69,7 @@ struct FeedEngine {
     /// (see `Zotero.profileTexts`); the engine does not fetch it, so it stays out of the command line.
     func build(_ settings: FeedSettings, previous: PreviousFeed? = nil, today: Date = Date(), older: Bool = false,
                 library: [String] = [], project: [String] = []) async throws -> FeedResult {
-        guard openAlex != nil || europePMC != nil || crossref != nil || arXiv != nil else { throw EngineError.noSource }
+        guard openAlex != nil || europePMC != nil || crossref != nil || arXiv != nil || osf != nil else { throw EngineError.noSource }
         // What is held reaches back past the look-back when the reader has scrolled to the end.
         let heldExtra = previous?.extraDays ?? 0
         let windowStart = Ranker.dayString(today.addingTimeInterval(-Double(settings.daysBack + heldExtra) * 86_400))
@@ -144,7 +146,8 @@ struct FeedEngine {
         var perSource: [SourceKind: Int] = [:]
         for step in planned {
             let targets = SourceRouting.targets(for: step.seed, openAlex: openAlex != nil, europePMC: europePMC != nil,
-                                                crossref: crossref != nil, arXiv: arXiv != nil, hasOwnPMIDs: !ownPMIDs.isEmpty)
+                                                crossref: crossref != nil, arXiv: arXiv != nil, osf: osf != nil,
+                                                hasOwnPMIDs: !ownPMIDs.isEmpty)
             if targets.isEmpty { log("  no source answers \(step.seed.reason)"); continue }
             for target in targets {
                 do {
@@ -168,6 +171,10 @@ struct FeedEngine {
                     case .arXiv:
                         guard let arXiv else { continue }
                         list = try await arXiv.papers(seed: step.seed, since: since, until: until, maxPages: min(maxPages, 2))
+                        for i in list.indices { list[i].reasons = [step.seed.reason] }
+                    case .osf:
+                        guard let osf else { continue }
+                        list = try await osf.papers(seed: step.seed, since: since, until: until, maxPages: min(maxPages, 2))
                         for i in list.indices { list[i].reasons = [step.seed.reason] }
                     }
                     for i in list.indices { list[i].sources = [target.rawValue] }
@@ -267,11 +274,11 @@ struct FeedEngine {
     /// What following `seed` would find: one request per source that can answer it, over the
     /// look-back, run through the same words, mutes and filters as the feed. Nothing is stored.
     func preview(_ seed: Seed, rule: KeywordRule? = nil, settings: FeedSettings, today: Date = Date()) async throws -> SeedPreview {
-        guard openAlex != nil || europePMC != nil || crossref != nil || arXiv != nil else { throw EngineError.noSource }
+        guard openAlex != nil || europePMC != nil || crossref != nil || arXiv != nil || osf != nil else { throw EngineError.noSource }
         let since = Ranker.dayString(today.addingTimeInterval(-Double(settings.daysBack) * 86_400))
         let until = Ranker.dayString(today)
         let targets = SourceRouting.targets(for: seed, openAlex: openAlex != nil, europePMC: europePMC != nil,
-                                            crossref: crossref != nil, arXiv: arXiv != nil, hasOwnPMIDs: false)
+                                            crossref: crossref != nil, arXiv: arXiv != nil, osf: osf != nil, hasOwnPMIDs: false)
         guard !targets.isEmpty else { throw EngineError.cannotSearch }
         var found: [Paper] = []
         var fullPage = false
@@ -292,6 +299,9 @@ struct FeedEngine {
                 case .arXiv:
                     guard let arXiv else { continue }
                     list = try await arXiv.papers(seed: seed, since: since, until: until, maxPages: 1)
+                case .osf:
+                    guard let osf else { continue }
+                    list = try await osf.papers(seed: seed, since: since, until: until, maxPages: 1)
                 }
                 fullPage = fullPage || list.count >= Previews.pageSize
                 found += list

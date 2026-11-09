@@ -11,6 +11,7 @@ enum SourceKind: String, CaseIterable, Codable {
     case europePMC = "Europe PMC"
     case crossref = "Crossref"
     case arXiv = "arXiv"
+    case osf = "OSF"
 }
 
 enum SourceRouting {
@@ -31,19 +32,22 @@ enum SourceRouting {
     /// With OpenAlex off, the same seeds fall back to their names.
     ///
     /// Crossref is the keyless way outside biomedicine, so it is asked only when OpenAlex is off. arXiv
-    /// is asked about what it can answer, a phrase and an author's name, beside whatever else is on.
+    /// is asked about what it can answer, a phrase and an author's name, beside whatever else is on, and OSF
+    /// (psychology and the social sciences) about a phrase.
     static func targets(for seed: Seed, openAlex: Bool, europePMC: Bool, crossref: Bool = false, arXiv: Bool = false,
-                        hasOwnPMIDs: Bool) -> [SourceKind] {
+                        osf: Bool = false, hasOwnPMIDs: Bool) -> [SourceKind] {
         var out: [SourceKind] = []
         func offerEurope(_ ok: Bool) { if europePMC && ok { out.append(.europePMC) } }
         func offerCrossref(_ ok: Bool) { if crossref && !openAlex && ok { out.append(.crossref) } }
         func offerArxiv(_ ok: Bool) { if arXiv && ok { out.append(.arXiv) } }
+        func offerOsf(_ ok: Bool) { if osf && ok { out.append(.osf) } }
         switch seed {
         case .keyword:
             if openAlex { out.append(.openAlex) }
             offerEurope(true)
             offerCrossref(true)
             offerArxiv(true)
+            offerOsf(true)
         case .journal(let id, _):
             if openAlex && !isNamed(id) { out.append(.openAlex) }
             offerEurope(true)

@@ -53,7 +53,7 @@ build and then an incremental one and checks they agree.
 
 ## Sources
 
-Four, each of which can be switched off (arXiv is off until it is switched on) in Tune, and a paper found by more than one is shown once. Crossref and arXiv are described last.
+Five, each of which can be switched off (arXiv and OSF are off until they are switched on) in Tune, and a paper found by more than one is shown once. Crossref, arXiv and OSF are described last.
 
 - **Europe PMC** (no key): PubMed and MEDLINE records and the preprint servers.
   Biomedicine only. Answers keywords, journals, MeSH headings (made from your own
@@ -432,6 +432,14 @@ masked, and removed. The refused-save message has not been seen, because no devi
   Its terms allow one request in three seconds, so all calls go through one gate; the version is not part of a paper's id
   and its own DOI (10.48550/arXiv…) makes it the same paper as OpenAlex's copy. It says: Thank you to arXiv for use of its
   open access interoperability.
+- **OSF preprints** (no key, `Core/Osf.swift`): the Open Science Framework's servers (PsyArXiv, SocArXiv, EdArXiv, OSF Preprints and
+  more), which matter most in psychology and the social sciences. Off until switched on. A phrase in titles and abstracts, nothing
+  else (contributors cannot be searched; a keyword's further words are checked after). Each version of a preprint has its own
+  record, so the newest is kept and the DOI is given without its version, which makes it the same paper as another source's copy.
+  A date bound has to say the end of the day (`T23:59:59`) or everything posted on the last day is missed: found by trying it on the
+  real service, where a paper posted that day was missing until then. Europe PMC carries some PsyArXiv papers, not all: of two
+  pain preprints from one week it had one. Run against the real service from the app's own client: a phrase gave eight
+  PsyArXiv and SocArXiv preprints with abstracts and authors.
 - No contact address is sent: the requests say "Scrollar" and the project's web page. Crossref gives a faster pool to requests
   that carry an email address; I did not put one in, because it would be sent from every user's device.
 - Tried against the real services here, from the code that the app uses: a phrase, a journal and an author on Crossref

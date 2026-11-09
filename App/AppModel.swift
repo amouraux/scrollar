@@ -233,7 +233,7 @@ final class AppModel {
     var usesOpenAlex: Bool { settings.useOpenAlex && hasKey }
 
     /// A feed can be built when some source is on. Europe PMC needs nothing.
-    var canBuild: Bool { usesOpenAlex || settings.useEuropePMC || settings.useCrossref || settings.useArXiv }
+    var canBuild: Bool { usesOpenAlex || settings.useEuropePMC || settings.useCrossref || settings.useArXiv || settings.useOSF }
 
     var isLoading: Bool {
         if case .loading = phase { return true }
@@ -310,6 +310,7 @@ final class AppModel {
                                         europePMC: settings.useEuropePMC ? EuropePMCClient() : nil,
                                         crossref: settings.useCrossref ? CrossrefClient() : nil,
                                         arXiv: settings.useArXiv ? ArxivClient() : nil,
+                                        osf: settings.useOSF ? OsfClient() : nil,
                                         embedder: cache, log: report)
                 let result = try await engine.build(settings, previous: previous, older: older, library: library, project: projectPassages)
                 let used = result.profileTexts + (result.citedYou + result.forYou).map { Ranker.text($0.paper) }
@@ -519,7 +520,8 @@ final class AppModel {
         let engine = FeedEngine(openAlex: usesOpenAlex ? openAlex : nil,
                                 europePMC: settings.useEuropePMC ? EuropePMCClient() : nil,
                                 crossref: settings.useCrossref ? CrossrefClient() : nil,
-                                arXiv: settings.useArXiv ? ArxivClient() : nil, embedder: nil)
+                                arXiv: settings.useArXiv ? ArxivClient() : nil,
+                                osf: settings.useOSF ? OsfClient() : nil, embedder: nil)
         return try await engine.preview(seed, rule: rule, settings: settings)
     }
 

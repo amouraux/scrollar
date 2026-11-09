@@ -322,10 +322,11 @@ struct SourcesScreen: View {
             Section {
                 Toggle("Crossref", isOn: $model.settings.useCrossref)
                 Toggle("arXiv", isOn: $model.settings.useArXiv)
+                Toggle("OSF preprints", isOn: $model.settings.useOSF)
             } header: {
                 Text("More sources")
             } footer: {
-                Text("Crossref has every DOI from every publisher, in every field, and needs nothing, but it can only look for a phrase in titles, a journal by its name and an author by their name, and about a third of its records carry an abstract. It is asked only when OpenAlex is off: it is the way to follow keywords and journals outside biomedicine without an OpenAlex key. arXiv covers physics, mathematics, computer science, statistics and quantitative biology, with the abstract, the day a paper is posted (OpenAlex can be days behind); it looks for a phrase and for an author's name, beside the other sources, and is asked no more than once in three seconds. Neither can list who cites a paper, or an institution's or a funder's papers. Both are free services that receive the phrases and names you follow, and nothing else. Thank you to arXiv for use of its open access interoperability.")
+                Text("Crossref has every DOI from every publisher, in every field, and needs nothing, but it can only look for a phrase in titles, a journal by its name and an author by their name, and about a third of its records carry an abstract. It is asked only when OpenAlex is off: it is the way to follow keywords and journals outside biomedicine without an OpenAlex key. arXiv covers physics, mathematics, computer science, statistics and quantitative biology, with the abstract, the day a paper is posted (OpenAlex can be days behind); it looks for a phrase and for an author's name, beside the other sources, and is asked no more than once in three seconds. Neither can list who cites a paper, or an institution's or a funder's papers. Both are free services that receive the phrases and names you follow, and nothing else. Thank you to arXiv for use of its open access interoperability. OSF preprints are PsyArXiv, SocArXiv, EdArXiv and the other preprint servers of the Open Science Framework, which matter most in psychology and the social sciences; Europe PMC carries some of them, not all. They are searched for a phrase in titles and abstracts only, at most once a second.")
             }
         }
         .navigationTitle("Sources")
