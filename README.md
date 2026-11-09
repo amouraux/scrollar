@@ -5,7 +5,7 @@ people and keywords you follow, ranked by how close they are to your own work.
 
 Status: working prototype, used daily on an iPhone. One SwiftUI app for iPhone, iPad and
 Mac (Mac Catalyst), on top of a tested core that also runs from the command line. Screens:
-Feed, Saved (and Read), and Tune, which holds everything that shapes the feed.
+Feed, Reading list (with Read and For me), and Tune, which holds everything that shapes the feed.
 
 ## Commands
 
@@ -241,15 +241,15 @@ that and the studied threshold it is **glanced**: it sinks below the new ones an
 (a setting). **Studied** sinks below the glanced ones and drops out after two days at most
 (`Dwell.studiedExpiryDays`), since the user has looked at it properly. A history file from before dwell was
 measured is read as glanced. None of this reads a post as *read*: that stays the user's act of opening it,
-and read papers leave the feed and are kept under Saved, Read. The feed is sorted only when it is loaded
+and read papers leave the feed and are kept under Reading list, Read. The feed is sorted only when it is loaded
 or refreshed, never while scrolling, so nothing moves under a finger; an unrequested refresh waits behind an
 "N new papers" pill. The seconds are display-only like the highlights: changing them fetches and ranks nothing.
 
-**For me.** Beside Save and Not for me, For me says "this is the kind of paper I want" without saving it, for a
+**For me.** Beside Read later and Not for me, For me says "this is the kind of paper I want" without adding it to the reading list, for a
 paper the user knows already. It adds the paper to the profile exactly as saving does (`Feedback.liked`,
 synced as `lk/` entries), counts the paper as studied so it leaves the top at the next refresh, and shows a
 short confirmation. It is a toggle on the post and in the pane; taking it back removes it from the profile
-(not from the history). The Saved tab has a "For me" list, the only place to take it back once the post has
+(not from the history). The Reading list tab has a "For me" list, the only place to take it back once the post has
 left the feed, and exports it as RIS like the others. It teaches similarity only: it does not yet favour that
 paper's journal or authors.
 
@@ -289,7 +289,7 @@ is outlined in the accent colour. The pane has the journal in its colours, the w
 author up to twelve (more shows the first eleven, how many are left out, and always the last author)
 with the first and last marked and their institution and h-index where the open data has them, every
 reason it is in the feed (and why it is a highlight), the abstract, the journal's impact, how often it
-is cited, open access, topics, the DOI link, and Save, Not for me, Open and Share in a bar that stays
+is cited, open access, topics, the DOI link, and Read later, Not for me, Open and Share in a bar that stays
 in view. The posts lose their Abstract button there, since the pane is the abstract.
 
 Opening a paper in the pane counts as read, exactly as opening its abstract does on a phone
@@ -316,7 +316,7 @@ PDF view there; Open still sends it to the browser.
 
 Share on a post or in the pane is a menu: **Share link**, or **Share reference (.ris)**. The second
 sends a `.ris` file (named for who, when and what: `Legrain-2026-Cortical-gamma-responses.ris`),
-which Zotero, EndNote, Mendeley, Papers and Citavi all import; from the share sheet that is Save to
+which Zotero, EndNote, Mendeley, Papers and Citavi all import; from the share sheet that is Add to
 Files, or Open in the manager's own app. RIS is the one format all of them read, which is why this
 needs no account, key or network, and nothing is sent anywhere by Scrollar itself. The file is made at
 the moment of sharing (`ReferenceFile`), not when the button is drawn.
@@ -329,7 +329,7 @@ with the surname ("van der Berg, Ludwig"). It is a guess for names that follow n
 manager lets the user correct one. A preprint is written as a journal article with the server as
 the journal, because RIS has no preprint type that every manager reads.
 
-Saved and Read each have an **Export** button for the whole list. A paper saved before authors and
+Reading list and Read each have an **Export** button for the whole list. A paper saved before authors and
 the journal were kept (`SavedPaper.authors`, `.journal`, optional, so older entries and older apps
 are unaffected) has only a title, abstract, date and DOI; the export fills the rest from the feed
 where the paper is still held, and otherwise leaves them out. Papers saved from now on keep them.
@@ -359,7 +359,7 @@ It is untested against a real iCloud Drive, only built.
 
 How each manager is reached, and why:
 
-- **Zotero** has a real write interface, so with an account connected (Tune) Save to Zotero creates the
+- **Zotero** has a real write interface, so with an account connected (Tune) Add to Zotero creates the
   item with its full metadata, in the collection chosen there (or one named Scrollar that the app can
   create), and attaches the PDF: the kept copy, or a direct download made at that moment. The file
   goes into Zotero's own storage and counts against its quota (300 MB free); if it is full or too
@@ -408,7 +408,7 @@ I archived both here to check the plist, the manifest and the entitlements; I di
 
 ## Filtering what you kept
 
-Saved, For me and Read share a **Filter** panel (the button at the top right; on a wide window it
+Reading list, For me and Read share a **Filter** panel (the button at the top right; on a wide window it
 sits beside the list, on a narrow one it opens as a sheet). It groups the list by why each paper
 reached your feed, the same reasons the posts show: cites your work, an author you follow, a keyword,
 a journal, an institution, a funder, a topic you follow, a topic from your own papers. Under a kind
@@ -534,7 +534,7 @@ Zotero answers "not modified" to `If-Modified-Since-Version` and the copy in the
 when there is no copy). Going further back asks Zotero for nothing. Attachments, notes and untitled items
 are skipped; an item with no abstract still counts by its title and tags.
 
-**Saving to it.** With an account connected, the Share menu on a post and in the pane has Save to
+**Adding to it.** With an account connected, the Share menu on a post and in the pane has Add to
 Zotero. It checks the DOI against the library first ("Already in your Zotero library"), then posts the
 paper as a journal article (a preprint or conference paper with its own type and venue field) with its
 authors, abstract, DOI, link and topics as tags, under a write token so a retry cannot make two. A key
@@ -544,6 +544,22 @@ Available PDF does that. The answer shows briefly over the feed.
 EndNote and Mendeley: see Library file and pasted references. Not built: group libraries (only the account's own), filling a missing abstract from the DOI, suggesting
 follows from the library's tags. The client is tested against a stub that answers instead
 of the network; a real library has not been read here.
+
+## The reading list, and Add to Zotero
+
+"Save" meant two unrelated things (a list inside the app, and a copy in Zotero), so each now has its own name and
+its own place. **Read later** on a post (an eyeglasses button, "On list" once added) puts a paper on the **Reading
+list** tab, like Safari's list, and still teaches the feed what the user wants more of. **For me** and **Not for me**
+are unchanged. **Add to Zotero** is separate: it is in the Share menu, in the group "Send to a reference manager", and
+in the list itself (swipe a row right, or press and hold or right-click it), whichever of Reading list, Read or For
+me it is on. Adding to one never adds to the other, and adding to Zotero does not teach the feed by itself (a library
+that is connected already does, through its newest items). Nothing in the stored data changed: the list is still
+`feedback.saved`, so a sync file or backup from before reads as it did.
+
+On the Reading list, a paper that has been opened is dimmed and marked "Read", and **Unread only** in the filter
+panel leaves those out. The order is not changed. The segments are Reading list, Read and For me. A Zotero key that
+cannot write shows "Add to Zotero (the key is read-only)" greyed out, not hidden, and failures are shown for fifteen
+seconds and put away by a tap. Older notes in this file may still say "Saved" or "Save to Zotero": they mean these.
 
 ## Tune
 
@@ -585,7 +601,7 @@ checked on screen, and saving the key to the Keychain from the sandbox is untest
   to fill missing abstracts and types.
 - **Author photographs and institution logos**: open scholarly data has none that can be reused;
   initials on a colour stand in.
-- **A left column** for the wide window (Saved, Read, Tune, or a list of what is followed, with
+- **A left column** for the wide window (Reading list, Read, Tune, or a list of what is followed, with
   counts): the feed and the reader pane were what was asked for, and the tabs still do the rest.
 - **Background refresh and notifications**, and Crossref or arXiv as sources for fields
   outside biomedicine are proposed and not started.

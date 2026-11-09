@@ -867,40 +867,64 @@ final class AppModel {
     }
 
     /// Add a paper to the user's Zotero library, unless its DOI is already there, in the chosen
-    /// collection and with its PDF when one can be had (the kept copy, or a direct download).
-    func saveToZotero(_ p: Paper) async {
+    /// collection and with its PDF when one can be had (the kept copy, or a direct download). It is
+    /// separate from the reading list: adding to one does not add to the other.
+    func addToZotero(_ p: Paper) async {
+        await addToZotero(reference: RIS.reference(p), key: p.dedupeKey, link: p.pdfLink.flatMap(URL.init(string:)),
+                          referer: p.link, stem: pdfStem(p))
+    }
+
+    /// From the reading list, where a paper is only what was kept of it: the feed's full record
+    /// where the feed still holds one, else the reference that can be made from what was kept, with
+    /// the PDF if it is already on this device.
+    func addToZotero(_ s: SavedPaper) async {
+        if let known = layout.all.map(\.paper).first(where: { $0.dedupeKey == s.id }) {
+            await addToZotero(known)
+            return
+        }
+        let reference = RIS.reference(s)
+        await addToZotero(reference: reference, key: s.id, link: nil, referer: s.link,
+                          stem: String(RIS.fileName(for: reference).dropLast(4)))
+    }
+
+    private func addToZotero(reference: RIS.Reference, key: String, link: URL?, referer: URL?, stem: String) async {
         guard let account = zotero else { return }
+        // Said at once, and left up long enough to read: it is the reason nothing arrives in the library.
+        guard account.canWrite else { show(ZoteroError.cannotWrite.description, seconds: 15); return }
         let client = ZoteroClient(account: account)
-        show("Saving to Zotero…")
+        show("Adding to Zotero…", seconds: 30)
         do {
-            if let doi = p.doi, try await client.has(doi: doi) { show("Already in your Zotero library"); return }
-            let link = p.pdfLink.flatMap(URL.init(string:))
+            if let doi = reference.doi, try await client.has(doi: doi) { show("Already in your Zotero library"); return }
             var pdf: ZoteroClient.PDF?
-            if zoteroAttachPDF, let link, let file = await PDFCache.file(for: p.dedupeKey, url: link, referer: p.link, stem: pdfStem(p)),
-               let md5 = PDFCache.md5(of: file) {
-                pdf = ZoteroClient.PDF(file: file, md5: md5)
+            if zoteroAttachPDF {
+                let file: URL?
+                if let link { file = await PDFCache.file(for: key, url: link, referer: referer, stem: stem) }
+                else { file = await PDFCache.lookupAnywhere(key) }
+                if let file, let md5 = PDFCache.md5(of: file) { pdf = ZoteroClient.PDF(file: file, md5: md5) }
             }
-            let added = try await client.add(RIS.reference(p), collection: zoteroCollection?.key, pdf: pdf)
-            var text = "Saved to Zotero" + (zoteroCollection.map { " in “\($0.name)”" } ?? "")
+            let added = try await client.add(reference, collection: zoteroCollection?.key, pdf: pdf)
+            var text = "Added to Zotero" + (zoteroCollection.map { " in “\($0.name)”" } ?? "")
             switch added.pdf {
             case .attached: text += ", with its PDF"
             case .skipped(let why): text += ". " + why
             case .notOffered: if zoteroAttachPDF && link != nil { text += ". Its PDF could not be fetched, so none was attached." }
             }
-            show(text)
+            show(text, seconds: 8)
         } catch {
-            show("\(error)")
+            show("\(error)", seconds: 15)
         }
     }
 
-    /// Say something for a few seconds, over whatever is on screen.
-    func show(_ text: String) {
+    /// Say something for a few seconds, over whatever is on screen. Tapping it puts it away.
+    func show(_ text: String, seconds: Double = 5) {
         toast = text
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(seconds))
             if self?.toast == text { self?.toast = nil }
         }
     }
+
+    func dismissToast() { toast = nil }
 
     // MARK: What the user does with a paper
 
@@ -928,7 +952,7 @@ final class AppModel {
             history.markStudied(p.dedupeKey, studiedAfter: settings.dwellSeconds, at: Date())
             saveHistorySoon()
             syncHistorySoon(after: 8)
-            show("Noted: more papers like this. Not saved.")
+            show("Noted: more papers like this. Not added to your reading list.")
         }
     }
 

@@ -24,7 +24,7 @@ struct FeedView: View {
                 }
             }
             .onChange(of: wide, initial: true) { _, now in model.readerShown = now }
-            // The answer to Save to Zotero and the like: a post far down the list cannot show it.
+            // The answer to Add to Zotero and the like: a post far down the list cannot show it.
             .overlay(alignment: .bottom) {
                 if let toast = model.toast {
                     Text(toast)
@@ -35,6 +35,7 @@ struct FeedView: View {
                         .padding(.bottom, 90).padding(.horizontal, 16)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                         .accessibilityAddTraits(.updatesFrequently)
+                        .onTapGesture { model.dismissToast() }
                 }
             }
             .animation(.default, value: model.toast)
@@ -669,14 +670,16 @@ struct PaperCard: View {
     private var actionBar: some View {
         HStack(spacing: 0) {
             let saved = model.isSaved(paper)
-            barButton(saved ? "Saved" : "Save", saved ? "bookmark.fill" : "bookmark",
-                      hint: "Saves it, and finds more like it") {
+            barButton(saved ? "On list" : "Read later", "eyeglasses",
+                      hint: saved ? "Takes it off your reading list"
+                                  : "Adds it to your reading list, and finds more like it",
+                      tint: saved ? Color.accentColor : nil) {
                 model.toggleSaved(paper)
             }
             let liked = model.isLiked(paper)
             barButton("For me", liked ? "hand.thumbsup.fill" : "hand.thumbsup",
                       hint: liked ? "Takes back that this is for you"
-                                  : "Tells the feed this is the kind of paper you want, without saving it",
+                                  : "Tells the feed this is the kind of paper you want, without adding it to your reading list",
                       tint: liked ? Color.accentColor : nil) {
                 model.toggleLiked(paper)
             }

@@ -595,7 +595,7 @@ struct ZoteroSection: View {
         } header: {
             Text("Zotero library")
         } footer: {
-            Text("Your most recently added items (title, abstract and tags) are read and compared on this device, as your saved papers are, to judge which new papers are close to your work. Only the newest ones count, so what you are reading now outweighs what you filed years ago. Nothing is followed because of it: Follow lists stay yours. The key stays in this device's Keychain and is sent only to Zotero. A read-only key is enough to learn from the library; to also save papers from a post it must be allowed to write. A PDF attached to an item is stored in your Zotero file storage and counts against its quota (300 MB on the free plan); if it is full the paper is still saved, without the PDF.")
+            Text("Your most recently added items (title, abstract and tags) are read and compared on this device, as your reading list is, to judge which new papers are close to your work. Only the newest ones count, so what you are reading now outweighs what you filed years ago. Nothing is followed because of it: Follow lists stay yours. The key stays in this device's Keychain and is sent only to Zotero. A read-only key is enough to learn from the library; to also save papers from a post it must be allowed to write. A PDF attached to an item is stored in your Zotero file storage and counts against its quota (300 MB on the free plan); if it is full the paper is still saved, without the PDF.")
         }
         .task(id: model.zotero?.userID) { await loadCollections() }
     }
@@ -1122,7 +1122,7 @@ struct PDFStorageSection: View {
         } header: {
             Text("Downloaded PDFs")
         } footer: {
-            Text("A PDF opened in the reader is kept here, so it opens again at once, without a connection, and can be sent to a reference manager. When the limit is passed the ones you used longest ago are deleted first, and those of papers you saved or marked For me last. The system may also empty this space when the device is short of it. Nothing here is part of your settings or sync.")
+            Text("A PDF opened in the reader is kept here, so it opens again at once, without a connection, and can be sent to a reference manager. When the limit is passed the ones you used longest ago are deleted first, and those of papers on your reading list or marked For me last. The system may also empty this space when the device is short of it. Nothing here is part of your settings or sync.")
         }
 
         Section {
@@ -1130,7 +1130,7 @@ struct PDFStorageSection: View {
                 LabeledContent("Folder", value: folder.lastPathComponent)
                 LabeledContent("Holds", value: folderUsage.count == 0 ? "Nothing yet" : "\(size(folderUsage.bytes)) in \(folderUsage.count) PDF" + (folderUsage.count == 1 ? "" : "s"))
                 Picker("Put in it", selection: $policy) {
-                    Text("Saved and For me papers").tag(PDFFolder.Policy.saved)
+                    Text("Reading list and For me papers").tag(PDFFolder.Policy.saved)
                     Text("Every PDF I open").tag(PDFFolder.Policy.everything)
                 }
                 .onChange(of: policy) { PDFFolder.policy = policy }
@@ -1142,7 +1142,7 @@ struct PDFStorageSection: View {
         } header: {
             Text("Share PDFs between devices")
         } footer: {
-            Text("Choose the same folder in iCloud Drive on each device. A PDF opened or saved on one is then there on the others, which look in the folder before downloading. The files are named after the paper, so you can find them in Files. Nothing here trims the folder or deletes from it, and it counts against your iCloud storage: delete files there when you want the room. Stopping only makes this device forget the folder.")
+            Text("Choose the same folder in iCloud Drive on each device. A PDF opened or added to the reading list on one is then there on the others, which look in the folder before downloading. The files are named after the paper, so you can find them in Files. Nothing here trims the folder or deletes from it, and it counts against your iCloud storage: delete files there when you want the room. Stopping only makes this device forget the folder.")
         }
         .onAppear { usage = PDFCache.usage(); folderUsage = PDFFolder.usage() }
         .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
@@ -1153,7 +1153,7 @@ struct PDFStorageSection: View {
         }
         .confirmationDialog("Delete the downloaded PDFs?", isPresented: $clearing, titleVisibility: .visible) {
             Button("Delete all", role: .destructive) { PDFCache.clear(keepingSaved: false); usage = PDFCache.usage() }
-            Button("Delete all except saved papers", role: .destructive) { PDFCache.clear(keepingSaved: true); usage = PDFCache.usage() }
+            Button("Delete all except the reading list", role: .destructive) { PDFCache.clear(keepingSaved: true); usage = PDFCache.usage() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("They can be downloaded again from the paper. PDFs in the shared folder are not touched.")

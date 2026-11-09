@@ -209,7 +209,7 @@ struct RankingScreen: View {
             }
 
             Section {
-                LabeledContent("Saved", value: "\(model.settings.feedback.saved.count)")
+                LabeledContent("On your reading list", value: "\(model.settings.feedback.saved.count)")
                 LabeledContent("Hidden", value: "\(model.settings.feedback.hidden.count)")
                 if !model.settings.feedback.hidden.isEmpty {
                     Button("Show hidden papers again", role: .destructive) {
@@ -219,7 +219,7 @@ struct RankingScreen: View {
             } header: {
                 Text("What you have told it")
             } footer: {
-                Text("Saved papers make the feed look for more like them. Hidden papers never come back.")
+                Text("Papers on your reading list make the feed look for more like them. Hidden papers never come back.")
             }
         }
         .navigationTitle("Ranking")
@@ -272,7 +272,7 @@ struct ContentScreen: View {
             } header: {
                 Text("Seen and read")
             } footer: {
-                Text("A post is seen once it has been on screen for a moment (about a second and a half, at least half of it showing): one you only flick past stays new. A paper you scrolled past sinks below the new ones, then drops out. One that stayed on screen for the number of seconds above, or that you marked For me, counts as studied: it sinks further and drops out after two days at most. The order changes when the feed is refreshed or reopened, never while you scroll. A paper you open or read in full leaves the feed and is kept under Saved, Read.")
+                Text("A post is seen once it has been on screen for a moment (about a second and a half, at least half of it showing): one you only flick past stays new. A paper you scrolled past sinks below the new ones, then drops out. One that stayed on screen for the number of seconds above, or that you marked For me, counts as studied: it sinks further and drops out after two days at most. The order changes when the feed is refreshed or reopened, never while you scroll. A paper you open or read in full leaves the feed and is kept under Reading list, Read.")
             }
         }
         .navigationTitle("Content and display")
@@ -353,7 +353,7 @@ struct SyncBackupScreen: View {
             } header: {
                 Text("Sync between devices")
             } footer: {
-                Text("Make the file in iCloud Drive on one device, then on each other device join that same file. Follows, mutes, keywords, sliders, saved and hidden papers and what you have read are shared and merged, so nothing is lost if you change things on two devices. The OpenAlex and Zotero keys and the feed itself stay on each device.")
+                Text("Make the file in iCloud Drive on one device, then on each other device join that same file. Follows, mutes, keywords, sliders, the reading list, hidden papers and what you have read are shared and merged, so nothing is lost if you change things on two devices. The OpenAlex and Zotero keys and the feed itself stay on each device.")
             }
 
             Section {
@@ -362,7 +362,7 @@ struct SyncBackupScreen: View {
             } header: {
                 Text("Backup")
             } footer: {
-                Text("A file you keep: your follows, mutes, keywords, sliders, and saved and hidden papers as they are now. It does not hold your OpenAlex or Zotero key, the feed, or what you have read. Restoring replaces your current settings after asking, and with syncing on the other devices follow. Sync keeps your devices the same; a backup is how you go back.")
+                Text("A file you keep: your follows, mutes, keywords, sliders, and the reading list and hidden papers as they are now. It does not hold your OpenAlex or Zotero key, the feed, or what you have read. Restoring replaces your current settings after asking, and with syncing on the other devices follow. Sync keeps your devices the same; a backup is how you go back.")
             }
         }
         .navigationTitle("Sync and backup")
@@ -395,7 +395,7 @@ struct SyncBackupScreen: View {
             if let pending = pendingRestore {
                 let when = pending.savedAt.map { "Saved " + $0.formatted(date: .abbreviated, time: .omitted) + ". " } ?? ""
                 let what = pending.lines.isEmpty ? "It holds only default settings." : "It holds " + pending.lines.joined(separator: ", ") + "."
-                Text(when + what + " Your current follows, mutes, keywords and sliders, and your saved and hidden papers, are replaced.")
+                Text(when + what + " Your current follows, mutes, keywords and sliders, and your reading list and hidden papers, are replaced.")
             }
         }
         .alert("Could not restore", isPresented: Binding(get: { restoreError != nil }, set: { if !$0 { restoreError = nil } })) {

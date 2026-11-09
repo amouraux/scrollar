@@ -16,7 +16,7 @@ struct ScrollarApp: App {
                     .tabItem { Label("Feed", systemImage: "text.justify.leading") }
                     .tag(Tab.feed)
                 SavedView()
-                    .tabItem { Label("Saved", systemImage: "bookmark") }
+                    .tabItem { Label("Reading list", systemImage: "eyeglasses") }
                     .tag(Tab.saved)
                 SettingsView()
                     .tabItem { Label("Tune", systemImage: "slider.horizontal.3") }
@@ -69,7 +69,7 @@ struct ScrollarApp: App {
                     .disabled(tab != .feed || !model.readerShown)
                 Divider()
                 Button("Feed") { tab = .feed }.keyboardShortcut("1")
-                Button("Saved") { tab = .saved }.keyboardShortcut("2")
+                Button("Reading list") { tab = .saved }.keyboardShortcut("2")
                 Button("Tune") { tab = .settings }.keyboardShortcut("3")
             }
         }

@@ -76,12 +76,14 @@ struct ShareMenu<Label: View>: View {
                     SwiftUI.Label("Share link", systemImage: "link")
                 }
             }
-            if model.zotero != nil {
-                Button { Task { await model.saveToZotero(paper) } } label: {
-                    SwiftUI.Label("Save to Zotero", systemImage: "tray.and.arrow.down")
+            Section("Send to a reference manager") {
+                if let account = model.zotero {
+                    Button { Task { await model.addToZotero(paper) } } label: {
+                        SwiftUI.Label(account.canWrite ? "Add to Zotero" : "Add to Zotero (the key is read-only)",
+                                      systemImage: "tray.and.arrow.down")
+                    }
+                    .disabled(!account.canWrite)
                 }
-            }
-            Section("Reference manager") {
                 ShareLink(item: EndNoteFile(file: ReferenceFile(name: enw, format: .enw, make: { [reference] })),
                           preview: SharePreview(enw, image: Image(systemName: "books.vertical"))) {
                     SwiftUI.Label("EndNote (.enw)", systemImage: "books.vertical")

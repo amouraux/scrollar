@@ -254,12 +254,14 @@ private struct PaperReader: View {
     private var actions: some View {
         HStack(spacing: 0) {
             let saved = model.isSaved(paper)
-            actionButton(saved ? "Saved" : "Save", saved ? "bookmark.fill" : "bookmark",
-                         hint: "Saves it, and finds more like it") { model.toggleSaved(paper) }
+            actionButton(saved ? "On list" : "Read later", "eyeglasses",
+                         hint: saved ? "Takes it off your reading list"
+                                     : "Adds it to your reading list, and finds more like it",
+                         tint: saved ? Color.accentColor : nil) { model.toggleSaved(paper) }
             let liked = model.isLiked(paper)
             actionButton("For me", liked ? "hand.thumbsup.fill" : "hand.thumbsup",
                          hint: liked ? "Takes back that this is for you"
-                                     : "Tells the feed this is the kind of paper you want, without saving it",
+                                     : "Tells the feed this is the kind of paper you want, without adding it to your reading list",
                          tint: liked ? Color.accentColor : nil) { model.toggleLiked(paper) }
             actionButton("Not for me", "hand.thumbsdown", hint: "Hides this paper for good") {
                 withAnimation { model.hide(paper) }
