@@ -678,6 +678,26 @@ by the paper's own words, topic, journal or author, as a mute does; a mute set t
 above for each paper that carries the thing, the total held between −1.5 and +2) and nothing else. They sync (sync format 5). Tried on the iPhone
 simulator: the screen and the starting levels. Not tried: setting a level and seeing the feed change, nor on a real feed.
 
+## Search
+
+The magnifier beside All | New on the feed (⌘F on the Mac) opens a search (`App/SearchScreen.swift`, `Core/Search.swift`, tested). The phrase is
+asked of every source that is on, for the last twelve months (`FeedEngine.search`: two pages from OpenAlex and Europe PMC, one from the
+others; a source that fails leaves the others' answer, and only all failing is shown as an error), and the papers are merged and ranked as
+the feed ranks them: by **the phrase first** (it counts three times what one kept paper does), then by the papers the user marked For me or
+put on the reading list, their library, their projects and their recent searches, and by the levels they set. What the user hid or muted,
+or set to Hide, is not shown. The user's own publications are not part of the ranking of a search (the app does not hold them between
+feeds), which is the one way it differs from the feed; a hundred results at most. Results are the ordinary posts, thumbs and Read later
+included, but a tap unfolds the abstract in the list even on a wide window, because these papers are not in the feed the reader steps through.
+
+**Recent searches count.** Each search is kept (newest first, repeats moved to the top, thirty at most) and, until it fades, counts in the
+feed as an interest of its own, at full weight when new and **half as much after two weeks**, and for nothing once under 5%
+(`SearchLog`). So searching for a subject for a few days pulls the next feed toward it, and stops doing so on its own. The search screen
+lists them, each with how much it still counts, with swipe to forget, Forget all, and a switch (**Let recent searches shape the feed**,
+`countsSearches`, synced like the other settings; sync format is still 5). Searches are stored in `searches.json` on the device only: not
+synced, not in a backup of the settings. The phrase goes to the sources as a search term; PRIVACY.md and the site say so. Tried on the iPhone
+simulator against the real sources: a search, its results and the list of recent searches. Not tried: the iPad or the Mac, a search with
+no source that can answer it, whether the feed changes after several searches over a real feed.
+
 ## Catching up on one topic
 
 On a window wide enough for the reader (the iPad and the Mac), a panel before the feed lists **why papers are in it**: Cites your work, then

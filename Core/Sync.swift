@@ -176,7 +176,7 @@ enum SyncProjection {
     private static let scalars: [Scalar] = [
         scalar("orcid", \.orcid), scalar("useMyPublications", \.useMyPublications),
         scalar("useOpenAlex", \.useOpenAlex), scalar("useEuropePMC", \.useEuropePMC),
-        scalar("useCrossref", \.useCrossref), scalar("useArXiv", \.useArXiv), scalar("useOSF", \.useOSF), scalar("referenceManagers", \.referenceManagers), scalar("asksThumbBasis", \.asksThumbBasis),
+        scalar("useCrossref", \.useCrossref), scalar("useArXiv", \.useArXiv), scalar("useOSF", \.useOSF), scalar("referenceManagers", \.referenceManagers), scalar("asksThumbBasis", \.asksThumbBasis), scalar("countsSearches", \.countsSearches),
         scalar("kindWeights", \.kindWeights), scalar("daysBack", \.daysBack),
         scalar("recency", \.recency), scalar("closeness", \.closeness),
         scalar("impactWeight", \.impactWeight), scalar("authorWeight", \.authorWeight),

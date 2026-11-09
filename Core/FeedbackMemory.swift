@@ -63,7 +63,7 @@ extension FeedBuilder {
     /// is on their reading list or marked For me (the newest of them, in the order kept, faded and cut
     /// as the settings say), their library and their project. What does not count at all is left out.
     static func profile(_ s: FeedSettings, own: [Paper], library: [String] = [], project: [String] = [],
-                        now: Date = Date()) -> [ProfileEntry] {
+                        searches: [ProfileEntry] = [], now: Date = Date()) -> [ProfileEntry] {
         func text(_ title: String, _ abstract: String?) -> String { title + ". " + (abstract ?? "") }
         var entries: [ProfileEntry] = s.useMyPublications ? own.map { ProfileEntry(text: text($0.title, $0.abstract)) } : []
         let pool = FeedbackMemory.likedPool(s)
@@ -75,6 +75,8 @@ extension FeedBuilder {
         }
         if s.useZotero || s.useLibraryFile { entries += library.map { ProfileEntry(text: $0) } }
         entries += project.map { ProfileEntry(text: $0) }
+        // What was searched for lately, each fading, when the user lets it count.
+        if s.countsSearches { entries += searches }
         return entries
     }
 

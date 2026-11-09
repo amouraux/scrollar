@@ -78,6 +78,7 @@ struct Store {
     private var libraryFileURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("library-import.json") }
     private var projectURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("project.json") }
     private var projectsURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("projects.json") }
+    private var searchesURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("searches.json") }
     private var embeddingsURL: URL { folder(.cachesDirectory).appendingPathComponent("embeddings.plist") }
 
     enum SettingsResult {
@@ -199,6 +200,17 @@ struct Store {
     func saveProjects(_ projects: [ProjectFile]) {
         guard !projects.isEmpty, let data = try? JSONEncoder().encode(projects) else { try? fm.removeItem(at: projectsURL); return }
         try? data.write(to: projectsURL, options: .atomic)
+    }
+
+    /// What was searched for, newest first. On this device only, and not synced: what someone searches for says
+    /// what they are working on.
+    func loadSearches() -> [Search] {
+        (try? Data(contentsOf: searchesURL)).flatMap { try? JSONDecoder().decode([Search].self, from: $0) } ?? []
+    }
+
+    func saveSearches(_ searches: [Search]) {
+        guard !searches.isEmpty, let data = try? JSONEncoder().encode(searches) else { try? fm.removeItem(at: searchesURL); return }
+        try? data.write(to: searchesURL, options: .atomic)
     }
 
     func loadEmbeddings() -> Data? { try? Data(contentsOf: embeddingsURL) }

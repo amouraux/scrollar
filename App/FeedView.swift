@@ -278,10 +278,21 @@ private struct SectionTitle: View {
 /// a window wide enough for the reader; and what the feed is narrowed to. Hidden while there is no feed.
 private struct NewSwitch: View {
     @Environment(AppModel.self) private var model
+    @State private var searching = false
+
+    private var searchButton: some View {
+        Button { searching = true } label: { Image(systemName: "magnifyingglass").font(.title3) }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Search papers")
+            .keyboardShortcut("f", modifiers: .command)
+            .sheet(isPresented: $searching) { SearchScreen().environment(model) }
+    }
 
     var body: some View {
         @Bindable var model = model
-        if !model.layout.isEmpty {
+        if model.layout.isEmpty {
+            HStack { Spacer(); searchButton }
+        } else {
             let count = model.layout.newCount
             HStack(spacing: 8) {
                 if model.readerShown {
@@ -300,6 +311,7 @@ private struct NewSwitch: View {
                 }
                 .pickerStyle(.segmented)
                 .accessibilityLabel("Show all papers, or only the new ones")
+                searchButton
             }
             .padding(.bottom, 4)
             if model.feedFilter.isActive, let kind = model.feedFilter.kind {
@@ -486,6 +498,7 @@ struct PaperCard: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var scheme
     @AppStorage("showCovers") private var showCovers = true
+    @Environment(\.inSearch) private var inSearch
     let ranked: RankedPaper
     /// Set for a highlight: why it is one, in words.
     var highlight: String? = nil
@@ -493,7 +506,7 @@ struct PaperCard: View {
 
     private var paper: Paper { ranked.paper }
     /// With the reader pane on screen a tap shows the paper there instead of unfolding the post.
-    private var inReader: Bool { model.readerShown }
+    private var inReader: Bool { model.readerShown && !inSearch }
     private var isSelected: Bool { inReader && model.readerPaper?.dedupeKey == paper.dedupeKey }
     private var status: History.Status { model.status(of: paper) }
     private var choice: BylineChoice { model.settings.byline }

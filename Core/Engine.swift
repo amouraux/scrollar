@@ -68,7 +68,7 @@ struct FeedEngine {
     /// refreshing the recent ones. `library` is the user's reference library already turned to text
     /// (see `Zotero.profileTexts`); the engine does not fetch it, so it stays out of the command line.
     func build(_ settings: FeedSettings, previous: PreviousFeed? = nil, today: Date = Date(), older: Bool = false,
-                library: [String] = [], project: [String] = []) async throws -> FeedResult {
+                library: [String] = [], project: [String] = [], searches: [ProfileEntry] = []) async throws -> FeedResult {
         guard openAlex != nil || europePMC != nil || crossref != nil || arXiv != nil || osf != nil else { throw EngineError.noSource }
         // What is held reaches back past the look-back when the reader has scrolled to the end.
         let heldExtra = previous?.extraDays ?? 0
@@ -130,7 +130,7 @@ struct FeedEngine {
                 }
             }
         }
-        let profile = FeedBuilder.profile(settings, own: own + others, library: library, project: project, now: today)
+        let profile = FeedBuilder.profile(settings, own: own + others, library: library, project: project, searches: searches, now: today)
         let avoid = FeedBuilder.avoid(settings, now: today)
         // The avoided texts are kept with the profile's, so a cache keeps their vectors too.
         let profileTexts = profile.map(\.text) + avoid.map(\.text)
@@ -269,6 +269,49 @@ struct FeedEngine {
                           newPapers: ranked.filter { !before.contains($0.paper.dedupeKey) }.count,
                           // A seed that failed leaves a gap in what was just fetched: ask for it again.
                           extraDays: older && !complete ? heldExtra : extraDays)
+    }
+
+    /// What a search for `phrase` finds in the last `days` days, from every source that is on, ranked by the
+    /// phrase, by `extra` (what stands for the user's work) and by the user's levels. Nothing is stored.
+    func search(_ phrase: String, settings: FeedSettings, extra: [ProfileEntry], days: Int = 365,
+                today: Date = Date()) async throws -> [RankedPaper] {
+        guard openAlex != nil || europePMC != nil || crossref != nil || arXiv != nil || osf != nil else { throw EngineError.noSource }
+        let seed = Seed.keyword(phrase)
+        let since = Ranker.dayString(today.addingTimeInterval(-Double(days) * 86_400))
+        let until = Ranker.dayString(today)
+        let targets = SourceRouting.targets(for: seed, openAlex: openAlex != nil, europePMC: europePMC != nil,
+                                            crossref: crossref != nil, arXiv: arXiv != nil, osf: osf != nil, hasOwnPMIDs: false)
+        guard !targets.isEmpty else { throw EngineError.cannotSearch }
+        var found: [Paper] = []
+        var firstError: Error?
+        for target in targets {
+            do {
+                switch target {
+                case .openAlex:
+                    guard let openAlex else { continue }
+                    found += try await openAlex.papers(for: seed, since: since, perPage: Previews.pageSize, maxPages: 2)
+                case .europePMC:
+                    guard let europePMC, let query = EuropePMCQuery.build(seed, since: since, until: until) else { continue }
+                    found += try await europePMC.papers(query: query, maxPages: 2)
+                case .crossref:
+                    guard let crossref else { continue }
+                    found += try await crossref.papers(seed: seed, since: since, until: until, maxPages: 1)
+                case .arXiv:
+                    guard let arXiv else { continue }
+                    found += try await arXiv.papers(seed: seed, since: since, until: until, maxPages: 1)
+                case .osf:
+                    guard let osf else { continue }
+                    found += try await osf.papers(seed: seed, since: since, until: until, maxPages: 1)
+                }
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+        // One source failing leaves the other's answer; every one failing is an error to show.
+        if found.isEmpty, let firstError { throw firstError }
+        var merged = Merge.combine(found)
+        for i in merged.indices { merged[i].reasons = ["Search: \(phrase)"] }
+        return SearchRanking.rank(merged, query: phrase, settings: settings, profile: extra, embedder: embedder, today: today)
     }
 
     /// What following `seed` would find: one request per source that can answer it, over the

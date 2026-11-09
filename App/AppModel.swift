@@ -88,6 +88,8 @@ final class AppModel {
     /// A research project the user pasted (a proposal, a plan): its passages stand for what they are
     /// into, and its phrases can be offered as keywords. On this device only.
     private(set) var projects: [ProjectFile] = []
+    /// What was searched for lately, newest first: each counts as an interest for a while. On this device only.
+    private(set) var searches: [Search] = []
     /// A Claude or ChatGPT account for takeaways on a device with no on-device model; from the Keychain.
     private(set) var remoteSummary: RemoteSummaryConfig?
     /// Why takeaways from it are not arriving, if they are not; shown in Tune.
@@ -179,6 +181,7 @@ final class AppModel {
         remoteSummary = Keychain.load(service: Keychain.summaries).data(using: .utf8).flatMap { try? JSONDecoder().decode(RemoteSummaryConfig.self, from: $0) }
         libraryFile = store.loadLibraryFile()
         projects = store.loadProjects()
+        searches = store.loadSearches()
         zotero = Keychain.load(service: Keychain.zotero).data(using: .utf8).flatMap { try? JSONDecoder().decode(ZoteroAccount.self, from: $0) }
         history = store.loadHistory()
         summaries = store.loadSummaries()
@@ -303,6 +306,7 @@ final class AppModel {
         // Going back asks for nothing from Zotero: the copy already held ranks what it fetches.
         let library = await zoteroTexts(allowNetwork: !older) + libraryFileTexts()
         let projectPassages = self.projectPassages
+        let searchEntries = SearchLog.entries(searches, now: Date())
         let useOpenAlex = usesOpenAlex
         // What this feed is built for, taken now: the user may change a follow
         // while it runs, and the result must not claim to match that.
@@ -323,7 +327,7 @@ final class AppModel {
                                         arXiv: settings.useArXiv ? ArxivClient() : nil,
                                         osf: settings.useOSF ? OsfClient() : nil,
                                         embedder: cache, log: report)
-                let result = try await engine.build(settings, previous: previous, older: older, library: library, project: projectPassages)
+                let result = try await engine.build(settings, previous: previous, older: older, library: library, project: projectPassages, searches: searchEntries)
                 let used = result.profileTexts + (result.citedYou + result.forYou).map { Ranker.text($0.paper) }
                 return (result, cache?.snapshot(keeping: used))
             }.value
@@ -534,6 +538,50 @@ final class AppModel {
                                 arXiv: settings.useArXiv ? ArxivClient() : nil,
                                 osf: settings.useOSF ? OsfClient() : nil, embedder: nil)
         return try await engine.preview(seed, rule: rule, settings: settings)
+    }
+
+    // MARK: Search
+
+    /// What a search for `phrase` finds: from every source that is on, ranked by the phrase, by what the user has
+    /// kept, their library and projects and what they searched for lately, and by the levels they set. The phrase
+    /// is remembered, so it counts for a while in the feed itself.
+    func search(_ phrase: String) async throws -> [RankedPaper] {
+        let text = phrase.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.count >= 2 else { return [] }
+        let settings = self.settings
+        let library = await zoteroTexts(allowNetwork: false) + libraryFileTexts()
+        let extra = FeedBuilder.profile(settings, own: [], library: library, project: projectPassages,
+                                        searches: SearchLog.entries(searches, now: Date()), now: Date())
+        let useOpenAlex = usesOpenAlex
+        let key = apiKey
+        let cached = store.loadEmbeddings()
+        let (ranked, vectors) = try await Task.detached(priority: .userInitiated) { () -> ([RankedPaper], Data?) in
+            let cache = await TextEmbedders.best().map { CachingEmbedder($0, stored: cached) }
+            let engine = FeedEngine(openAlex: useOpenAlex ? OpenAlexClient(apiKey: key) : nil,
+                                    europePMC: settings.useEuropePMC ? EuropePMCClient() : nil,
+                                    crossref: settings.useCrossref ? CrossrefClient() : nil,
+                                    arXiv: settings.useArXiv ? ArxivClient() : nil,
+                                    osf: settings.useOSF ? OsfClient() : nil, embedder: cache)
+            let found = try await engine.search(text, settings: settings, extra: extra)
+            return (found, cache?.snapshot(keeping: found.map { Ranker.text($0.paper) } + extra.map(\.text)))
+        }.value
+        if let vectors { store.saveEmbeddings(vectors) }
+        searches = SearchLog.adding(text, to: searches, at: Date())
+        store.saveSearches(searches)
+        if settings.countsSearches { needsRefresh = true }
+        return ranked
+    }
+
+    func forgetSearch(_ search: Search) {
+        searches.removeAll { $0.text == search.text }
+        store.saveSearches(searches)
+        if settings.countsSearches { needsRefresh = true }
+    }
+
+    func clearSearches() {
+        searches = []
+        store.saveSearches([])
+        needsRefresh = true
     }
 
     /// What the "create the sync file" dialog saves: everything, as it is now.

@@ -2020,5 +2020,34 @@ let tbTopMoved = ThumbBasis.apply([FacetRef.keyword("TMS")], up: true, to: &tbTo
 check(ThumbBasis.summary(tbTopMoved) == "Levels unchanged: they are at the limit.", "thumb basis: at the top a thumb up changes nothing, and says so")
 check(FeedSettings().asksThumbBasis && !(try! FeedSettings.decode(Data(#"{"asksThumbBasis":false}"#.utf8))).asksThumbBasis, "thumb basis: a thumb asks what it is about unless the user said not to")
 
+// Searching.
+let srNow = Date()
+var srLog: [Search] = []
+srLog = SearchLog.adding("  chronic   pain ", to: srLog, at: srNow.addingTimeInterval(-3 * 86_400))
+srLog = SearchLog.adding("nociception", to: srLog, at: srNow.addingTimeInterval(-2 * 86_400))
+srLog = SearchLog.adding("Chronic Pain", to: srLog, at: srNow)
+check(srLog.map(\.text) == ["Chronic Pain", "nociception"], "search log: newest first, spaces tidied, and a repeat (in any case) is moved to the top and not kept twice")
+check(SearchLog.adding("x", to: srLog, at: srNow) == srLog && SearchLog.adding("   ", to: srLog, at: srNow) == srLog, "search log: a single character or nothing is not a search")
+check((1...40).reduce([Search]()) { SearchLog.adding("topic number \($1)", to: $0, at: srNow) }.count == SearchLog.limit, "search log: no more than thirty are kept")
+check(abs(SearchLog.weight(Search(text: "a", at: srNow.timeIntervalSince1970), now: srNow) - 1) < 1e-9 && abs(SearchLog.weight(Search(text: "a", at: srNow.addingTimeInterval(-14 * 86_400).timeIntervalSince1970), now: srNow) - 0.5) < 1e-9, "search log: a search counts fully when new and half as much after two weeks")
+let srOld = [Search(text: "recent", at: srNow.addingTimeInterval(-1 * 86_400).timeIntervalSince1970), Search(text: "ancient", at: srNow.addingTimeInterval(-120 * 86_400).timeIntervalSince1970)]
+check(SearchLog.entries(srOld, now: srNow).map(\.title) == ["recent"] && SearchLog.entries(srOld, now: srNow).first!.weight > 0.9, "search log: a search that has faded to nothing no longer counts")
+var srSettings = FeedSettings(); srSettings.useMyPublications = false
+let srEntries = SearchLog.entries(srOld, now: srNow)
+check(FeedBuilder.profile(srSettings, own: [], searches: srEntries, now: srNow).map(\.title) == ["recent"], "search: what was searched for lately joins what stands for the user's work")
+srSettings.countsSearches = false
+check(FeedBuilder.profile(srSettings, own: [], searches: srEntries, now: srNow).isEmpty && FeedSettings().countsSearches, "search: it counts unless the user turns that off")
+let srPapers = [lvPaper("s1", title: "Nociception in the spinal cord"), lvPaper("s2", title: "Galaxy clusters and dark matter"), lvPaper("s3", title: "Nociceptive pathways and chronic pain")]
+let srRanked = SearchRanking.rank(srPapers, query: "nociceptive pain", settings: FeedSettings(), profile: [], today: srNow)
+check(srRanked.count == 3 && srRanked.first?.paper.id == "s3" && srRanked.last?.paper.id == "s2", "search: what matches the phrase ranks first")
+var srHide = FeedSettings(); srHide.setLevel(.hide, for: .keyword("galaxy"))
+check(!SearchRanking.rank(srPapers, query: "nociceptive pain", settings: srHide, profile: [], today: srNow).map(\.paper.id).contains("s2"), "search: what the user set to Hide is not shown")
+var srRaise = FeedSettings(); srRaise.setLevel(.higher, for: .keyword("spinal cord"))
+func srScore(_ s: FeedSettings, _ id: String, profile: [ProfileEntry] = []) -> Double {
+    SearchRanking.rank(srPapers, query: "pain", settings: s, profile: profile, today: srNow).first { $0.paper.id == id }!.score
+}
+check(srScore(srRaise, "s1") > srScore(FeedSettings(), "s1"), "search: a level the user set counts, as in the feed")
+check(SearchRanking.rank((1...150).map { lvPaper("p\($0)", title: "Pain paper \($0)") }, query: "pain", settings: FeedSettings(), profile: [], today: srNow).count == 100 && SearchRanking.rank([], query: "pain", settings: FeedSettings(), profile: [], today: srNow).isEmpty, "search: a hundred results at most, and none for nothing")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)
