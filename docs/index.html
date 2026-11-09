@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scrollar — New research papers, ranked for you</title>
+<meta name="description" content="A feed of new research papers for scientists, ranked by how close they are to your own work. Follow journals, topics, people and keywords; see why each paper is there. For iPhone, iPad and Mac.">
+<link rel="icon" href="icon.png">
+<meta property="og:title" content="Scrollar — New research papers, ranked for you">
+<meta property="og:description" content="A feed of new research papers, ranked by how close they are to your own work, with the reason shown on every paper.">
+<meta property="og:image" content="https://amouraux.github.io/scrollar/icon.png">
+<meta property="og:url" content="https://amouraux.github.io/scrollar/">
+<link rel="canonical" href="https://amouraux.github.io/scrollar/">
+<style>
+  :root {
+    --bg: #f2f4f8; --panel: #ffffff; --ink: #12151f; --ink-soft: #565c70;
+    --line: rgba(18,21,31,.10); --accent: #1f56b8; --accent-soft: rgba(31,86,184,.10);
+    --teal: #13857f;
+    --shadow: 0 1px 2px rgba(18,21,31,.05), 0 8px 24px rgba(18,21,31,.07);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0c0e14; --panel: #161a24; --ink: #f2f4f9; --ink-soft: #9fa5b8;
+      --line: rgba(255,255,255,.12); --accent: #7aa7ff; --accent-soft: rgba(122,167,255,.14);
+      --teal: #4fd0c6;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 28px rgba(0,0,0,.45);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 400 17px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 16px; }
+  a { color: var(--accent); }
+
+  header.wrap { padding: 72px 16px 34px; text-align: center; }
+  .icon { width: 128px; height: 128px; border-radius: 29px; box-shadow: var(--shadow); display: block; margin: 0 auto 24px; }
+  h1 { margin: 0; font-size: clamp(42px, 9vw, 64px); letter-spacing: -.028em; font-weight: 700; line-height: 1.04; }
+  .tagline { margin: 16px auto 0; max-width: 26ch; font-size: clamp(21px, 3.6vw, 27px); line-height: 1.3; letter-spacing: -.012em; }
+  .sub { margin: 16px auto 0; max-width: 56ch; color: var(--ink-soft); }
+  .badges { margin-top: 22px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .badge { font-size: 14px; padding: 5px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+  section.wrap { padding-top: 38px; padding-bottom: 6px; }
+  h2 { margin: 0 0 6px; font-size: clamp(26px, 4.5vw, 34px); letter-spacing: -.02em; line-height: 1.15; }
+  .lede { margin: 0 0 22px; color: var(--ink-soft); max-width: 62ch; }
+
+  .shot { margin: 8px 0 4px; text-align: center; }
+  .shot img { max-width: min(100%, 620px); height: auto; border-radius: 18px; box-shadow: var(--shadow); border: 1px solid var(--line); }
+  .shot figcaption { margin-top: 10px; color: var(--ink-soft); font-size: 15px; }
+
+  .steps { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); counter-reset: s; }
+  .step { background: var(--panel); border-radius: 18px; padding: 20px 20px 18px; box-shadow: var(--shadow); border: 1px solid var(--line); }
+  .step::before { counter-increment: s; content: counter(s); display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 15px; margin-bottom: 10px; }
+  .step h3 { margin: 0 0 4px; font-size: 19px; }
+  .step p { margin: 0; color: var(--ink-soft); font-size: 16px; }
+
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); }
+  .card { background: var(--panel); border-radius: 18px; padding: 20px; box-shadow: var(--shadow); border: 1px solid var(--line); }
+  .card h3 { margin: 0 0 6px; font-size: 19px; letter-spacing: -.01em; }
+  .card p { margin: 0; color: var(--ink-soft); font-size: 16px; }
+  .card p + p { margin-top: 8px; }
+  .tag { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--teal); margin-bottom: 6px; }
+
+  .note { background: var(--panel); border-radius: 18px; padding: 20px 22px; border: 1px solid var(--line); box-shadow: var(--shadow); }
+  .note p { margin: 0; color: var(--ink-soft); }
+  .note p + p { margin-top: 10px; }
+  .note strong { color: var(--ink); }
+
+  ul.plain { margin: 0; padding-left: 20px; color: var(--ink-soft); }
+  ul.plain li { margin: 5px 0; }
+
+  footer.wrap { padding: 44px 16px 60px; text-align: center; color: var(--ink-soft); font-size: 15px; }
+  footer a { color: var(--ink-soft); }
+  footer .links { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <img class="icon" src="icon.png" alt="Scrollar app icon">
+  <h1>Scrollar</h1>
+  <p class="tagline">New research papers, ranked for you.</p>
+  <p class="sub">A feed for researchers. Scroll through what was published this week in the journals, topics, people and keywords you follow, ordered by how close each paper is to your own work, with the reason shown on every one.</p>
+  <div class="badges">
+    <span class="badge">iPhone</span><span class="badge">iPad</span><span class="badge">Mac</span>
+    <span class="badge">No account</span><span class="badge">No tracking</span>
+  </div>
+</header>
+
+<section class="wrap">
+  <h2>Why it exists</h2>
+  <p class="lede">More is published every week than anyone can read. Journal alerts are either too broad or too narrow, and a recommendation you cannot inspect is hard to trust. Scrollar is one feed you can scroll like a social feed, built from open scholarly data, where you can see and change exactly why a paper is in front of you.</p>
+  <figure class="shot">
+    <img src="screenshots/reader.png" alt="Scrollar on an iPad: the feed on the left, the open paper on the right with its authors, why it is in the feed and its abstract" onerror="this.parentNode.style.display='none'">
+    <figcaption>On a wide window the feed sits beside a reader pane: authors, why the paper is in your feed, its abstract, and a PDF view when a free PDF exists.</figcaption>
+  </figure>
+</section>
+
+<section class="wrap">
+  <h2>How it works</h2>
+  <p class="lede">You decide what counts. Nothing is followed unless you put it on a list.</p>
+  <div class="steps">
+    <div class="step"><h3>Say who you are</h3><p>Enter your ORCID iD, connect Zotero, or paste or import references from EndNote, Mendeley or any reference manager. Your own papers and library stand for what you work on.</p></div>
+    <div class="step"><h3>Follow what you want</h3><p>Journals, topics, researchers, keywords, institutions and funders, with a preview of what a follow would bring in before you add it.</p></div>
+    <div class="step"><h3>Read the feed</h3><p>New papers are ranked by closeness to your work, what you follow and how recent they are. Save, mark For me, or say Not for me, and the feed learns from it.</p></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>What you get</h2>
+  <div class="grid">
+    <div class="card"><span class="tag">Transparent</span><h3>The reason on every paper</h3><p>Each post says why it is there: an author you follow, a keyword, a topic from your own papers, a paper that cites your work. Tune shows the algorithm and its sliders, in the open and editable.</p></div>
+    <div class="card"><span class="tag">Learns from you</span><h3>Your work, your library, your habits</h3><p>Matching uses your publications, your Zotero library or a reference export, the papers you save or mark For me, and how long you stay on one. A paper you have looked at stops coming back to the top.</p></div>
+    <div class="card"><span class="tag">Reader</span><h3>Abstract, authors and PDF</h3><p>A split view on iPad and Mac, with a draggable divider. Authors with their institutions, and a Details | PDF switch for papers with a free PDF. Free PDFs open in the reader where the publisher allows it. Opened PDFs are kept for offline reading, within a size limit you choose.</p></div>
+    <div class="card"><span class="tag">Summaries</span><h3>A one-line takeaway</h3><p>Under each title, written on your device by Apple's language model where it is available. Where it is not, for example in the EU, you can add your own Claude or ChatGPT key. Matching never needs either.</p></div>
+    <div class="card"><span class="tag">Your lists</span><h3>Saved, For me and Read</h3><p>A filter panel groups what you kept by why it is relevant to you, such as a topic, an author or a journal you follow, and sorts by date kept, publication date or relevance.</p></div>
+    <div class="card"><span class="tag">Reference managers</span><h3>Zotero, EndNote, Mendeley and others</h3><p>Save to Zotero with the PDF attached and in the collection you choose. Share an EndNote file or a RIS file, copy the PDF or the reference, or drop the PDF into the folder a manager watches.</p></div>
+    <div class="card"><span class="tag">Everywhere</span><h3>Your devices stay in step</h3><p>Follows, settings, saved papers and what you have read sync through one file in your own iCloud Drive. PDFs can share an iCloud Drive folder too. Back up and restore your settings to a file.</p></div>
+    <div class="card"><span class="tag">Private</span><h3>No account, no servers, no tracking</h3><p>Scrollar has no server of its own and collects nothing. Your keys stay in the device Keychain and go only to the service they belong to. <a href="privacy.html">Read the privacy policy.</a></p></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>Where the papers come from</h2>
+  <div class="note">
+    <p><strong>Europe PMC</strong> (which includes PubMed, MEDLINE and the preprint servers for biomedicine) needs nothing. <strong>OpenAlex</strong> covers every field, and adds topics, authors by identifier and complete citations of your work; it needs a free key of your own from OpenAlex. A paper found by both is shown once, and a preprint and the article it became are one paper.</p>
+    <p>Scrollar shows titles, authors, abstracts and links. It does not host papers: a PDF comes from the publisher or repository that offers it free.</p>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>Status</h2>
+  <div class="note">
+    <p>Scrollar is in active development and used daily by its author, and is being prepared for a public beta. It is one app for iPhone, iPad and Mac, with no third-party code. The source is published to read and to check what the app does with your data; it is not open source (see the <a href="https://github.com/amouraux/scrollar/blob/main/LICENSE">licence</a>).</p>
+  </div>
+</section>
+
+<footer class="wrap">
+  <div class="links">
+    <a href="privacy.html">Privacy</a>
+    <a href="https://github.com/amouraux/scrollar">Source</a>
+    <a href="https://github.com/amouraux/scrollar/issues">Feedback</a>
+  </div>
+  <div>© 2026 André Mouraux</div>
+</footer>
+
+</body>
+</html>
