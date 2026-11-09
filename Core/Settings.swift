@@ -279,6 +279,9 @@ struct FeedSettings: Codable, Equatable {
     /// follow and mute lists give each (see Levels.swift). Empty: the lists alone.
     var levels: [LevelEntry] = []
 
+    /// Whether a thumb asks what it is about, or takes the first reason the paper is in the feed for.
+    var asksThumbBasis = true
+
     // MARK: What the thumbs count for
     /// How many of the newest hides count (the newest counts fully, the oldest of them a quarter), and
     /// in how many months a hide's weight halves (0 for never). A hide teaches the feed to lower similar papers.
@@ -489,7 +492,7 @@ extension FeedSettings {
     enum CodingKeys: String, CodingKey {
         case formatVersion, orcid, profileOrcids, profileFilled, useMyPublications, useOpenAlex, useEuropePMC
         case hideMemory, hideHalfLifeMonths, likeMemory, likeHalfLifeMonths, hideStrength, likeStrength
-        case useCrossref, useArXiv, useOSF, referenceManagers, levels
+        case useCrossref, useArXiv, useOSF, referenceManagers, levels, asksThumbBasis
         case useZotero, useLibraryFile, zoteroRecent
         case followedTopics, followedJournals, followedAuthors, followedInstitutions
         case followedFunders, followedKeywords, trackedPapers, feedOrder, highlightCount, highlightCloseness, highlightImpact, highlightAuthorH, dwellSeconds
@@ -517,6 +520,7 @@ extension FeedSettings {
         // A manager an older or newer version names that this one does not know is left out, not fatal.
         referenceManagers = get(.referenceManagers, [String]()).compactMap(ReferenceManager.init(rawValue:))
         levels = get(.levels, [LevelEntry]())
+        asksThumbBasis = get(.asksThumbBasis, asksThumbBasis)
         hideMemory = min(max(get(.hideMemory, hideMemory), 10), 500)
         hideHalfLifeMonths = min(max(get(.hideHalfLifeMonths, hideHalfLifeMonths), 0), 36)
         likeMemory = min(max(get(.likeMemory, likeMemory), 20), 1000)

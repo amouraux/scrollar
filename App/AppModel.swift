@@ -1083,6 +1083,40 @@ final class AppModel {
 
     func isLiked(_ p: Paper) -> Bool { settings.feedback.isLiked(p) }
 
+    /// A thumb waiting to be answered: what is it about?
+    struct ThumbRequest: Identifiable {
+        let id = UUID()
+        let paper: Paper
+        let up: Bool
+        let candidates: [ThumbBasis.Candidate]
+    }
+    var thumbRequest: ThumbRequest?
+
+    /// A thumb on a paper. It asks what it is about (a keyword, the journal, an author, a topic), so that the effect
+    /// on the feed is the one the user chose and can see; or, if the user said not to ask, takes the first reason
+    /// the paper is in the feed for. Taking back a thumb up asks nothing.
+    func thumb(_ p: Paper, up: Bool) {
+        if up && isLiked(p) { toggleLiked(p); return }
+        let candidates = ThumbBasis.candidates(for: p, settings: settings)
+        if settings.asksThumbBasis {
+            thumbRequest = ThumbRequest(paper: p, up: up, candidates: candidates)
+        } else {
+            let keys = ThumbBasis.preselected(candidates, paper: p)
+            applyThumb(p, up: up, chosen: candidates.filter { keys.contains($0.ref.key) }.map(\.ref))
+        }
+    }
+
+    /// The thumb as answered: each thing chosen moves one level (in one change to the settings), and the paper is
+    /// marked For me, or hidden, as a thumb always did.
+    func applyThumb(_ p: Paper, up: Bool, chosen: [FacetRef]) {
+        var s = settings
+        let moved = ThumbBasis.apply(chosen, up: up, to: &s)
+        if !moved.isEmpty { settings = s }
+        if up { toggleLiked(p) } else { hide(p) }
+        let line = ThumbBasis.summary(moved)
+        if !line.isEmpty { show((up ? "Noted: more like this. " : "Noted: less like this. ") + line, seconds: 8) }
+    }
+
     /// "For me": teaches the feed without saving. It also counts the paper as studied, so it leaves the top
     /// at the next refresh. Taking it back removes it from the profile, not from the history.
     func toggleLiked(_ p: Paper) {

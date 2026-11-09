@@ -1987,5 +1987,38 @@ var lvDoc = device(lvSync, stamp: at(1)); lvDoc.reconcile(lvGone, at: at(3))
 check(lvDoc.apply(to: lvSync).levels.isEmpty, "levels: setting one back to what the lists give removes it on every device")
 check(lvSync.forFetching != FeedSettings().forFetching && lvSync.forRanking != FeedSettings().forRanking, "levels: setting one searches and ranks again")
 
+// What a thumb is about.
+var tbs = FeedSettings()
+tbs.followedJournals = [Entity(id: "S1", name: "Pain")]; tbs.followedKeywords = [KeywordRule(phrase: "TMS")]
+let tbPaper = lvPaper("t1", title: "TMS for pain", journal: "Pain", journalID: "S1", authors: ["Ada L", "Grace H", "Alan T"], authorIDs: ["A1", "A2", "A3"],
+                      topics: ["Neural dynamics", "Pain management"], topicIDs: ["T1", "T2"], reasons: ["Keyword: TMS", "Journal: Pain"])
+var tbPaperF = tbPaper; tbPaperF.followed = true
+let tbCands = ThumbBasis.candidates(for: tbPaperF, settings: tbs)
+check(tbCands.map(\.ref.name) == ["TMS", "Pain", "Ada L", "Alan T", "Neural dynamics", "Pain management"] && tbCands.map(\.ref.kind) == [.keyword, .journal, .author, .author, .topic, .topic], "thumb basis: the reasons the paper is in the feed for come first, then its journal, its first and last author and its topics, each once")
+check(tbCands[0].ref == FacetRef.keyword("TMS") && tbCands[1].ref == FacetRef(kind: .journal, id: "S1", name: "Pain") && tbCands[2].ref.id == "A1" && tbCands[3].ref.id == "A3" && tbCands[4].ref.id == "T1", "thumb basis: a thing is known by the id the lists give it, else by the id the paper gives it")
+check(tbCands[0].level == .maximum && tbCands[1].level == .maximum && tbCands[2].level == .normal, "thumb basis: each shows the level it has now")
+check(ThumbBasis.preselected(tbCands, paper: tbPaperF) == [FacetRef.keyword("TMS").key], "thumb basis: the first reason, the one the post names, is chosen to begin with")
+check(ThumbBasis.preselected(ThumbBasis.candidates(for: lvPaper("t2"), settings: tbs), paper: lvPaper("t2")).isEmpty, "thumb basis: a paper with no reason has nothing chosen to begin with, so the thumb is about the paper alone")
+var tbNoID = lvPaper("t3", journal: "Some Journal", authors: ["Zed Q"], topics: ["Hidden topic"], reasons: [])
+tbNoID.authorIDs = []; tbNoID.topicIDs = []
+let tbNoIDCands = ThumbBasis.candidates(for: tbNoID, settings: tbs)
+check(tbNoIDCands.map(\.ref.id) == ["name:Some Journal", "name:Zed Q"] && !tbNoIDCands.contains { $0.ref.kind == .topic }, "thumb basis: without an id a journal or an author is known by name, and a topic is left out, since it cannot be searched for")
+var tbRepo = lvPaper("t4", journal: "Zenodo"); tbRepo.isRepository = true
+check(!ThumbBasis.candidates(for: tbRepo, settings: tbs).contains { $0.ref.kind == .journal }, "thumb basis: a repository is not a journal to rank")
+var tbMany = lvPaper("t5", journal: "J", topics: (1...10).map { "Topic \($0)" }, topicIDs: (1...10).map { "T\($0)" })
+check(ThumbBasis.candidates(for: tbMany, settings: tbs).count <= 8, "thumb basis: no more than eight things are offered")
+var tbApplied = tbs
+let tbMoved = ThumbBasis.apply([FacetRef.keyword("TMS"), FacetRef(kind: .author, id: "A1", name: "Ada L")], up: false, to: &tbApplied)
+check(tbApplied.level(of: .keyword("TMS")) == .higher && tbApplied.level(of: FacetRef(kind: .author, id: "A1", name: "Ada L")) == .lower && tbMoved.map(\.from) == [.maximum, .normal], "thumb basis: a thumb down moves each chosen thing one level down, a followed thing from Maximum to Higher")
+var tbUp = tbs
+ThumbBasis.apply([FacetRef(kind: .author, id: "A1", name: "Ada L")], up: true, to: &tbUp)
+check(tbUp.level(of: FacetRef(kind: .author, id: "A1", name: "Ada L")) == .higher && FeedBuilder.seeds(tbUp, myWorkIDs: []).contains { $0.seed == .author(id: "A1", name: "Ada L") }, "thumb basis: a thumb up on something not followed raises it to Higher, and it is searched for from then on")
+let tbSummary = ThumbBasis.summary(tbMoved)
+check(tbSummary == "“TMS” Maximum → Higher, “Ada L” Normal → Lower" && ThumbBasis.summary([]) == "", "thumb basis: what moved is said in a line")
+var tbTop = tbs
+let tbTopMoved = ThumbBasis.apply([FacetRef.keyword("TMS")], up: true, to: &tbTop)
+check(ThumbBasis.summary(tbTopMoved) == "Levels unchanged: they are at the limit.", "thumb basis: at the top a thumb up changes nothing, and says so")
+check(FeedSettings().asksThumbBasis && !(try! FeedSettings.decode(Data(#"{"asksThumbBasis":false}"#.utf8))).asksThumbBasis, "thumb basis: a thumb asks what it is about unless the user said not to")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

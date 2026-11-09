@@ -11,6 +11,7 @@ struct ScrollarApp: App {
 
     var body: some Scene {
         WindowGroup {
+            @Bindable var model = model
             TabView(selection: $tab) {
                 FeedView()
                     .tabItem { Label("Feed", systemImage: "text.justify.leading") }
@@ -24,6 +25,9 @@ struct ScrollarApp: App {
             }
             .environment(model)
             .task { await model.resume() }
+            // A thumb asks what it is about, wherever it was given.
+            // (The model is handed to it: a sheet attached out here does not see what was set on the tabs.)
+            .sheet(item: $model.thumbRequest) { ThumbSheet(request: $0).environment(model) }
             #if targetEnvironment(macCatalyst)
             // A window that is too small to hold a post is no use; keep it readable.
             .onAppear {

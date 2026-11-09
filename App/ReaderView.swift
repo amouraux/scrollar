@@ -261,10 +261,10 @@ private struct PaperReader: View {
             let liked = model.isLiked(paper)
             actionButton("For me", liked ? "hand.thumbsup.fill" : "hand.thumbsup",
                          hint: liked ? "Takes back that this is for you"
-                                     : "Tells the feed this is the kind of paper you want, without adding it to your reading list",
-                         tint: liked ? Color.accentColor : nil) { model.toggleLiked(paper) }
-            actionButton("Not for me", "hand.thumbsdown", hint: "Hides this paper for good") {
-                withAnimation { model.hide(paper) }
+                                     : "Asks what you like about it, and promotes that, without adding it to your reading list",
+                         tint: liked ? Color.accentColor : nil) { model.thumb(paper, up: true) }
+            actionButton("Not for me", "hand.thumbsdown", hint: "Asks what you do not like about it, demotes that, and hides this paper") {
+                model.thumb(paper, up: false)
             }
             if let url = paper.link {
                 actionButton("Open", "arrow.up.right.square", hint: "Opens the paper in your browser") {

@@ -228,10 +228,11 @@ struct RankingScreen: View {
                 } label: {
                     LabeledContent("Your feedback", value: feedbackStatus(model.settings.feedback))
                 }
+                Toggle("Ask what a thumb is about", isOn: $model.settings.asksThumbBasis)
             } header: {
                 Text("What you have told it")
             } footer: {
-                Text("What is on your reading list, marked For me or hidden teaches the feed. Open it to see how much each counts, for how long, and what it is doing to the feed now.")
+                Text("What is on your reading list, marked For me or hidden teaches the feed. Open it to see how much each counts, for how long, and what it is doing to the feed now. A thumb asks what it is about (a keyword, a journal, an author, a topic): each thing you choose moves one level, under Follow and mute, Levels. Turned off, a thumb takes the first reason the paper is in the feed for.")
             }
         }
         .navigationTitle("Ranking")

@@ -65,6 +65,18 @@ enum FacetKind: String, Codable, CaseIterable {
         }
     }
 
+    /// One of them, for saying what a paper is about.
+    var singular: String {
+        switch self {
+        case .keyword: return "Keyword"
+        case .journal: return "Journal"
+        case .author: return "Researcher"
+        case .topic: return "Topic"
+        case .institution: return "Institution"
+        case .funder: return "Funder"
+        }
+    }
+
     /// A topic, an institution or a funder names hundreds of papers a month, in every field: it can be raised
     /// but not kept in full, as a follow of one never was.
     var isBroad: Bool { self == .topic || self == .institution || self == .funder }
