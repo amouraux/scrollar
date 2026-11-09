@@ -1,5 +1,6 @@
 import SwiftUI
 import PDFKit
+import WebKit
 
 /// The paper open beside the feed on a wide window: everything a post leaves out, in one place.
 /// It shows whatever `AppModel.readerPaper` is; the feed column sets it by a tap.
@@ -303,7 +304,9 @@ private struct PaperReader: View {
 /// notice, a "are you a robot" check) is not a PDF, and the pane says so instead of showing nothing.
 @MainActor @Observable
 final class PDFLoader {
-    enum State { case idle, loading, ready(PDFDocument), failed(String) }
+    /// `web` is the second approach: the plain download was refused, so the address is opened in a
+    /// real web view, which can pass the cookie and bot checks that publishers put in front of a PDF.
+    enum State { case idle, loading, ready(PDFDocument), web(why: String), failed(String) }
     private(set) var state = State.idle
     /// Files this large are left to the browser: they would be held in memory in full.
     private static let largest = 80_000_000
@@ -315,7 +318,7 @@ final class PDFLoader {
         + "(KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 
     func load(_ url: URL, referer: URL? = nil) async {
-        switch state { case .idle, .failed: break; default: return }
+        switch state { case .idle, .failed, .web: break; default: return }
         state = .loading
         var request = URLRequest(url: url, timeoutInterval: 30)
         request.setValue("application/pdf,*/*;q=0.5", forHTTPHeaderField: "Accept")
@@ -330,17 +333,22 @@ final class PDFLoader {
                 (file, response) = try await URLSession.shared.download(for: request)
             }
             let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            guard size <= Self.largest else { state = .failed("This PDF is too large to show here."); return }
+            guard size <= Self.largest else { state = .web(why: "This PDF is too large to download here."); return }
             let data = try Data(contentsOf: file)
             guard data.prefix(5) == Data("%PDF-".utf8), let document = PDFDocument(data: data) else {
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                state = .failed(status >= 400 ? "The site refused the download (error \(status))."
-                                              : "The site sent a web page, not a PDF.")
+                state = .web(why: status >= 400 ? "The site refused a direct download (error \(status))."
+                                                : "The site sent a web page, not a PDF.")
                 return
             }
             state = .ready(document)
         } catch {
-            state = .failed("The PDF could not be loaded. Check the connection.")
+            // A dropped connection is not the site's refusal: a web view would fail the same way.
+            if (error as? URLError)?.code == .notConnectedToInternet {
+                state = .failed("The PDF could not be loaded. Check the connection.")
+            } else {
+                state = .web(why: "A direct download did not work.")
+            }
         }
     }
 }
@@ -359,6 +367,18 @@ private struct PDFPane: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .ready(let document):
                 PDFKitView(document: document)
+            case .web(let why):
+                VStack(spacing: 0) {
+                    HStack(spacing: 8) {
+                        Text(why + " Showing it as a web page instead.")
+                            .font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                        Spacer(minLength: 8)
+                        Button("Open in browser") { openURL(url) }.font(.footnote)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    Divider()
+                    PDFWebView(url: url, referer: referer)
+                }
             case .failed(let message):
                 ContentUnavailableView {
                     Label("Could not show the PDF", systemImage: "doc.badge.ellipsis")
@@ -390,4 +410,23 @@ private struct PDFKitView: UIViewRepresentable {
     func updateUIView(_ view: PDFView, context: Context) {
         if view.document !== document { view.document = document }
     }
+}
+
+
+/// The second approach. A web view is a real browser engine with cookies that persist, so it can
+/// get past a publisher's consent page or "checking your browser" step that a bare download cannot.
+/// WebKit shows a PDF it is sent, and a page it is sent, so either way the reader sees something.
+private struct PDFWebView: UIViewRepresentable {
+    let url: URL
+    let referer: URL?
+
+    func makeUIView(context: Context) -> WKWebView {
+        let view = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        var request = URLRequest(url: url, timeoutInterval: 30)
+        if let referer { request.setValue(referer.absoluteString, forHTTPHeaderField: "Referer") }
+        view.load(request)
+        return view
+    }
+
+    func updateUIView(_ view: WKWebView, context: Context) {}
 }
