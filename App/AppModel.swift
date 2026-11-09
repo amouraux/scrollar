@@ -64,6 +64,12 @@ final class AppModel {
     }
 
     private(set) var layout = Layout()
+    /// Show only what has not been looked at yet. Kept across launches, with the other preferences.
+    var feedNewOnly: Bool = UserDefaults.standard.bool(forKey: "feedNewOnly") {
+        didSet { UserDefaults.standard.set(feedNewOnly, forKey: "feedNewOnly") }
+    }
+    /// What the feed draws: all of it, or only the new.
+    var shownLayout: FeedLayout { feedNewOnly ? layout.newOnly : layout }
     /// The connected Zotero account, with its key: from the Keychain, never from a file.
     private(set) var zotero: ZoteroAccount?
     /// The RIS or BibTeX export last imported, for managers that have no API to read.
@@ -1051,7 +1057,7 @@ final class AppModel {
     func hide(_ p: Paper) {
         // Taken off the list under the reader's nose: the pane moves on to the next paper.
         let wasOpen = readerPaper?.dedupeKey == p.dedupeKey
-        let order = wasOpen ? layout.displayOrder(settings: settings) : []
+        let order = wasOpen ? shownLayout.displayOrder(settings: settings) : []
         settings.feedback.hide(p)
         dropExcluded()
         if wasOpen {
@@ -1074,7 +1080,7 @@ final class AppModel {
     /// pane is not on screen, so a paper is never marked read where nobody could see it.
     func stepReader(_ offset: Int) {
         guard readerShown else { return }
-        let keys = layout.displayOrder(settings: settings)
+        let keys = shownLayout.displayOrder(settings: settings)
         guard let key = Reader.neighbour(of: readerPaper?.dedupeKey, offset: offset, in: keys),
               key != readerPaper?.dedupeKey,
               let next = layout.all.first(where: { $0.paper.dedupeKey == key })?.paper else { return }

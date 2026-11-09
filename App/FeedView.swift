@@ -74,6 +74,7 @@ struct FeedView: View {
                     LazyVStack(spacing: 8) {
                         Color.clear.frame(height: 0).id("top")
                         StatusBanner()
+                        NewSwitch()
                         content
                     }
                     .padding(.horizontal, 16)
@@ -114,7 +115,18 @@ struct FeedView: View {
     }
 
     @ViewBuilder private var content: some View {
-        let layout = model.layout
+        let layout = model.shownLayout
+
+        // New only, and everything has been looked at: said, instead of an empty list.
+        if model.feedNewOnly, layout.isEmpty, !model.layout.isEmpty {
+            ContentUnavailableView {
+                Label("Nothing new", systemImage: "checkmark.seal")
+            } description: {
+                Text("You have looked at everything in your feed. Switch to All to see it again.")
+            } actions: {
+                Button("Show all") { model.feedNewOnly = false }
+            }
+        }
 
         // The few that fit particularly well, above everything, each saying why.
         if !layout.highlights.isEmpty {
@@ -225,6 +237,25 @@ private struct SectionTitle: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 8)
             .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// All, or only what has not been looked at yet, with how many that is. Hidden while there is no feed.
+private struct NewSwitch: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        @Bindable var model = model
+        if !model.layout.isEmpty {
+            let count = model.layout.newCount
+            Picker("Show", selection: $model.feedNewOnly) {
+                Text("All").tag(false)
+                Text(count > 0 ? "New \(count)" : "New").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Show all papers, or only the new ones")
+            .padding(.bottom, 4)
+        }
     }
 }
 

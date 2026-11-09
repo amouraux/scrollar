@@ -94,6 +94,25 @@ enum Reader {
 }
 
 extension FeedLayout {
+    /// Only what has not been looked at: the highlights, what lies further back, and the new part of
+    /// each list. What has been glanced at ("Earlier") and what has been read are left out.
+    var newOnly: FeedLayout {
+        func fresh(_ a: Arranged) -> Arranged { var o = a; o.earlier = []; o.read = []; return o }
+        var out = self
+        out.feed = fresh(feed)
+        out.citedYou = fresh(citedYou)
+        out.following = fresh(following)
+        out.forYou = fresh(forYou)
+        return out
+    }
+
+    /// How many papers have not been looked at yet.
+    var newCount: Int {
+        highlights.count + older.count + [feed, citedYou, following, forYou].reduce(0) { $0 + $1.fresh.count }
+    }
+}
+
+extension FeedLayout {
     /// Every post in the order the feed draws it, top to bottom, with the same cuts, so the pane's
     /// next and previous follow what the reader sees. `FeedView.content` draws the same sequence;
     /// a test pins the two orders together for the blended feed.

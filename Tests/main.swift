@@ -1791,5 +1791,21 @@ check(FeedSettings().useCrossref && !FeedSettings().useArXiv && (try! FeedSettin
 var tsrc = FeedSettings(); tsrc.useArXiv = true; tsrc.useCrossref = false
 check(device(tsrc, stamp: at(1)).apply(to: FeedSettings()).useArXiv && !device(tsrc, stamp: at(1)).apply(to: FeedSettings()).useCrossref, "settings: the two switches sync")
 
+// New only.
+func lay(_ id: String) -> RankedPaper { RankedPaper(paper: paper(id, "Paper \(id)"), score: 1, similarity: 0.5) }
+var nl = FeedLayout()
+nl.feed.fresh = [lay("f1"), lay("f2")]; nl.feed.earlier = [lay("e1")]; nl.feed.read = [lay("r1")]
+nl.forYou.fresh = [lay("y1")]; nl.forYou.earlier = [lay("y2")]; nl.following.fresh = [lay("w1")]; nl.citedYou.earlier = [lay("c1")]
+nl.older = [lay("o1")]
+nl.highlights = [Highlight(ranked: lay("h1"), reason: "close")]
+let nlOnly = nl.newOnly
+check(nlOnly.feed.fresh.count == 2 && nlOnly.feed.earlier.isEmpty && nlOnly.feed.read.isEmpty && nlOnly.forYou.earlier.isEmpty && nlOnly.citedYou.earlier.isEmpty, "new only: what has been glanced at, and what has been read, are left out")
+check(nlOnly.highlights.count == 1 && nlOnly.older.count == 1 && nlOnly.following.fresh.count == 1 && nlOnly.forYou.fresh.count == 1, "new only: the highlights, what lies further back and the new part of each list stay")
+check(nl.newCount == 6 && nlOnly.newCount == 6 && FeedLayout().newCount == 0, "new only: the count is what has not been looked at, and the same with or without the filter")
+var nlSections = FeedSettings(); nlSections.feedOrder = .sections
+check(nlOnly.displayOrder(settings: nlSections) == ["oa:h1", "oa:w1", "oa:y1", "oa:o1"], "new only: the reading order follows the filtered feed")
+check(nl.displayOrder(settings: FeedSettings()).count > nlOnly.displayOrder(settings: FeedSettings()).count, "new only: the filter shortens the reading order")
+check(FeedLayout().newOnly.isEmpty, "new only: an empty feed stays empty")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

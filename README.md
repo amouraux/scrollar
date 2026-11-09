@@ -593,6 +593,17 @@ panel leaves those out. The order is not changed. The segments are Reading list,
 cannot write shows "Add to Zotero (the key is read-only)" greyed out, not hidden, and failures are shown for fifteen
 seconds and put away by a tap. Older notes in this file may still say "Saved" or "Save to Zotero": they mean these.
 
+## New only
+
+At the top of the feed, **All | New** (with a count). **New** shows only what has not been looked at yet: a paper that has
+not been on screen for about a second and a half, which is exactly what the NEW badge means. It is about attention, not
+arrival: a paper that came last week and was never reached is new, and one that came ten minutes ago and was looked at
+is not. The highlights, what lies further back and the new part of each list stay; what has been glanced at ("Earlier")
+and what has been read are left out. It changes what is drawn and the order the arrow keys step through, nothing else. As
+the rest of the feed, it does not rearrange while scrolling: a paper looked at drops out at the next refresh. When
+everything has been looked at it says so, with a button to show all. The choice is kept (`feedNewOnly`, `Core/Reader.swift`,
+tested). Not tried: on the Mac window, and in long use.
+
 ## What the thumbs do
 
 **Read later** and **For me** pull the feed toward what is like them; **Not for me** now also pushes it away from what
