@@ -368,6 +368,14 @@ How each manager is reached, and why:
 - **EndNote** has no way in from outside the app, but opens its own `.enw` import format with a tap or
   a double-click, so the menu offers that (`Core/EndNote.swift`). Its RIS import works too, through a
   menu. I could not run EndNote here: the file is checked against the format, not against EndNote.
+  EndNote (and Mendeley) can also import PDFs from a folder by themselves, so Tune → Reference manager
+  folder takes that folder and a paper's Share menu gets "Put the PDF in it" (`WatchedFolder`); the
+  manager reads the details from the PDF, so for a paper without a DOI the `.enw` is better. It will not
+  drop a PDF twice, counting EndNote's own Import subfolder. "Copy the PDF" puts the file on the
+  clipboard under a readable name and "Copy the reference as text" puts the RIS text there (Zotero's
+  Import from Clipboard reads it). The clipboard is the one route that every app can receive, but only
+  an app that accepts a pasted file or text takes it: I do not know that EndNote does, and Zotero and
+  Mendeley take files better by drag or by the folder. None of this was tried against the managers.
 - **Mendeley** has a web interface only for an app registered with Elsevier and signed in with OAuth,
   which is not something to ask of a reader, and I found no endpoint that reads RIS. So: the `.ris`
   file and the PDF, which its import and drag-and-drop take. Tell me if you want a registered-app

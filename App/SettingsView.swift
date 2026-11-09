@@ -280,6 +280,8 @@ struct SettingsView: View {
 
                 PDFStorageSection()
 
+                WatchedFolderSection()
+
                 Section {
                     Toggle("Europe PMC and PubMed", isOn: $model.settings.useEuropePMC)
                     Toggle("OpenAlex", isOn: $model.settings.useOpenAlex)
@@ -1122,6 +1124,31 @@ struct PDFStorageSection: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("They can be downloaded again from the paper. PDFs in the shared folder are not touched.")
+        }
+    }
+}
+
+/// A folder a reference manager imports PDFs from by itself.
+struct WatchedFolderSection: View {
+    @State private var folder: URL? = WatchedFolder.url
+    @State private var choosing = false
+
+    var body: some View {
+        Section {
+            if let folder {
+                LabeledContent("Folder", value: folder.lastPathComponent)
+                Button("Choose another folder…") { choosing = true }
+                Button("Stop using this folder", role: .destructive) { WatchedFolder.forget(); self.folder = nil }
+            } else {
+                Button("Choose the folder…") { choosing = true }
+            }
+        } header: {
+            Text("Reference manager folder")
+        } footer: {
+            Text("EndNote can import PDFs from a folder by itself (its Settings, PDF Handling, Enable automatic importing; it looks when it opens, and moves what it imported into an Import subfolder), and Mendeley can watch one. Choose that folder here and a paper's Share menu gets Put the PDF in it. The manager reads the paper's details from the PDF, so a paper without a DOI may arrive without them; for those the .enw or .ris file is better. Zotero has no such folder: use Save to Zotero.")
+        }
+        .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
+            if case .success(let url) = result, WatchedFolder.adopt(url) { folder = WatchedFolder.url }
         }
     }
 }

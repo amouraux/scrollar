@@ -20,57 +20,19 @@ enum PDFFolder {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: policyKey) }
     }
 
-    private static var creationOptions: URL.BookmarkCreationOptions {
-        #if targetEnvironment(macCatalyst)
-        return [.withSecurityScope]
-        #else
-        return []
-        #endif
-    }
-
-    private static var resolutionOptions: URL.BookmarkResolutionOptions {
-        #if targetEnvironment(macCatalyst)
-        return [.withSecurityScope]
-        #else
-        return []
-        #endif
-    }
+    private static let chosen = BookmarkedFolder(key: bookmarkKey)
 
     /// The folder chosen on an earlier run, if it can still be found.
-    static var url: URL? {
-        guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else { return nil }
-        var stale = false
-        guard let url = try? URL(resolvingBookmarkData: data, options: resolutionOptions,
-                                 relativeTo: nil, bookmarkDataIsStale: &stale) else {
-            UserDefaults.standard.removeObject(forKey: bookmarkKey)
-            return nil
-        }
-        if stale, let fresh = try? url.bookmarkData(options: creationOptions) {
-            UserDefaults.standard.set(fresh, forKey: bookmarkKey)
-        }
-        return url
-    }
+    static var url: URL? { chosen.url }
 
     @discardableResult
-    static func adopt(_ url: URL) -> Bool {
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        guard let data = try? url.bookmarkData(options: creationOptions) else { return false }
-        UserDefaults.standard.set(data, forKey: bookmarkKey)
-        return true
-    }
+    static func adopt(_ url: URL) -> Bool { chosen.adopt(url) }
 
-    static func forget() { UserDefaults.standard.removeObject(forKey: bookmarkKey) }
+    static func forget() { chosen.forget() }
 
     private static func tag(_ key: String) -> String { String(PDFCache.name(for: key).dropLast(".pdf".count)) }
 
-    /// Run `body` with the folder reachable.
-    private static func within<T>(_ body: (URL) -> T?) -> T? {
-        guard let folder = url else { return nil }
-        let scoped = folder.startAccessingSecurityScopedResource()
-        defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
-        return body(folder)
-    }
+    private static func within<T>(_ body: (URL) -> T?) -> T? { chosen.within(body) }
 
     private static func entries(_ folder: URL) -> [URL] {
         (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.fileSizeKey])) ?? []
@@ -130,5 +92,85 @@ enum PDFFolder {
         try? FileManager.default.startDownloadingUbiquitousItem(at: file)
         let deadline = Date().addingTimeInterval(20)
         while Date() < deadline, status() != .current { Thread.sleep(forTimeInterval: 0.2) }
+    }
+}
+
+/// A folder the user picked, remembered as a bookmark on this device (security-scoped on the Mac,
+/// where the app is sandboxed). The same mechanism as the sync file's.
+struct BookmarkedFolder {
+    let key: String
+
+    private var creation: URL.BookmarkCreationOptions {
+        #if targetEnvironment(macCatalyst)
+        return [.withSecurityScope]
+        #else
+        return []
+        #endif
+    }
+
+    private var resolution: URL.BookmarkResolutionOptions {
+        #if targetEnvironment(macCatalyst)
+        return [.withSecurityScope]
+        #else
+        return []
+        #endif
+    }
+
+    var url: URL? {
+        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        var stale = false
+        guard let url = try? URL(resolvingBookmarkData: data, options: resolution, relativeTo: nil, bookmarkDataIsStale: &stale) else {
+            UserDefaults.standard.removeObject(forKey: key)
+            return nil
+        }
+        if stale, let fresh = try? url.bookmarkData(options: creation) { UserDefaults.standard.set(fresh, forKey: key) }
+        return url
+    }
+
+    func adopt(_ url: URL) -> Bool {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? url.bookmarkData(options: creation) else { return false }
+        UserDefaults.standard.set(data, forKey: key)
+        return true
+    }
+
+    func forget() { UserDefaults.standard.removeObject(forKey: key) }
+
+    /// Run `body` with the folder reachable.
+    func within<T>(_ body: (URL) -> T?) -> T? {
+        guard let folder = url else { return nil }
+        let scoped = folder.startAccessingSecurityScopedResource()
+        defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
+        return body(folder)
+    }
+}
+
+/// The folder a reference manager watches (EndNote's automatic import folder, Mendeley's watched
+/// folder). The app only drops PDFs into it; the manager imports them and reads their metadata.
+enum WatchedFolder {
+    private static let chosen = BookmarkedFolder(key: "watchedFolderBookmark")
+    static var url: URL? { chosen.url }
+    @discardableResult static func adopt(_ url: URL) -> Bool { chosen.adopt(url) }
+    static func forget() { chosen.forget() }
+
+    enum Result { case dropped(folder: String), alreadyThere(folder: String), noFolder, failed }
+
+    /// Copy a PDF in, under a readable name. EndNote moves what it imports into an "Import"
+    /// subfolder, so a name found there counts as already sent: dropping it again would import it twice.
+    static func drop(_ pdf: URL, name: String) -> Result {
+        chosen.within { folder -> Result? in
+            let fm = FileManager.default
+            let target = folder.appendingPathComponent(name)
+            if fm.fileExists(atPath: target.path) || fm.fileExists(atPath: folder.appendingPathComponent("Import").appendingPathComponent(name).path) {
+                return .alreadyThere(folder: folder.lastPathComponent)
+            }
+            var failure: NSError?
+            var ok = false
+            NSFileCoordinator().coordinate(writingItemAt: target, options: .forReplacing, error: &failure) { write in
+                ok = (try? fm.copyItem(at: pdf, to: write)) != nil
+            }
+            return ok ? .dropped(folder: folder.lastPathComponent) : .failed
+        } ?? .noFolder
     }
 }
