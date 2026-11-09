@@ -34,6 +34,8 @@ struct SavedView: View {
                     if wide && panelShown {
                         SavedFilterPanel(items: all.map(\.paper), filter: $filter)
                             .frame(width: 310)
+                            // Its own tint, so the panel reads as a side bar and not as more list.
+                            .background(Color.accentColor.opacity(0.08))
                         Divider()
                     }
                     VStack(spacing: 0) {
@@ -45,6 +47,8 @@ struct SavedView: View {
 
                         content(all)
                     }
+                    // Room between the panel and the list's own rounded card.
+                    .padding(.leading, wide && panelShown ? 12 : 0)
                 }
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) { exportButton }
@@ -197,7 +201,9 @@ private struct SavedFilterPanel: View {
                 Button("Clear filter") { filter.kind = nil; filter.detail = nil; filter.query = "" }
             }
         }
-        .listStyle(.sidebar)
+        // Plain rows on the panel's own tint: the grouped style drew grey boxes that met the list's.
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
     }
 
     private func row(_ title: String, symbol: String?, count: Int, selected: Bool, indent: Bool,
