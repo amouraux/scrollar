@@ -271,6 +271,10 @@ struct FeedSettings: Codable, Equatable {
     /// The Open Science Framework's preprint servers (PsyArXiv, SocArXiv…), off until the user wants them.
     var useOSF = false
 
+    /// The reference managers the user uses, so that only what works for them is shown. Empty until chosen:
+    /// everything is then shown.
+    var referenceManagers: [ReferenceManager] = []
+
     // MARK: What the thumbs count for
     /// How many of the newest hides count (the newest counts fully, the oldest of them a quarter), and
     /// in how many months a hide's weight halves (0 for never). A hide teaches the feed to lower similar papers.
@@ -406,6 +410,7 @@ struct FeedSettings: Codable, Equatable {
         s.dwellSeconds = d.dwellSeconds
         s.profileFilled = d.profileFilled
         s.hideMemory = d.hideMemory
+        s.referenceManagers = d.referenceManagers
         s.hideHalfLifeMonths = d.hideHalfLifeMonths
         s.likeMemory = d.likeMemory
         s.likeHalfLifeMonths = d.likeHalfLifeMonths
@@ -425,6 +430,8 @@ struct FeedSettings: Codable, Equatable {
         var s = withoutFeedback
         if s.authorWeight == 0 { s.byline = FeedSettings().byline }
         let d = FeedSettings()
+        // Which managers are in use only decides what the screens and the Share menu offer.
+        s.referenceManagers = d.referenceManagers
         s.feedOrder = d.feedOrder
         s.highlightCount = d.highlightCount
         s.highlightCloseness = d.highlightCloseness
@@ -478,7 +485,7 @@ extension FeedSettings {
     enum CodingKeys: String, CodingKey {
         case formatVersion, orcid, profileOrcids, profileFilled, useMyPublications, useOpenAlex, useEuropePMC
         case hideMemory, hideHalfLifeMonths, likeMemory, likeHalfLifeMonths, hideStrength, likeStrength
-        case useCrossref, useArXiv, useOSF
+        case useCrossref, useArXiv, useOSF, referenceManagers
         case useZotero, useLibraryFile, zoteroRecent
         case followedTopics, followedJournals, followedAuthors, followedInstitutions
         case followedFunders, followedKeywords, trackedPapers, feedOrder, highlightCount, highlightCloseness, highlightImpact, highlightAuthorH, dwellSeconds
@@ -503,6 +510,8 @@ extension FeedSettings {
         useCrossref = get(.useCrossref, useCrossref)
         useArXiv = get(.useArXiv, useArXiv)
         useOSF = get(.useOSF, useOSF)
+        // A manager an older or newer version names that this one does not know is left out, not fatal.
+        referenceManagers = get(.referenceManagers, [String]()).compactMap(ReferenceManager.init(rawValue:))
         hideMemory = min(max(get(.hideMemory, hideMemory), 10), 500)
         hideHalfLifeMonths = min(max(get(.hideHalfLifeMonths, hideHalfLifeMonths), 0), 36)
         likeMemory = min(max(get(.likeMemory, likeMemory), 20), 1000)

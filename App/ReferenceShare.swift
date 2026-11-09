@@ -84,13 +84,19 @@ struct ShareMenu<Label: View>: View {
                     }
                     .disabled(!account.canWrite)
                 }
-                ShareLink(item: EndNoteFile(file: ReferenceFile(name: enw, format: .enw, make: { [reference] })),
-                          preview: SharePreview(enw, image: Image(systemName: "books.vertical"))) {
-                    SwiftUI.Label("EndNote (.enw)", systemImage: "books.vertical")
+                if model.settings.uses(.endnote) {
+                    ShareLink(item: EndNoteFile(file: ReferenceFile(name: enw, format: .enw, make: { [reference] })),
+                              preview: SharePreview(enw, image: Image(systemName: "books.vertical"))) {
+                        SwiftUI.Label("EndNote (.enw)", systemImage: "books.vertical")
+                    }
                 }
-                ShareLink(item: ReferenceFile(name: ris, make: { [reference] }),
-                          preview: SharePreview(ris, image: Image(systemName: "books.vertical"))) {
-                    SwiftUI.Label("Mendeley, Zotero and others (.ris)", systemImage: "books.vertical")
+                if model.settings.uses(.mendeley) || model.settings.uses(.other) {
+                    ShareLink(item: ReferenceFile(name: ris, make: { [reference] }),
+                              preview: SharePreview(ris, image: Image(systemName: "books.vertical"))) {
+                        SwiftUI.Label(model.settings.uses(.mendeley) && model.settings.uses(.other) ? "Mendeley and others (.ris)"
+                                      : model.settings.uses(.mendeley) ? "Mendeley (.ris)" : "Other managers (.ris)",
+                                      systemImage: "books.vertical")
+                    }
                 }
                 Button { UIPasteboard.general.string = RIS.document([reference]); model.show("Reference copied") } label: {
                     SwiftUI.Label("Copy the reference as text", systemImage: "doc.on.clipboard")
@@ -106,7 +112,7 @@ struct ShareMenu<Label: View>: View {
                     Button { Task { await model.copyPDF(paper) } } label: {
                         SwiftUI.Label("Copy the PDF", systemImage: "doc.on.doc")
                     }
-                    if let folder = WatchedFolder.url {
+                    if model.settings.usesAWatchedFolder, let folder = WatchedFolder.url {
                         Button { Task { await model.dropPDF(paper) } } label: {
                             SwiftUI.Label("Put the PDF in “\(folder.lastPathComponent)”", systemImage: "folder.badge.plus")
                         }

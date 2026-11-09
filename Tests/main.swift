@@ -1873,5 +1873,17 @@ check(pjBoth.count == 11 && pjBoth.last?.contains("transcranial") == true && pjB
 check(ProjectText.combinedPassages([], total: 20).isEmpty && ProjectText.combinedPassages([pjShort], total: 20).count == 1, "projects: no project gives no passages, and a short one keeps all of its own")
 
 check(SecretText.masked("abcdefgh1234") == "••••••••1234" && SecretText.masked("abcd") == "••••••••" && SecretText.masked("") == "••••••••" && !SecretText.masked("SECRETVALUE9").contains("SECRET"), "a key is shown as dots and its last four characters, and a short one as dots alone")
+// Reference managers, and where a folder is.
+var rmNone = FeedSettings()
+check(ReferenceManager.allCases.allSatisfy { rmNone.uses($0) } && rmNone.usesAWatchedFolder && rmNone.usesAnExport, "reference managers: with none chosen, everything is shown")
+var rmZotero = FeedSettings(); rmZotero.referenceManagers = [.zotero]
+check(rmZotero.uses(.zotero) && !rmZotero.uses(.endnote) && !rmZotero.uses(.mendeley) && !rmZotero.usesAWatchedFolder && !rmZotero.usesAnExport, "reference managers: a Zotero user is shown no watched folder and no export, which Zotero's connection makes unnecessary")
+var rmEndnote = FeedSettings(); rmEndnote.referenceManagers = [.endnote]
+check(rmEndnote.usesAWatchedFolder && rmEndnote.usesAnExport && !rmEndnote.uses(.zotero) && ReferenceManager.endnote.watchesAFolder && ReferenceManager.mendeley.watchesAFolder && !ReferenceManager.zotero.watchesAFolder && !ReferenceManager.other.watchesAFolder, "reference managers: EndNote and Mendeley watch a folder; Zotero and the others do not")
+check((try! FeedSettings.decode(Data(#"{"referenceManagers":["endnote","zotero","nonsense"]}"#.utf8))).referenceManagers == [.endnote, .zotero] && (try! FeedSettings.decode(Data("{}".utf8))).referenceManagers.isEmpty && device(rmEndnote, stamp: at(1)).apply(to: FeedSettings()).referenceManagers == [.endnote], "reference managers: the choice reads from a file, ignoring a name not known, and syncs")
+check(rmEndnote.forFetching == FeedSettings().forFetching && rmEndnote.forRanking == FeedSettings().forRanking, "reference managers: choosing one neither fetches nor ranks again")
+check(FolderPlace.describe(path: "/Users/a/Library/Mobile Documents/com~apple~CloudDocs/Scrollar PDFs") == ("iCloud Drive › Scrollar PDFs", true) && FolderPlace.describe(path: "/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/Work/Papers/") == ("iCloud Drive › Work › Papers", true) && FolderPlace.describe(path: "/Users/a/Library/Mobile Documents/com~apple~CloudDocs") == ("iCloud Drive", true), "folder place: a folder in iCloud Drive is said to be, with where")
+check(FolderPlace.describe(path: "/Users/a/Documents/PDFs") == ("On this device › Documents › PDFs", false) && FolderPlace.describe(path: "/").iCloud == false && FolderPlace.describe(path: "/Users/a/Library/Mobile Documents/iCloud~com~example~app/Documents/x").iCloud, "folder place: a folder elsewhere is said to be on this device only, and another app's iCloud container is still iCloud")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

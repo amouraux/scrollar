@@ -281,16 +281,56 @@ struct ContentScreen: View {
     }
 }
 
-/// Everything about getting papers into a reference manager, and the PDFs kept for the reader.
+/// The reference managers the user uses, and for each only what can be done with it.
 struct ReferencesScreen: View {
+    @Environment(AppModel.self) private var model
+
     var body: some View {
+        let s = model.settings
         Form {
-            ZoteroSection()
-            LibraryFileSection()
-            WatchedFolderSection()
-            PDFStorageSection()
+            ManagersSection()
+            if s.uses(.zotero) { ZoteroSection() }
+            if s.usesAWatchedFolder { WatchedFolderSection() }
+            if s.usesAnExport { LibraryFileSection() }
         }
-        .navigationTitle("Reference managers and PDFs")
+        .navigationTitle("Reference managers")
+    }
+}
+
+/// Which managers the user uses, with what Scrollar can do with each. The Share menu offers only these.
+struct ManagersSection: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Section {
+            ForEach(ReferenceManager.allCases, id: \.self) { manager in
+                VStack(alignment: .leading, spacing: 3) {
+                    Toggle(manager.title, isOn: Binding(
+                        get: { model.settings.referenceManagers.contains(manager) },
+                        set: { on in
+                            var chosen = model.settings.referenceManagers
+                            chosen.removeAll { $0 == manager }
+                            if on { chosen.append(manager) }
+                            model.settings.referenceManagers = ReferenceManager.allCases.filter(chosen.contains)
+                        }))
+                    Text(manager.abilities).font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text("Which do you use?")
+        } footer: {
+            Text(model.settings.referenceManagers.isEmpty
+                 ? "None chosen, so everything is shown below and in the Share menu. Choose yours and only what works for them is."
+                 : "Only what works for these is shown below and in the Share menu.")
+        }
+    }
+}
+
+/// The PDFs kept for the reader, and the folder that shares them between devices.
+struct PDFsScreen: View {
+    var body: some View {
+        Form { PDFStorageSection() }
+            .navigationTitle("PDFs")
     }
 }
 

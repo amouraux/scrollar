@@ -576,6 +576,23 @@ data, not a setting that is on once. The privacy policy names the case, and the 
 the feature is absent until the user sets it up. Whether this changes the App Privacy answers is for the account
 holder to decide: the developer receives nothing, the user's own account does the sending.
 
+## Reference managers, by what each can do
+
+Tune, Reference managers asks which are in use (Zotero, EndNote, Mendeley, "Papers, Citavi and others") and says what each can do. Only
+what works for the ones chosen is shown, here and in the Share menu; none chosen shows everything (`Core/ReferenceManager.swift`,
+tested). Zotero: the connection, its collection, the PDF, learning from the newest items, and the check of the key. EndNote and
+Mendeley: the PDF folder they watch (EndNote's automatic import; Mendeley can watch one), the `.enw` file for EndNote and the `.ris`
+file for Mendeley and the others. EndNote, Mendeley and the others: the reference export, as the way to learn from a library
+that has no connection (not needed if Zotero is used). A Zotero-only user sees no folder and no export; the Share menu then offers
+Add to Zotero, the reference as text and the PDF, and no `.enw`. "Import a newer export" is now "Replace with a newer export": it
+takes the file as the whole library, so a paper no longer in it is dropped (those kept keep the date they first appeared); "Add
+references by pasting" only adds. Choosing a manager neither fetches nor ranks again.
+
+**PDFs** is its own row: the downloaded PDFs and the shared folder, which now says where it is ("iCloud Drive › Scrollar PDFs"), whether it
+is really in iCloud Drive (green) or only on this device (orange), or that none is chosen, and that the choice is per device. The
+watched folder says where it is too. Tried on the iPhone simulator: the list, the managers screen and choosing EndNote; not the
+Share menu, nor the PDFs screen with a folder set.
+
 ## Zotero: what the screen says about the connection
 
 The Zotero block shows the key as dots and its last four characters, who it is connected as, and what was found when Zotero was last

@@ -39,7 +39,8 @@ struct SettingsView: View {
                     row("Content and display", "text.alignleft", status: contentStatus) { ContentScreen() }
                 }
                 Section("Connections and data") {
-                    row("Reference managers and PDFs", "books.vertical", status: referencesStatus) { ReferencesScreen() }
+                    row("Reference managers", "books.vertical", status: referencesStatus) { ReferencesScreen() }
+                    row("PDFs", "doc.richtext", status: pdfsStatus) { PDFsScreen() }
                     row("Summaries and AI", "sparkles", status: summariesStatus) { SummariesScreen() }
                     row("Sources", "network", status: sourcesStatus) { SourcesScreen() }
                     row("Sync and backup", "icloud", status: appModel.syncStatusText) { SyncBackupScreen() }
@@ -96,10 +97,18 @@ struct SettingsView: View {
     }
 
     private var referencesStatus: String {
+        let chosen = appModel.settings.referenceManagers
+        if !chosen.isEmpty { return chosen.map(\.title).joined(separator: ", ") }
         var parts: [String] = []
         if appModel.zotero != nil { parts.append("Zotero") }
-        if appModel.libraryFile != nil { parts.append("library file") }
-        return parts.isEmpty ? "None connected" : parts.joined(separator: " · ")
+        if appModel.libraryFile != nil { parts.append("reference export") }
+        return parts.isEmpty ? "Not chosen" : parts.joined(separator: " · ")
+    }
+
+    private var pdfsStatus: String {
+        let used = PDFCache.usage()
+        let kept = used.count == 0 ? "None kept" : ByteCountFormatter.string(fromByteCount: Int64(used.bytes), countStyle: .file)
+        return PDFFolder.url == nil ? kept : kept + " · shared"
     }
 
     private var summariesStatus: String {
@@ -738,18 +747,24 @@ struct LibraryFileSection: View {
                     Stepper("Newest items used: \(model.settings.zoteroRecent)",
                             value: $model.settings.zoteroRecent, in: 10...500, step: 10)
                 }
-                importButton("Import a newer export…")
-                Button("Paste more references…") { pasting = true }
+                importButton("Replace with a newer export…")
+                Button("Add references by pasting…") { pasting = true }
                 Button("Remove it", role: .destructive) { model.removeLibraryFile(); message = nil }
             } else {
+                Label("Nothing imported.", systemImage: "tray")
+                    .font(.footnote).foregroundStyle(.secondary)
+                if model.zotero != nil {
+                    Text("Zotero is connected, which already reads your newest items. An export is only for a manager with no connection of its own.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 importButton("Import an export (RIS or BibTeX)…")
                 Button("Paste references…") { pasting = true }
             }
             if let message { Text(message).font(.footnote).foregroundStyle(failed ? Color.red : Color.secondary) }
         } header: {
-            Text("Library file (EndNote, Mendeley and others)")
+            Text("Reference export (EndNote, Mendeley and others)")
         } footer: {
-            Text("The quickest way: choose Paste references, then copy from your reference manager (select papers, Copy, or Copy as reference list) or from any bibliography and paste. A RIS or BibTeX export pasted there is read as one; a plain list gives a title and DOI per reference, and a paper with only a DOI is left out. Or, in your reference manager, export your library (or the part you are working on) as RIS or BibTeX, then choose the file here. It is read on this device, and its titles, abstracts and keywords stand for what you are into, as a Zotero library does. An export does not say when each paper was added, so the first import treats them alike and puts the more recently published first; import a newer export from time to time and the papers that were not in the last one count as the newest. The file is not kept, only what was read from it, and it is not synced: import it on each device.")
+            Text("For a manager that has no connection of its own: EndNote, Mendeley, Papers, Citavi. Paste references: copy from your manager (select papers, Copy, or Copy as reference list) or from any bibliography, and paste; an export in RIS or BibTeX pasted works too. Or export your library as RIS or BibTeX and choose the file. Replace with a newer export takes the new file as your whole library: papers no longer in it are dropped, those already here keep the date they first appeared, and the others count as the newest. Add references by pasting only adds, and drops nothing; a paper pasted twice is one. What was read, not the file, is kept on this device and is not synced: do it on each device. If you use Zotero, connect it instead.")
         }
         .sheet(isPresented: $pasting) { PasteReferencesSheet { paste($0) } }
     }
@@ -1248,7 +1263,12 @@ struct PDFStorageSection: View {
 
         Section {
             if let folder {
-                LabeledContent("Folder", value: folder.lastPathComponent)
+                let place = FolderPlace.describe(path: folder.path)
+                LabeledContent("Folder", value: place.text)
+                Label(place.iCloud ? "In iCloud Drive: your other devices see it once they choose the same folder."
+                                   : "Not in iCloud Drive: only this device can see it.",
+                      systemImage: place.iCloud ? "checkmark.icloud" : "exclamationmark.icloud")
+                    .font(.footnote).foregroundStyle(place.iCloud ? Color.green : Color.orange)
                 LabeledContent("Holds", value: folderUsage.count == 0 ? "Nothing yet" : "\(size(folderUsage.bytes)) in \(folderUsage.count) PDF" + (folderUsage.count == 1 ? "" : "s"))
                 Picker("Put in it", selection: $policy) {
                     Text("Reading list and For me papers").tag(PDFFolder.Policy.saved)
@@ -1258,12 +1278,14 @@ struct PDFStorageSection: View {
                 Button("Choose another folder…") { choosing = true }
                 Button("Stop using this folder", role: .destructive) { PDFFolder.forget(); self.folder = nil }
             } else {
+                Label("No folder chosen on this device: PDFs are not shared.", systemImage: "folder.badge.questionmark")
+                    .font(.footnote).foregroundStyle(.secondary)
                 Button("Choose a folder in iCloud Drive…") { choosing = true }
             }
         } header: {
             Text("Share PDFs between devices")
         } footer: {
-            Text("Choose the same folder in iCloud Drive on each device. A PDF opened or added to the reading list on one is then there on the others, which look in the folder before downloading. The files are named after the paper, so you can find them in Files. Nothing here trims the folder or deletes from it, and it counts against your iCloud storage: delete files there when you want the room. Stopping only makes this device forget the folder.")
+            Text("Choose the same folder in iCloud Drive on each device: the choice is for this device only, so each one needs it. A PDF opened or added to the reading list on one is then there on the others, which look in the folder before downloading. The files are named after the paper, so you can find them in Files. Nothing here trims the folder or deletes from it, and it counts against your iCloud storage: delete files there when you want the room. Stopping only makes this device forget the folder.")
         }
         .onAppear { usage = PDFCache.usage(); folderUsage = PDFFolder.usage() }
         .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
@@ -1290,16 +1312,18 @@ struct WatchedFolderSection: View {
     var body: some View {
         Section {
             if let folder {
-                LabeledContent("Folder", value: folder.lastPathComponent)
+                LabeledContent("Folder", value: FolderPlace.describe(path: folder.path).text)
                 Button("Choose another folder…") { choosing = true }
                 Button("Stop using this folder", role: .destructive) { WatchedFolder.forget(); self.folder = nil }
             } else {
+                Label("No folder chosen on this device.", systemImage: "folder.badge.questionmark")
+                    .font(.footnote).foregroundStyle(.secondary)
                 Button("Choose the folder…") { choosing = true }
             }
         } header: {
-            Text("Reference manager folder")
+            Text("PDF folder for EndNote and Mendeley")
         } footer: {
-            Text("EndNote can import PDFs from a folder by itself (its Settings, PDF Handling, Enable automatic importing; it looks when it opens, and moves what it imported into an Import subfolder), and Mendeley can watch one. Choose that folder here and a paper's Share menu gets Put the PDF in it. The manager reads the paper's details from the PDF, so a paper without a DOI may arrive without them; for those the .enw or .ris file is better. Zotero has no such folder: use Save to Zotero.")
+            Text("EndNote can import PDFs from a folder by itself (its Settings, PDF Handling, Enable automatic importing; it looks when it opens, and moves what it imported into an Import subfolder), and Mendeley can watch one. Choose that folder here and a paper's Share menu gets Put the PDF in it. The manager reads the paper's details from the PDF, so a paper without a DOI may arrive without them; for those the .enw or .ris file is better. Zotero has no such folder: use Add to Zotero. This choice is for this device only.")
         }
         .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
             if case .success(let url) = result, WatchedFolder.adopt(url) { folder = WatchedFolder.url }
