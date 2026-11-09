@@ -547,6 +547,14 @@ of the network; a real library has not been read here.
 
 ## Tune
 
+Tune opens on a short list of eight rows, each with a line saying what is set (`App/SettingsView.swift`), and each
+row opens its own screen (`App/TuneScreens.swift`). It used to be one scroll of twenty sections; nothing was added or
+removed, only grouped. **You**: ORCID, who else to learn from, the project, suggestions. **Follow and mute**.
+**Ranking**: order and highlights, kinds of paper, time and balance, what you have told it. **Content and display**:
+filters, post header and banner, seen and read. **Reference managers and PDFs**: Zotero, library file, the watched
+folder, downloaded PDFs, shared PDFs. **Summaries and AI**. **Sources**. **Sync and backup**. Older notes in this file
+name the old sections (Posts, Downloaded PDFs, Summaries and matching...): they are on the screens above.
+
 Everything the user can enter is in `Core/Settings.swift`, with what each does: ORCID, up to three others to learn from, and whether
 to learn from publications; sources; follows (topics, journals, researchers, institutions,
 funders, keywords with their own must-also and must-not conditions) and tracked papers; mutes

@@ -716,7 +716,7 @@ final class AppModel {
             let found = try await loadProfileSuggestions()
             let chosen = SuggestionKind.allCases.flatMap { found.byKind[$0] ?? [] }.filter(\.selected)
             follow(chosen)
-            notice = "Filled what you follow from \(found.paperCount) publications: \(chosen.count) topics, keywords, journals and researchers. They are under Follow in Tune, where you can change them."
+            notice = "Filled what you follow from \(found.paperCount) publications: \(chosen.count) topics, keywords, journals and researchers. They are under Follow and mute in Tune, where you can change them."
         } catch {
             log.error("could not fill the follows from the publications: \(String(describing: error), privacy: .public)")
         }
