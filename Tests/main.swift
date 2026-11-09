@@ -1482,5 +1482,8 @@ check(zNoPDF?.pdf == .notOffered && ZoteroStub.seen.count == 1, "zotero client: 
 ZoteroStub.answer = { _ in (200, [:], Data(#"[{"key":"B","data":{"name":"thesis"}}]"#.utf8)) }
 check((try? await zClient.collections())?.map(\.name) == ["thesis"], "zotero client: it lists the collections")
 
+check(PDFNames.fileName(stem: "Lovelace-2026-Machine-learning", tag: "abc123") == "Lovelace-2026-Machine-learning--abc123.pdf" && PDFNames.fileName(stem: "///", tag: "t") == "paper--t.pdf" && PDFNames.fileName(stem: String(repeating: "x", count: 200), tag: "t").count == 80 + 7, "pdf folder: a file is named for a person and tagged for a device")
+check(PDFNames.isFile("Lovelace--abc123.pdf", tag: "abc123") && PDFNames.isFile(".Lovelace--abc123.pdf.icloud", tag: "abc123") && !PDFNames.isFile("Lovelace--abc1234.pdf", tag: "abc123") && !PDFNames.isFile("notes.txt", tag: "abc123") && PDFNames.realName(".x.pdf.icloud") == "x.pdf", "pdf folder: a file is found by its tag, also when iCloud has not downloaded it")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

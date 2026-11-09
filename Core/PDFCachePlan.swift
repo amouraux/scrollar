@@ -38,3 +38,23 @@ enum PDFCachePlan {
     ]
     static let defaultLimit = 500_000_000
 }
+
+/// How a PDF is named in the folder shared between devices. The name is for a person browsing it
+/// in Files ("Lovelace-2026-Machine-learning-for-sleep"); the tag, a hash of the paper's key that
+/// every device computes the same way, is what a device looks the file up by.
+enum PDFNames {
+    static func fileName(stem: String, tag: String) -> String {
+        let clean = stem.filter { $0.isLetter || $0.isNumber || $0 == "-" }
+        return (clean.isEmpty ? "paper" : String(clean.prefix(80))) + "--" + tag + ".pdf"
+    }
+
+    /// iCloud Drive may list a file it has not downloaded as ".name.pdf.icloud".
+    static func realName(_ entry: String) -> String {
+        guard entry.hasPrefix("."), entry.hasSuffix(".icloud") else { return entry }
+        return String(entry.dropFirst().dropLast(".icloud".count))
+    }
+
+    static func isFile(_ entry: String, tag: String) -> Bool {
+        realName(entry).hasSuffix("--" + tag + ".pdf")
+    }
+}

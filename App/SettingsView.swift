@@ -1061,17 +1061,23 @@ struct PasteReferencesSheet: View {
     }
 }
 
-/// The PDFs kept for the reader: how much room they take, a cap, and a way to empty them.
+/// The PDFs kept for the reader: how much room they take, a cap, a way to empty them, and an
+/// optional folder (in iCloud Drive) that shares them between devices.
 struct PDFStorageSection: View {
     @State private var usage = PDFCache.usage()
     @State private var limit: Int? = PDFCache.limit
     @State private var clearing = false
+    @State private var folder: URL? = PDFFolder.url
+    @State private var folderUsage = PDFFolder.usage()
+    @State private var policy = PDFFolder.policy
+    @State private var choosing = false
+
+    private func size(_ bytes: Int) -> String { ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file) }
 
     var body: some View {
         Section {
             LabeledContent("Kept on this device",
-                           value: usage.count == 0 ? "Nothing" :
-                           "\(ByteCountFormatter.string(fromByteCount: Int64(usage.bytes), countStyle: .file)) in \(usage.count) PDF" + (usage.count == 1 ? "" : "s"))
+                           value: usage.count == 0 ? "Nothing" : "\(size(usage.bytes)) in \(usage.count) PDF" + (usage.count == 1 ? "" : "s"))
             Picker("Keep up to", selection: $limit) {
                 ForEach(PDFCachePlan.limits, id: \.label) { Text($0.label).tag($0.bytes) }
             }
@@ -1081,15 +1087,41 @@ struct PDFStorageSection: View {
         } header: {
             Text("Downloaded PDFs")
         } footer: {
-            Text("A PDF opened in the reader is kept here, so it opens again at once, without a connection, and can be sent to a reference manager. When the limit is passed the ones you used longest ago are deleted first, and those of papers you saved last. The system may also empty this space when the device is short of it. Nothing here is part of your settings or sync.")
+            Text("A PDF opened in the reader is kept here, so it opens again at once, without a connection, and can be sent to a reference manager. When the limit is passed the ones you used longest ago are deleted first, and those of papers you saved or marked For me last. The system may also empty this space when the device is short of it. Nothing here is part of your settings or sync.")
         }
-        .onAppear { usage = PDFCache.usage() }
+
+        Section {
+            if let folder {
+                LabeledContent("Folder", value: folder.lastPathComponent)
+                LabeledContent("Holds", value: folderUsage.count == 0 ? "Nothing yet" : "\(size(folderUsage.bytes)) in \(folderUsage.count) PDF" + (folderUsage.count == 1 ? "" : "s"))
+                Picker("Put in it", selection: $policy) {
+                    Text("Saved and For me papers").tag(PDFFolder.Policy.saved)
+                    Text("Every PDF I open").tag(PDFFolder.Policy.everything)
+                }
+                .onChange(of: policy) { PDFFolder.policy = policy }
+                Button("Choose another folder…") { choosing = true }
+                Button("Stop using this folder", role: .destructive) { PDFFolder.forget(); self.folder = nil }
+            } else {
+                Button("Choose a folder in iCloud Drive…") { choosing = true }
+            }
+        } header: {
+            Text("Share PDFs between devices")
+        } footer: {
+            Text("Choose the same folder in iCloud Drive on each device. A PDF opened or saved on one is then there on the others, which look in the folder before downloading. The files are named after the paper, so you can find them in Files. Nothing here trims the folder or deletes from it, and it counts against your iCloud storage: delete files there when you want the room. Stopping only makes this device forget the folder.")
+        }
+        .onAppear { usage = PDFCache.usage(); folderUsage = PDFFolder.usage() }
+        .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
+            if case .success(let url) = result, PDFFolder.adopt(url) {
+                folder = PDFFolder.url
+                folderUsage = PDFFolder.usage()
+            }
+        }
         .confirmationDialog("Delete the downloaded PDFs?", isPresented: $clearing, titleVisibility: .visible) {
             Button("Delete all", role: .destructive) { PDFCache.clear(keepingSaved: false); usage = PDFCache.usage() }
             Button("Delete all except saved papers", role: .destructive) { PDFCache.clear(keepingSaved: true); usage = PDFCache.usage() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("They can be downloaded again from the paper.")
+            Text("They can be downloaded again from the paper. PDFs in the shared folder are not touched.")
         }
     }
 }

@@ -185,7 +185,10 @@ final class AppModel {
         syncStatus = syncFile == nil ? .off : .idle(nil)
         rearrange()
         if let remote = remoteSummary { Task { await Summarizer.shared.configure(remote: remote) } }
-        PDFCache.savedKeys = { [weak self] in self?.settings.feedback.saved.map(\.id) ?? [] }
+        PDFCache.savedKeys = { [weak self] in
+            guard let f = self?.settings.feedback else { return [] }
+            return f.saved.map(\.id) + f.liked.map(\.id)
+        }
     }
 
     /// The key to use. In a debug build an environment variable stands in when
@@ -832,7 +835,7 @@ final class AppModel {
             if let doi = p.doi, try await client.has(doi: doi) { show("Already in your Zotero library"); return }
             let link = PDFLink.clean(p.pdfURL).flatMap(URL.init(string:))
             var pdf: ZoteroClient.PDF?
-            if zoteroAttachPDF, let link, let file = await PDFCache.file(for: p.dedupeKey, url: link, referer: p.link),
+            if zoteroAttachPDF, let link, let file = await PDFCache.file(for: p.dedupeKey, url: link, referer: p.link, stem: pdfStem(p)),
                let md5 = PDFCache.md5(of: file) {
                 pdf = ZoteroClient.PDF(file: file, md5: md5)
             }
@@ -880,6 +883,7 @@ final class AppModel {
             show("Taken back")
         } else {
             settings.feedback.like(p)
+            shareKeptPDF(p)
             history.markStudied(p.dedupeKey, studiedAfter: settings.dwellSeconds, at: Date())
             saveHistorySoon()
             syncHistorySoon(after: 8)
@@ -910,8 +914,22 @@ final class AppModel {
 
     func isSaved(_ p: Paper) -> Bool { settings.feedback.saved.contains { $0.id == p.dedupeKey } }
 
+    private func pdfStem(_ p: Paper) -> String { String(RIS.fileName(for: RIS.reference(p)).dropLast(4)) }
+
+    /// A paper just saved or marked For me has its PDF put in the shared folder, if the user has one:
+    /// the kept copy, or a direct download made now, so the other devices have it without asking.
+    private func shareKeptPDF(_ p: Paper) {
+        guard PDFFolder.url != nil, let link = PDFLink.clean(p.pdfURL).flatMap(URL.init(string:)) else { return }
+        let stem = pdfStem(p)
+        Task {
+            if let file = await PDFCache.file(for: p.dedupeKey, url: link, referer: p.link, stem: stem) {
+                PDFCache.shareWithDevices(file, key: p.dedupeKey, stem: stem)
+            }
+        }
+    }
+
     func toggleSaved(_ p: Paper) {
-        if isSaved(p) { settings.feedback.unsave(p) } else { settings.feedback.save(p) }
+        if isSaved(p) { settings.feedback.unsave(p) } else { settings.feedback.save(p); shareKeptPDF(p) }
     }
 
     func hide(_ p: Paper) {

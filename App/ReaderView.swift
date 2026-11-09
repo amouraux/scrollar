@@ -50,7 +50,7 @@ private struct PaperReader: View {
                 .padding(.vertical, 8)
             }
             if mode == .pdf, let link = pdfLink {
-                PDFPane(loader: pdf, url: link, key: paper.dedupeKey, referer: paper.link)
+                PDFPane(loader: pdf, url: link, key: paper.dedupeKey, stem: String(RIS.fileName(for: RIS.reference(paper)).dropLast(4)), referer: paper.link)
             } else {
                 details
             }
@@ -310,17 +310,20 @@ final class PDFLoader {
     private(set) var state = State.idle
 
     /// `key` is the paper's, under which a downloaded file is kept (see `PDFCache`).
-    func load(_ url: URL, key: String, referer: URL? = nil) async {
+    func load(_ url: URL, key: String, stem: String, referer: URL? = nil) async {
         switch state { case .idle, .failed, .web: break; default: return }
         state = .loading
-        if let kept = PDFCache.lookup(key), let document = PDFDocument(url: kept) {
+        if let kept = await PDFCache.lookupAnywhere(key), let document = PDFDocument(url: kept) {
             state = .ready(document)
+            // Opened from this device's cache, it may still be missing from the shared folder
+            // (saved after it was first opened).
+            PDFCache.shareWithDevices(kept, key: key, stem: stem)
             return
         }
         switch await PDFCache.fetch(url, referer: referer) {
         case .pdf(let data):
             if let document = PDFDocument(data: data) {
-                PDFCache.store(data, key: key)
+                if let stored = PDFCache.store(data, key: key) { PDFCache.shareWithDevices(stored, key: key, stem: stem) }
                 state = .ready(document)
             } else {
                 state = .web(why: "The file could not be read as a PDF.")
@@ -337,6 +340,7 @@ private struct PDFPane: View {
     let loader: PDFLoader
     let url: URL
     let key: String
+    let stem: String
     let referer: URL?
 
     var body: some View {
@@ -365,12 +369,12 @@ private struct PDFPane: View {
                 } description: {
                     Text(message)
                 } actions: {
-                    Button("Try again") { Task { await loader.load(url, key: key, referer: referer) } }
+                    Button("Try again") { Task { await loader.load(url, key: key, stem: stem, referer: referer) } }
                     Button("Open in browser") { openURL(url) }
                 }
             }
         }
-        .task(id: url) { await loader.load(url, key: key, referer: referer) }
+        .task(id: url) { await loader.load(url, key: key, stem: stem, referer: referer) }
     }
 }
 

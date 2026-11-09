@@ -6,7 +6,8 @@ import CryptoKit
 /// empty it when space is short and nothing is lost but a download, and it is not backed up.
 /// Capped by a size the user chooses, least recently used out first (the rule is `PDFCachePlan`).
 enum PDFCache {
-    /// The dedupeKeys of papers the user saved, whose PDFs are the last to go. Set by the model.
+    /// The dedupeKeys of papers the user saved or marked For me, whose PDFs are the last to go and
+    /// the ones that go to the shared folder. Set by the model.
     nonisolated(unsafe) static var savedKeys: () -> [String] = { [] }
 
     private static let limitKey = "pdfCacheLimit"
@@ -126,12 +127,26 @@ enum PDFCache {
         }
     }
 
+    /// The kept copy, or the one in the folder shared between devices, brought here. Nil when neither
+    /// exists. The folder is read off the main thread: it may be waiting on iCloud.
+    static func lookupAnywhere(_ key: String) async -> URL? {
+        if let local = lookup(key) { return local }
+        return await Task.detached { PDFFolder.bring(key) }.value
+    }
+
+    /// Hand a PDF to the shared folder when the user has one and the policy wants this paper in it.
+    static func shareWithDevices(_ local: URL, key: String, stem: String) {
+        guard PDFFolder.url != nil else { return }
+        Task.detached { PDFFolder.offer(local, key: key, stem: stem) }
+    }
+
     /// The paper's PDF on disk: the kept copy, or a direct download that is then kept. Nil when the
     /// site does not hand it over (the reader's web view may still show it).
-    static func file(for key: String, url: URL, referer: URL?) async -> URL? {
-        if let kept = lookup(key) { return kept }
-        guard case .pdf(let data) = await fetch(url, referer: referer) else { return nil }
-        return store(data, key: key)
+    static func file(for key: String, url: URL, referer: URL?, stem: String = "paper") async -> URL? {
+        if let kept = await lookupAnywhere(key) { return kept }
+        guard case .pdf(let data) = await fetch(url, referer: referer), let stored = store(data, key: key) else { return nil }
+        shareWithDevices(stored, key: key, stem: stem)
+        return stored
     }
 
     // MARK: Handing a file on

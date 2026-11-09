@@ -346,6 +346,17 @@ the PDFs of papers you saved only after every other (`Core/PDFCachePlan.swift`, 
 also empty Caches by itself; then it is a download again. Only a direct download is kept: a PDF shown by
 the web view fallback is not a file the app holds.
 
+**Sharing PDFs between devices.** Tune → Share PDFs between devices takes a folder the user chooses, in
+iCloud Drive, the same one on each device (`App/PDFFolder.swift`). A device looks there after its own
+cache and before the network, copies what it finds into the cache, and puts PDFs there: those of
+papers saved or marked For me, or every PDF opened, as chosen. I chose a folder over iCloud's own app
+container (CloudKit or a ubiquity container) because that needs an iCloud entitlement, a container and
+a provisioning change I cannot verify from here; a folder works the way the sync file already does,
+through a bookmark and file coordination, and the files stay visible and deletable in Files. They are
+named after the paper with a tag the devices compute the same way, so they are found by the tag. Nothing
+trims or deletes in that folder (it is the user's iCloud space); the local limit does not apply to it.
+It is untested against a real iCloud Drive, only built.
+
 How each manager is reached, and why:
 
 - **Zotero** has a real write interface, so with an account connected (Tune) Save to Zotero creates the
