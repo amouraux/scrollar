@@ -393,7 +393,7 @@ declaring UserDefaults `CA92.1` and file timestamps `C617.1`, no collected data,
 sandboxed with the network and user-selected-file entitlements it needs.
 
 What is left for App Store Connect, which only the account holder can do: a public privacy policy
-address (`PRIVACY.md` is a draft to host), the App Privacy answers, the beta description, a feedback
+address (`PRIVACY.md`, which the public repository serves), the App Privacy answers, the beta description, a feedback
 email, and the age rating. Archive with the released Xcode and a new build number each time:
 
 ```sh

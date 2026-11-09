@@ -1,6 +1,6 @@
 # Scrollar privacy policy
 
-*Draft for the author to review, date and host (an App Store listing needs a public web address for it). Last updated: 9 November 2026.*
+*Last updated: 9 November 2026.*
 
 Scrollar builds a feed of research papers from open scholarly services. It has no servers of its own, no account, no analytics, no advertising and no tracking. **The developer receives no data from the app.**
 

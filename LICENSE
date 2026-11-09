@@ -1,0 +1,33 @@
+Scrollar source code: view only
+
+Copyright (c) 2026 André Mouraux. All rights reserved.
+
+This source code is published so that you can read it, learn from it, and check
+what the app does with your data. It is not open source software.
+
+You may:
+  - read and browse the code, and clone it to read it on your own computer;
+  - build it for yourself, once, to confirm that it compiles and behaves as
+    described, and run that build only for your own evaluation;
+  - quote short excerpts with attribution, for review, teaching or discussion.
+
+You may not, without written permission:
+  - copy, modify, merge or redistribute the code, or any part of it, in source
+    or compiled form;
+  - publish a build of it, or an app derived from it, under any name, including
+    on any app store;
+  - use the Scrollar name, icon or text for another product.
+
+The Scrollar name, the app icon and the text of the app and of the documentation
+are not covered by any permission above.
+
+THE CODE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. TO THE EXTENT THE LAW
+ALLOWS, THE AUTHOR IS NOT LIABLE FOR ANY CLAIM OR DAMAGE ARISING FROM IT.
+
+The scholarly data the app shows comes from OpenAlex, Europe PMC, PubMed and
+other services, each under its own terms; this licence does not cover it.
+
+Contributions: an issue or suggestion is welcome, but sending code or text to
+this project gives the author permission to use it in Scrollar without
+obligation. To ask for permission to do anything not listed above, open an
+issue at https://github.com/amouraux/scrollar/issues.
