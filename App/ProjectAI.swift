@@ -18,7 +18,7 @@ enum ProjectAI {
         var name: String {
             switch self {
             case .onDevice: return "Apple's on-device model"
-            case .service(let c): return c.provider.name
+            case .service(let c): return c.displayName
             }
         }
     }

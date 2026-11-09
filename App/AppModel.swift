@@ -464,7 +464,7 @@ final class AppModel {
     /// What the note under an opened paper says wrote its takeaway.
     var summaryNote: String {
         if Summarizer.isAvailable { return "written on this device by Apple's language model" }
-        if let remote = remoteSummary { return "written by \(remote.provider.name) from the title and abstract, with the key you set up in Tune" }
+        if let remote = remoteSummary { return "written by \(remote.displayName) from the title and abstract, with the key you set up in Tune" }
         return "written by a language model"
     }
 

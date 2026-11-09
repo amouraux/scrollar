@@ -536,12 +536,23 @@ nothing is asked or sent when the sheet opens.
 - **Apple's on-device model**, where the device has one: it reads an excerpt of about 5,000 characters on the
   device, nothing is sent anywhere (it is the on-device model, never Private Cloud Compute), and the answer is
   read as a list of phrases. Tried on the iPhone simulator, where it answered with sensible phrases.
-- **Claude or ChatGPT**, if the user set up their own key under Summaries: the same brief, with an excerpt of up
+- **Claude, ChatGPT or another model**, if the user set up their own account under Summaries: the same brief, with an excerpt of up
   to 14,000 characters. Before anything is sent, a screen says that it leaves the device, who receives it
   (Anthropic or OpenAI, under the terms of the user's own account), that the developer receives nothing, and
   that names in the passages are not removed; it shows the exact text and the Send button names the company.
   It is asked every time and nothing is remembered. Not tried against the real services: the request and the
   reading of the answer are tested against a stub.
+
+**Another model.** Beside Claude and ChatGPT, Summaries and AI takes "Other (OpenAI-compatible)": an address, a model name and a key.
+It covers any service that speaks OpenAI's chat format (Mistral, which is useful in the EU where Apple's model is not offered,
+Gemini's compatible address, OpenRouter, DeepSeek) and a model on the user's own machine (Ollama, LM Studio), which needs no key.
+The address must be https; http is allowed only for this device and a private network (`localhost`, `127.0.0.1`, `*.local`, `10.`,
+`192.168.`, `172.16`–`172.31`), so nothing goes over the internet in the clear. The warning before project text is sent names the host
+that receives it, and says when it is a model on this device or network. A chat subscription (ChatGPT Plus, Claude Pro) cannot be
+used: it gives no access to other apps. The Summaries screen now also offers setting up an account on a device that has Apple's model,
+which before showed nothing: such an account writes no takeaways there, and is only used, on request, for keywords from a project. An
+account set up before this loads as it did. Run against a stand-in for a local model from the app's own client: it asked
+`/v1/chat/completions` with the model name and no key header and read the answer. Not tried against a real third-party service.
 
 What goes is the excerpt: passages of the text, evenly spread, without headings, tables, links or reference
 lists, plus the instructions that ask for keywords and, for a service, the key in a header. A phrase from a model

@@ -103,8 +103,9 @@ struct SettingsView: View {
     }
 
     private var summariesStatus: String {
-        if Summarizer.isAvailable { return "Apple's model" }
-        return appModel.remoteSummary?.provider.name ?? "None"
+        let account = appModel.remoteSummary?.displayName
+        if Summarizer.isAvailable { return account.map { "Apple's model, \($0)" } ?? "Apple's model" }
+        return account ?? "None"
     }
 
     private var sourcesStatus: String {
@@ -626,49 +627,71 @@ struct SummariesSection: View {
     @State private var provider = SummaryProvider.anthropic
     @State private var key = ""
     @State private var modelName = ""
+    @State private var endpoint = ""
     @State private var testing = false
     @State private var problem: String?
+
+    private var canSetUp: Bool {
+        if testing { return false }
+        if provider == .other {
+            return RemoteSummary.endpoint(endpoint) != nil && !modelName.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        return !key.trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
     var body: some View {
         Section {
             LabeledContent("Papers are compared with", value: model.embeddingDescription)
             if Summarizer.isAvailable {
-                Label("This device writes them itself, with Apple's language model.", systemImage: "checkmark.circle")
-            } else if let config = model.remoteSummary {
-                LabeledContent("Written by", value: "\(config.provider.name), \(config.modelOrDefault)")
+                Label("This device writes the takeaways itself, with Apple's language model.", systemImage: "checkmark.circle")
+            }
+            if let config = model.remoteSummary {
+                LabeledContent(Summarizer.isAvailable ? "Another model" : "Written by", value: "\(config.displayName), \(config.modelOrDefault)")
                 if let problem = model.summaryProblem {
                     Text(problem).font(.footnote).foregroundStyle(.red)
                     Button("Try again") { model.clearSummaryProblem() }
                 }
                 Button("Stop using it", role: .destructive) { model.clearRemoteSummary() }
             } else {
-                Text("This device has no on-device language model, so the sentence under each title is chosen from the abstract. Set up your own account to have a model write it.")
+                Text(Summarizer.isAvailable
+                     ? "Optional: set up an account of your own, with Claude, ChatGPT or another model. It does not write the takeaways here, because this device does; it is offered, on request, for suggesting keywords from a project, with a warning that shows what is sent."
+                     : "This device has no on-device language model, so the sentence under each title is chosen from the abstract. Set up your own account to have a model write it, and to suggest keywords from a project on request.")
                     .font(.footnote).foregroundStyle(.secondary)
                 Picker("Account", selection: $provider) {
-                    ForEach(SummaryProvider.allCases, id: \.self) { Text($0.name).tag($0) }
+                    ForEach(SummaryProvider.allCases, id: \.self) { Text($0.pickerTitle).tag($0) }
                 }
-                SecureField("API key", text: $key)
+                if provider == .other {
+                    TextField("Address, e.g. https://api.mistral.ai/v1", text: $endpoint)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                }
+                SecureField(provider == .other ? "API key (blank for a model on your own machine)" : "API key", text: $key)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
-                TextField("Model (blank: \(provider.defaultModel))", text: $modelName)
+                TextField(provider.defaultModel.isEmpty ? "Model name" : "Model (blank: \(provider.defaultModel))", text: $modelName)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                 Button(testing ? "Trying it…" : "Try it and keep it") { setUp() }
-                    .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty || testing)
+                    .disabled(!canSetUp)
                 if let problem { Text(problem).font(.footnote).foregroundStyle(.red) }
-                Link(provider == .anthropic ? "Get a Claude API key" : "Get an OpenAI API key",
-                     destination: URL(string: provider == .anthropic ? "https://console.anthropic.com/settings/keys"
-                                                                     : "https://platform.openai.com/api-keys")!)
+                switch provider {
+                case .anthropic:
+                    Link("Get a Claude API key", destination: URL(string: "https://console.anthropic.com/settings/keys")!)
+                case .openai:
+                    Link("Get an OpenAI API key", destination: URL(string: "https://platform.openai.com/api-keys")!)
+                case .other:
+                    EmptyView()
+                }
             }
         } header: {
             Text("Summaries and matching")
         } footer: {
-            Text("Matching uses a text model on this device: Apple's sentence model where it has one, otherwise its contextual model, which is fetched once and does not need Apple Intelligence; with neither, words alone. A key is not a chat subscription: it is a separate, pay-per-use account of your own (Claude or OpenAI). When it is set up, the title and abstract of a paper that stays on screen are sent to that service, and nothing else, except that you can also ask it to suggest keywords from a project you pasted (under Your project): then an excerpt of the project is sent, after a warning that shows exactly what goes, each time you ask. Each takeaway costs a fraction of a cent to a cent or two, depending on the model: a smaller one costs far less, and Claude Haiku (claude-haiku-5-5) is the cheapest Claude. At most \(Summarizer.remoteLimit) are written per launch, and each is kept, so a paper is never asked for twice. The key stays in this device's Keychain and is sent only to that service. A device that has Apple's model uses it instead and sends nothing.")
+            Text("Matching uses a text model on this device: Apple's sentence model where it has one, otherwise its contextual model, which is fetched once and does not need Apple Intelligence; with neither, words alone. A key is not a chat subscription: it is a separate, pay-per-use account of your own (Claude or OpenAI), or one from any service that speaks OpenAI's chat format (Mistral, Gemini's compatible address, OpenRouter, or a model on your own machine, such as Ollama, at an http:// address on this device or your network). A subscription to a chat app cannot be used. When an account is set up and this device has no model of its own, the title and abstract of a paper that stays on screen are sent to that service, and nothing else, except that you can also ask it to suggest keywords from a project you pasted (under Your project): then an excerpt of the project is sent, after a warning that shows exactly what goes and to whom, each time you ask. Each takeaway costs a fraction of a cent to a cent or two, depending on the model: a smaller one costs far less, and Claude Haiku (claude-haiku-5-5) is the cheapest Claude. At most \(Summarizer.remoteLimit) are written per launch, and each is kept, so a paper is never asked for twice. The key stays in this device's Keychain and is sent only to that service. A device that has Apple's model writes the takeaways itself and sends nothing for them.")
         }
     }
 
     private func setUp() {
         testing = true
         problem = nil
-        let config = RemoteSummaryConfig(provider: provider, key: key.trimmingCharacters(in: .whitespacesAndNewlines), model: modelName)
+        let config = RemoteSummaryConfig(provider: provider, key: key.trimmingCharacters(in: .whitespacesAndNewlines),
+                                         model: modelName, endpoint: provider == .other ? endpoint : "")
         Task {
             do {
                 try await model.setUpRemoteSummary(config)
@@ -782,7 +805,7 @@ struct ProjectSection: View {
         } header: {
             Text("Your project")
         } footer: {
-            Text("Paste a grant proposal, a thesis plan or an abstract: what you are about to work on, before there are papers to show it. Papers close to it rank higher, and it can suggest keywords to follow, which you choose from a list. It is read on this device and kept only here: it is not synced and not in the settings file you can export. It is sent to no service unless you ask Claude or ChatGPT, with your own key, to suggest keywords, and then only after a warning that shows exactly what goes. Apple's on-device model, where the device has one, reads it without sending anything. Only a keyword you choose to follow is searched, like any other.")
+            Text("Paste a grant proposal, a thesis plan or an abstract: what you are about to work on, before there are papers to show it. Papers close to it rank higher, and it can suggest keywords to follow, which you choose from a list. It is read on this device and kept only here: it is not synced and not in the settings file you can export. It is sent to no service unless you ask a model you set up (Claude, ChatGPT or another), with your own account, to suggest keywords, and then only after a warning that shows exactly what goes. Apple's on-device model, where the device has one, reads it without sending anything. Only a keyword you choose to follow is searched, like any other.")
         }
         .sheet(isPresented: $pasting) {
             PasteProjectSheet { text in
@@ -960,11 +983,11 @@ struct ProjectKeywordsSheet: View {
                     .disabled(working)
             }
             if let config = model.remoteSummary {
-                Button { confirming = true } label: { Label("Ask \(config.provider.name)…", systemImage: "arrow.up.forward.app") }
+                Button { confirming = true } label: { Label("Ask \(config.displayName)…", systemImage: "arrow.up.forward.app") }
                     .disabled(working)
             }
             if !ProjectAI.onDeviceAvailable && model.remoteSummary == nil {
-                Text("A language model can suggest better phrases than counting. This device has no Apple on-device model: set up your own Claude or ChatGPT key under Summaries and AI in Tune to use one of those.")
+                Text("A language model can suggest better phrases than counting. This device has no Apple on-device model: set up an account of your own (Claude, ChatGPT or another model) under Summaries and AI in Tune to use one of those.")
                     .foregroundStyle(.secondary)
             }
             if working { HStack { ProgressView(); Text("Reading your project…").foregroundStyle(.secondary) } }
@@ -977,7 +1000,7 @@ struct ProjectKeywordsSheet: View {
                     Text("Apple's model runs on this device. It reads about \(ProjectText.wordCount(ProjectAI.excerpt(for: .onDevice, text: text))) words of your project and nothing is sent anywhere, not even to Apple.")
                 }
                 if let config = model.remoteSummary {
-                    Text("\(config.provider.name) is run by \(config.provider.company). Asking sends part of your project to them, with your key, after showing you exactly what. Nothing is sent unless you ask, and you are asked each time.")
+                    Text((config.provider == .other ? "" : "\(config.provider.name) is run by \(config.receiver). ") + "Asking sends part of your project to \(config.provider == .other ? config.receiver : "them")\(config.key.isEmpty ? "" : ", with your key,") after showing you exactly what. Nothing is sent unless you ask, and you are asked each time.")
                 }
             }
         }
@@ -1026,13 +1049,18 @@ struct SendProjectSheet: View {
     let excerpt: String
     let send: (String) -> Void
 
+    /// A model on this device or the user's own network: the text does not go over the internet by this request.
+    private var local: Bool { config.provider == .other && RemoteSummary.isLocal(config.endpointURL?.host ?? "") }
+
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    Label("This leaves your device", systemImage: "exclamationmark.triangle.fill")
+                    Label(local ? "This leaves the app" : "This leaves your device", systemImage: "exclamationmark.triangle.fill")
                         .font(.headline).foregroundStyle(.orange)
-                    Text("Part of your project description will be sent over the internet to \(config.provider.company) (\(config.provider.name)), using your own key. \(config.provider.company) processes it under the terms of your account with them; check them if the text is confidential.")
+                    Text(local
+                         ? "Part of your project description will be sent to \(config.receiver), a model on this device or your own network, as you set it up. Check where that service sends it on, if the text is confidential."
+                         : "Part of your project description will be sent over the internet to \(config.receiver)\(config.provider == .other ? ", the service you set up," : " (\(config.provider.name)),") using your own account. \(config.receiver) processes it under the terms of that account; check them if the text is confidential.")
                     Text("The developer of Scrollar receives nothing. Only the text below is sent, with the instructions that ask for keywords, and your key. Headings, tables, links and reference lists are left out, but names and anything else in these passages are not. Do not send text you may not share with a service like this, such as a confidential proposal or someone else's data.")
                         .foregroundStyle(.secondary)
                 }
@@ -1042,7 +1070,7 @@ struct SendProjectSheet: View {
                     }
                 }
                 Section {
-                    Button("Send to \(config.provider.company)") { send(excerpt); dismiss() }
+                    Button("Send to \(config.receiver)") { send(excerpt); dismiss() }
                         .fontWeight(.semibold)
                         .disabled(excerpt.isEmpty)
                     Button("Cancel", role: .cancel) { dismiss() }
@@ -1050,7 +1078,7 @@ struct SendProjectSheet: View {
                     Text("You are asked each time. Counting phrases in the text, or asking Apple's on-device model, sends nothing.")
                 }
             }
-            .navigationTitle("Send to \(config.provider.name)?")
+            .navigationTitle("Send to \(config.displayName)?")
             .navigationBarTitleDisplayMode(.inline)
         }
         .presentationDetents([.large])
