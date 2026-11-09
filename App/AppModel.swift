@@ -76,7 +76,7 @@ final class AppModel {
     private(set) var libraryFile: LibraryFile?
     /// A research project the user pasted (a proposal, a plan): its passages stand for what they are
     /// into, and its phrases can be offered as keywords. On this device only.
-    private(set) var project: ProjectFile?
+    private(set) var projects: [ProjectFile] = []
     /// A Claude or ChatGPT account for takeaways on a device with no on-device model; from the Keychain.
     private(set) var remoteSummary: RemoteSummaryConfig?
     /// Why takeaways from it are not arriving, if they are not; shown in Tune.
@@ -167,7 +167,7 @@ final class AppModel {
         apiKey = Keychain.load()
         remoteSummary = Keychain.load(service: Keychain.summaries).data(using: .utf8).flatMap { try? JSONDecoder().decode(RemoteSummaryConfig.self, from: $0) }
         libraryFile = store.loadLibraryFile()
-        project = store.loadProject()
+        projects = store.loadProjects()
         zotero = Keychain.load(service: Keychain.zotero).data(using: .utf8).flatMap { try? JSONDecoder().decode(ZoteroAccount.self, from: $0) }
         history = store.loadHistory()
         summaries = store.loadSummaries()
@@ -291,7 +291,7 @@ final class AppModel {
         let settings = self.settings
         // Going back asks for nothing from Zotero: the copy already held ranks what it fetches.
         let library = await zoteroTexts(allowNetwork: !older) + libraryFileTexts()
-        let projectPassages = project.map { ProjectText.passages($0.text) } ?? []
+        let projectPassages = self.projectPassages
         let useOpenAlex = usesOpenAlex
         // What this feed is built for, taken now: the user may change a follow
         // while it runs, and the result must not claim to match that.
@@ -797,9 +797,10 @@ final class AppModel {
     // MARK: A library file
 
     enum ImportProblem: LocalizedError {
-        case unreadable, noPapers, projectTooShort
+        case unreadable, noPapers, projectTooShort, tooManyProjects
         var errorDescription: String? {
             switch self {
+            case .tooManyProjects: return "That is the most projects there is room for (\(ProjectText.maxProjects)). Remove one to add another."
             case .projectTooShort: return "That says too little to tell what the project is about. Paste at least a few sentences of it: the aims, the background or the abstract."
             case .unreadable: return "That file could not be read."
             case .noPapers: return "No papers were found. Paste a RIS or BibTeX export, a list of references, or titles one per line (a bare DOI says nothing about the paper)."
@@ -846,26 +847,69 @@ final class AppModel {
         settings.useLibraryFile = false
     }
 
-    // MARK: A project description
+    // MARK: Projects
 
-    /// Keep a project the user pasted, in place of any earlier one. It changes what "close to my work"
-    /// means, so the feed is ranked again (nothing is fetched again). Throws if it says too little.
-    func setProject(_ text: String) throws {
+    func project(id: String) -> ProjectFile? { projects.first { $0.id == id } }
+
+    /// The passages of the projects in use, thinned to share the budget: what stands for "my work" beside the
+    /// user's papers and library.
+    var projectPassages: [String] { ProjectText.combinedPassages(projects.filter(\.enabled).map(\.text)) }
+
+    /// A change to the projects changes what "close to my work" means, so the feed is ranked again
+    /// (nothing is fetched again).
+    private func projectsChanged() {
+        store.saveProjects(projects)
+        needsRefresh = true
+    }
+
+    private func checked(_ text: String) throws -> String {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard ProjectText.wordCount(text) >= ProjectText.fewestWords, !ProjectText.passages(text).isEmpty else {
             throw ImportProblem.projectTooShort
         }
-        let stamp = ISO8601DateFormatter().string(from: Date())
-        let file = ProjectFile(name: ProjectText.title(text), text: String(text.prefix(ProjectText.maxCharacters)), addedAt: stamp)
-        store.saveProject(file)
-        project = file
-        needsRefresh = true
+        return String(text.prefix(ProjectText.maxCharacters))
     }
 
-    func removeProject() {
-        store.saveProject(nil)
-        project = nil
-        needsRefresh = true
+    /// Keep a project the user pasted, with the title they gave it (or one its text suggests, or "Project 2").
+    /// Throws if it says too little, or if there are too many. Returns its id.
+    @discardableResult
+    func addProject(title: String, text: String) throws -> String {
+        guard projects.count < ProjectText.maxProjects else { throw ImportProblem.tooManyProjects }
+        let text = try checked(text)
+        let given = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = !given.isEmpty ? given : (ProjectText.suggestedTitle(text) ?? "Project \(projects.count + 1)")
+        let file = ProjectFile(name: name, text: text, addedAt: ISO8601DateFormatter().string(from: Date()))
+        projects.append(file)
+        projectsChanged()
+        return file.id
+    }
+
+    /// The text of a project is replaced by a new one: the old text is discarded, not merged. The title,
+    /// and the keywords already followed, stay.
+    func replaceProjectText(id: String, with text: String) throws {
+        let text = try checked(text)
+        guard let i = projects.firstIndex(where: { $0.id == id }) else { return }
+        projects[i].text = text
+        projects[i].addedAt = ISO8601DateFormatter().string(from: Date())
+        projectsChanged()
+    }
+
+    func renameProject(id: String, to title: String) {
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let i = projects.firstIndex(where: { $0.id == id }), !name.isEmpty, projects[i].name != name else { return }
+        projects[i].name = name
+        store.saveProjects(projects)
+    }
+
+    func setProjectEnabled(_ enabled: Bool, id: String) {
+        guard let i = projects.firstIndex(where: { $0.id == id }), projects[i].enabled != enabled else { return }
+        projects[i].enabled = enabled
+        projectsChanged()
+    }
+
+    func removeProject(id: String) {
+        projects.removeAll { $0.id == id }
+        projectsChanged()
     }
 
     /// Follow these phrases as keywords, those not followed already, in one change to the settings.

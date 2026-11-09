@@ -68,7 +68,7 @@ struct SettingsView: View {
         let s = appModel.settings
         var parts: [String] = []
         if let orcid = s.orcid, Orcid.normalised(orcid) != nil { parts.append("ORCID") }
-        if appModel.project != nil { parts.append("project") }
+        if !appModel.projects.isEmpty { parts.append(appModel.projects.count == 1 ? "project" : "\(appModel.projects.count) projects") }
         if !s.profileOrcids.isEmpty { parts.append("+\(s.profileOrcids.count) learned from") }
         return parts.isEmpty ? "Not set up" : parts.joined(separator: " · ")
     }
@@ -785,44 +785,112 @@ struct LibraryFileSection: View {
 /// feed is for, in the place of papers that do not exist yet. Read on the device and kept there.
 struct ProjectSection: View {
     @Environment(AppModel.self) private var appModel
-    @State private var pasting = false
-    @State private var suggesting = false
+    @State private var adding = false
+    @State private var suggestingFor: ProjectRef?
     @State private var message: String?
+
+    struct ProjectRef: Identifiable { let id: String }
 
     var body: some View {
         Section {
-            if let project = appModel.project {
-                LabeledContent("Using", value: project.name)
-                Text("\(ProjectText.wordCount(project.text)) words, \(passageCount(project.text)) read, pasted \(pasted(project.addedAt)).")
-                    .font(.footnote).foregroundStyle(.secondary)
-                Button("Suggest keywords from it…") { suggesting = true }
-                Button("Replace it…") { pasting = true }
-                Button("Remove it", role: .destructive) { appModel.removeProject(); message = nil }
-            } else {
-                Button("Paste your project…") { pasting = true }
+            ForEach(appModel.projects) { project in
+                NavigationLink {
+                    ProjectScreen(id: project.id)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(project.name)
+                        Text("\(ProjectText.wordCount(project.text)) words · \(project.enabled ? "ranks the feed" : "not in use")")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
+            Button(appModel.projects.isEmpty ? "Paste your project…" : "Add a project…") { adding = true }
+                .disabled(appModel.projects.count >= ProjectText.maxProjects)
             if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
         } header: {
-            Text("Your project")
+            Text("Your projects")
         } footer: {
-            Text("Paste a grant proposal, a thesis plan or an abstract: what you are about to work on, before there are papers to show it. Papers close to it rank higher, and it can suggest keywords to follow, which you choose from a list. It is read on this device and kept only here: it is not synced and not in the settings file you can export. It is sent to no service unless you ask a model you set up (Claude, ChatGPT or another), with your own account, to suggest keywords, and then only after a warning that shows exactly what goes. Apple's on-device model, where the device has one, reads it without sending anything. Only a keyword you choose to follow is searched, like any other.")
+            Text("Paste a grant proposal, a thesis plan or an abstract: what you are about to work on, before there are papers to show it. Papers close to a project that is in use rank higher; what is fetched depends only on what you follow, so open a project and suggest keywords from it, and follow the ones you choose. A project is read on this device and kept only here: it is not synced and not in the settings file you can export. It is sent to no service unless you ask a model you set up (Claude, ChatGPT or another), with your own account, to suggest keywords, and then only after a warning that shows exactly what goes. Apple's on-device model, where the device has one, reads it without sending anything.")
         }
-        .sheet(isPresented: $pasting) {
-            PasteProjectSheet { text in
+        .sheet(isPresented: $adding) {
+            PasteProjectSheet(replacing: false) { title, text in
                 do {
-                    try appModel.setProject(text)
+                    let id = try appModel.addProject(title: title, text: text)
                     message = nil
                     // After this sheet has gone: a second one cannot open while it is leaving.
-                    Task { try? await Task.sleep(for: .milliseconds(500)); suggesting = true }
+                    Task { try? await Task.sleep(for: .milliseconds(500)); suggestingFor = ProjectRef(id: id) }
                 } catch {
                     message = error.localizedDescription
                 }
             }
         }
-        .sheet(isPresented: $suggesting) { ProjectKeywordsSheet() }
+        .sheet(item: $suggestingFor) { ProjectKeywordsSheet(projectID: $0.id) }
+    }
+}
+
+/// One project: its title, whether it ranks the feed, its text, and what can be done with it.
+struct ProjectScreen: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let id: String
+    @State private var title = ""
+    @State private var replacing = false
+    @State private var suggesting = false
+    @State private var deleting = false
+    @State private var message: String?
+
+    var body: some View {
+        if let project = model.project(id: id) {
+            Form {
+                Section {
+                    TextField("Title", text: $title)
+                        .onSubmit { model.renameProject(id: id, to: title) }
+                    Toggle("Use it to rank the feed", isOn: Binding(
+                        get: { project.enabled }, set: { model.setProjectEnabled($0, id: id) }))
+                } footer: {
+                    Text("Papers close to a project that is in use rank higher. The text decides how close a paper is; it does not fetch anything. Following keywords from it is what makes it search.")
+                }
+
+                Section {
+                    LabeledContent("Text", value: "\(ProjectText.wordCount(project.text)) words, \(passages(project.text))")
+                    LabeledContent("Pasted", value: pasted(project.addedAt))
+                    DisclosureGroup("Show the text") {
+                        Text(String(project.text.prefix(4000))).font(.footnote).textSelection(.enabled)
+                    }
+                    Button("Suggest keywords from it…") { suggesting = true }
+                    Button("Replace the text…") { replacing = true }
+                    if let message { Text(message).font(.footnote).foregroundStyle(.red) }
+                } footer: {
+                    Text("Replacing the text discards the old text for the new, and does not merge them. The title, and any keywords you already follow, stay.")
+                }
+
+                Section {
+                    Button("Delete this project", role: .destructive) { deleting = true }
+                } footer: {
+                    Text("Keywords you followed from it stay followed, under Follow and mute.")
+                }
+            }
+            .navigationTitle(project.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .onAppear { title = project.name }
+            .onDisappear { model.renameProject(id: id, to: title) }
+            .sheet(isPresented: $replacing) {
+                PasteProjectSheet(replacing: true) { _, text in
+                    do { try model.replaceProjectText(id: id, with: text); message = nil }
+                    catch { message = error.localizedDescription }
+                }
+            }
+            .sheet(isPresented: $suggesting) { ProjectKeywordsSheet(projectID: id) }
+            .confirmationDialog("Delete “\(project.name)”?", isPresented: $deleting, titleVisibility: .visible) {
+                Button("Delete", role: .destructive) { model.removeProject(id: id); dismiss() }
+                Button("Cancel", role: .cancel) {}
+            }
+        } else {
+            ContentUnavailableView("This project is gone", systemImage: "doc")
+        }
     }
 
-    private func passageCount(_ text: String) -> String {
+    private func passages(_ text: String) -> String {
         let n = ProjectText.passages(text).count
         return n == 1 ? "1 passage" : "\(n) passages"
     }
@@ -833,13 +901,17 @@ struct ProjectSection: View {
     }
 }
 
-/// A window to paste a project into, or to take one from a PDF or a text file.
+/// A window to paste a project into, or to take one from a PDF or a text file. A new one has a title,
+/// suggested from the text when its first line reads as one; replacing a text leaves the title alone.
 struct PasteProjectSheet: View {
     @Environment(\.dismiss) private var dismiss
+    let replacing: Bool
+    let save: (String, String) -> Void
     @State private var text = ""
+    @State private var title = ""
+    @State private var titleEdited = false
     @State private var choosing = false
     @State private var problem: String?
-    let save: (String) -> Void
 
     private var words: Int { ProjectText.wordCount(text) }
     private var enough: Bool { words >= ProjectText.fewestWords && !ProjectText.passages(text).isEmpty }
@@ -847,6 +919,10 @@ struct PasteProjectSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 10) {
+                if !replacing {
+                    TextField("Title (optional)", text: Binding(get: { title }, set: { title = $0; titleEdited = true }))
+                        .textFieldStyle(.roundedBorder)
+                }
                 Text("Paste the description of your project: the aims and background of a grant proposal, a thesis plan or an abstract. The more of it that is about the subject, and the less about budgets and schedules, the better it works.")
                     .font(.footnote).foregroundStyle(.secondary)
                 TextEditor(text: $text)
@@ -854,6 +930,7 @@ struct PasteProjectSheet: View {
                     .padding(6)
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.3)))
                     .frame(minHeight: 220)
+                    .onChange(of: text) { if !titleEdited { title = ProjectText.suggestedTitle(text) ?? "" } }
                 HStack {
                     Button("Paste from clipboard", systemImage: "doc.on.clipboard") {
                         if let clip = UIPasteboard.general.string { text = clip }
@@ -865,12 +942,12 @@ struct PasteProjectSheet: View {
                     .font(.footnote).foregroundStyle(problem != nil || !enough ? Color.red : Color.secondary)
             }
             .padding()
-            .navigationTitle("Your project")
+            .navigationTitle(replacing ? "Replace the text" : "New project")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Use it") { save(text); dismiss() }.disabled(!enough)
+                    Button(replacing ? "Replace" : "Add") { save(title, text); dismiss() }.disabled(!enough)
                 }
             }
             .fileImporter(isPresented: $choosing, allowedContentTypes: [.pdf, .plainText, .text]) { result in
@@ -894,6 +971,7 @@ struct PasteProjectSheet: View {
 struct ProjectKeywordsSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    let projectID: String
     @State private var counted: [ProjectKeyword] = []
     @State private var asked: [ProjectKeyword] = []
     @State private var askedBy: String?
@@ -903,7 +981,7 @@ struct ProjectKeywordsSheet: View {
     @State private var confirming = false
     @State private var loaded = false
 
-    private var text: String { model.project?.text ?? "" }
+    private var text: String { model.project(id: projectID)?.text ?? "" }
 
     private func fresh(_ words: [ProjectKeyword]) -> [ProjectKeyword] {
         words.filter { k in !model.settings.followedKeywords.contains { $0.phrase.lowercased() == k.id } }

@@ -1856,5 +1856,21 @@ var otFailure2 = ""
 do { _ = try await RemoteSummary.answer(RemoteSummaryConfig(provider: .other, key: "k", model: "m", endpoint: "http://x.example/v1"), system: "s", user: "u", session: zSession) } catch { otFailure2 = "\(error)" }
 check(otFailure.contains("will not do") && otFailure2.contains("will not do") && !otFailure.contains("SECRETKEY"), "other model: without a model name, or at an address that is not allowed, nothing is sent and the user is told so")
 
+// Several projects, each with a title.
+check(ProjectText.suggestedTitle("Neural mechanisms of chronic pain relief\nThe project asks whether…") == "Neural mechanisms of chronic pain relief" && ProjectText.suggestedTitle("Chronic pain affects one adult in five, and current treatments help fewer than half of patients.") == nil && ProjectText.suggestedTitle("") == nil && ProjectText.suggestedTitle("Aims:\nx") == nil && ProjectText.suggestedTitle(String(repeating: "word ", count: 20)) == nil, "projects: a first line that reads as a heading is suggested as the title, a sentence or nothing is not")
+let pjOne = ProjectFile(name: "Pain and sleep", text: "t", addedAt: "2026-11-09T10:00:00Z")
+let pjBack = try? JSONDecoder().decode([ProjectFile].self, from: JSONEncoder().encode([pjOne, ProjectFile(name: "Second", text: "u", addedAt: "", enabled: false)]))
+check(pjBack?.count == 2 && pjBack?[0] == pjOne && pjBack?[1].enabled == false && pjBack?[0].enabled == true && pjBack?[0].id != pjBack?[1].id, "projects: a list is stored and read back, each with its own id and whether it is in use")
+let pjLegacy = Data(#"{"name":"Chronic pain affects one adult in five, and current treatmen…","text":"Chronic pain affects one adult in five, and current treatments help fewer than half of patients.","addedAt":"2026-11-09T10:00:00Z"}"#.utf8)
+let pjMigrated = ProjectFile.decodeList(pjLegacy)
+check(pjMigrated.count == 1 && pjMigrated[0].enabled && pjMigrated[0].name == "Project" && !pjMigrated[0].id.isEmpty, "projects: the single project an earlier version kept becomes a list of one, in use, with a plain title instead of the first words of its text")
+let pjLegacyTitled = Data(#"{"name":"A heading","text":"A heading\nBody of the text that goes on.","addedAt":""}"#.utf8)
+check(ProjectFile.decodeList(pjLegacyTitled).first?.name == "A heading" && ProjectFile.decodeList(Data("nonsense".utf8)).isEmpty && ProjectFile.decodeList(Data("[]".utf8)).isEmpty, "projects: an older project keeps a title that was one, and a file that is not projects gives none")
+let pjLong = (1...40).map { "Long project sentence number \($0) is about how sleep spindles consolidate memory in older adults with impairment." }.joined(separator: "\n\n")
+let pjShort = "Short project: we will test transcranial magnetic stimulation for chronic pain in eighty patients with a sham-controlled design, and record EEG."
+let pjBoth = ProjectText.combinedPassages([pjLong, pjShort], total: 20)
+check(pjBoth.count == 11 && pjBoth.last?.contains("transcranial") == true && pjBoth.first?.contains("number 1 ") == true && pjBoth.filter { $0.contains("Long project") }.count == 10, "projects: a long project is thinned to its share, so it does not drown a short one")
+check(ProjectText.combinedPassages([], total: 20).isEmpty && ProjectText.combinedPassages([pjShort], total: 20).count == 1, "projects: no project gives no passages, and a short one keeps all of its own")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

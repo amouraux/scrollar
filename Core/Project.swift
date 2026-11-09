@@ -5,27 +5,45 @@ import Foundation
 // user is into, as a library does, and the phrases it keeps coming back to are offered as keywords
 // to follow. Pure and tested; the screens are in SettingsView.swift.
 
-/// The text kept, device-local like the library file: a proposal is the user's, and may be confidential.
-struct ProjectFile: Codable, Equatable {
+/// A project the user pasted, with a title they can change. Device-local like the library file: a proposal
+/// is the user's, and may be confidential. Several can be kept, each used for ranking or not.
+struct ProjectFile: Codable, Equatable, Identifiable {
+    var id: String
+    /// What the user calls it.
     var name: String
     var text: String
     /// ISO 8601, when it was pasted.
     var addedAt: String
+    /// Whether its passages count toward which papers are close to the user's work.
+    var enabled: Bool
 
-    init(name: String, text: String, addedAt: String) {
+    init(id: String = UUID().uuidString, name: String, text: String, addedAt: String, enabled: Bool = true) {
+        self.id = id
         self.name = name
         self.text = text
         self.addedAt = addedAt
+        self.enabled = enabled
     }
 
-    enum CodingKeys: String, CodingKey { case name, text, addedAt }
+    enum CodingKeys: String, CodingKey { case id, name, text, addedAt, enabled }
 
     /// Tolerant like every stored type.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         text = (try? c.decodeIfPresent(String.self, forKey: .text)) ?? ""
-        name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? ProjectText.title(text)
+        name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? (ProjectText.suggestedTitle(text) ?? "Project")
         addedAt = (try? c.decodeIfPresent(String.self, forKey: .addedAt)) ?? ""
+        id = (try? c.decodeIfPresent(String.self, forKey: .id)) ?? UUID().uuidString
+        enabled = (try? c.decodeIfPresent(Bool.self, forKey: .enabled)) ?? true
+    }
+
+    /// The projects in a stored file: a list, or the single project an earlier version kept, whose name was
+    /// the first words of its text and is replaced by a title the text suggests.
+    static func decodeList(_ data: Data) -> [ProjectFile] {
+        if let list = try? JSONDecoder().decode([ProjectFile].self, from: data) { return list }
+        guard var legacy = try? JSONDecoder().decode(ProjectFile.self, from: data) else { return [] }
+        if legacy.name == ProjectText.title(legacy.text) { legacy.name = ProjectText.suggestedTitle(legacy.text) ?? "Project" }
+        return [legacy]
     }
 }
 
@@ -48,6 +66,8 @@ enum ProjectText {
     static let passageSize = 450
     /// Embedding is the slow part of ranking, so a long text is thinned, evenly, rather than cut.
     static let maxPassages = 40
+    /// How many projects there is room for, each a text read and kept on the device.
+    static let maxProjects = 10
     /// Fewer words than this say too little to tell what the project is.
     static let fewestWords = 30
 
@@ -60,6 +80,27 @@ enum ProjectText {
         let first = text.split(whereSeparator: \.isNewline).first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
         if first.isEmpty { return "Project" }
         return first.count <= 70 ? first : String(first.prefix(60)) + "…"
+    }
+
+    /// A title the text itself suggests: its first line, if that is short and reads as a heading (not a
+    /// sentence). nil if it does not, and the user is asked.
+    static func suggestedTitle(_ text: String) -> String? {
+        let first = text.split(whereSeparator: \.isNewline).first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        let words = first.split(separator: " ").count
+        guard first.count >= 3, first.count <= 80, words <= 14, !".!?;,:".contains(first.last ?? "x") else { return nil }
+        return first
+    }
+
+    /// The passages of several projects together, no more than `total`: each is thinned to its share, evenly,
+    /// so a long project does not drown a short one.
+    static func combinedPassages(_ texts: [String], total: Int = maxPassages) -> [String] {
+        guard !texts.isEmpty else { return [] }
+        let share = max(total / texts.count, 1)
+        return texts.flatMap { text -> [String] in
+            let all = passages(text)
+            guard all.count > share else { return all }
+            return (0..<share).map { all[$0 * all.count / share] }
+        }
     }
 
     // MARK: Passages

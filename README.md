@@ -527,6 +527,17 @@ file, because a proposal may be confidential. Replacing or removing it re-ranks 
 Not tried: a proposal in another language than English (the stop words and the sentence model are English),
 and the real proposals of anyone but the sample in the tests.
 
+### Several projects, each with a title
+
+Tune, You, Your projects keeps up to ten projects, each with a title the user can change (suggested from the text when its first
+line reads as a heading, else "Project 2"), a switch for whether it ranks the feed, its text (shown on request), Suggest keywords,
+and Replace the text, which discards the old text for the new and does not merge (the title and the keywords already followed stay).
+The passages of the projects in use share one budget of 40, each thinned to its share (`ProjectText.combinedPassages`), so a long
+project does not drown a short one. What a project does is only to rank: what is fetched depends on what is followed, which is why
+the screen says to follow the suggested keywords. The single project an earlier version kept moves into the list on first launch
+(`projects.json`), its title replaced by a plain one where the old title was only the first words of its text. Tried on the
+iPhone simulator: the migration, and the list and project screens. Not tried: adding a second project, and the Mac window.
+
 ### Asking a language model
 
 Counting cannot tell a topic from a frequent phrase, so **Suggested keywords** can also ask a language model

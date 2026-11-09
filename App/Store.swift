@@ -77,6 +77,7 @@ struct Store {
     private var zoteroURL: URL { folder(.cachesDirectory).appendingPathComponent("zotero.json") }
     private var libraryFileURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("library-import.json") }
     private var projectURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("project.json") }
+    private var projectsURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("projects.json") }
     private var embeddingsURL: URL { folder(.cachesDirectory).appendingPathComponent("embeddings.plist") }
 
     enum SettingsResult {
@@ -185,14 +186,19 @@ struct Store {
 
     /// The project description the user pasted. Application Support, for the same reason as the
     /// library file: it cannot be fetched again. Never synced: it may be a confidential proposal.
-    func loadProject() -> ProjectFile? {
-        guard let data = try? Data(contentsOf: projectURL) else { return nil }
-        return try? JSONDecoder().decode(ProjectFile.self, from: data)
+    func loadProjects() -> [ProjectFile] {
+        if let data = try? Data(contentsOf: projectsURL) { return ProjectFile.decodeList(data) }
+        // The single project an earlier version kept moves to the list, once.
+        guard let data = try? Data(contentsOf: projectURL) else { return [] }
+        let list = ProjectFile.decodeList(data)
+        saveProjects(list)
+        try? fm.removeItem(at: projectURL)
+        return list
     }
 
-    func saveProject(_ project: ProjectFile?) {
-        guard let project, let data = try? JSONEncoder().encode(project) else { try? fm.removeItem(at: projectURL); return }
-        try? data.write(to: projectURL, options: .atomic)
+    func saveProjects(_ projects: [ProjectFile]) {
+        guard !projects.isEmpty, let data = try? JSONEncoder().encode(projects) else { try? fm.removeItem(at: projectsURL); return }
+        try? data.write(to: projectsURL, options: .atomic)
     }
 
     func loadEmbeddings() -> Data? { try? Data(contentsOf: embeddingsURL) }
