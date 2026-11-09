@@ -576,6 +576,15 @@ data, not a setting that is on once. The privacy policy names the case, and the 
 the feature is absent until the user sets it up. Whether this changes the App Privacy answers is for the account
 holder to decide: the developer receives nothing, the user's own account does the sending.
 
+## Zotero: what the screen says about the connection
+
+The Zotero block shows the key as dots and its last four characters, who it is connected as, and what was found when Zotero was last
+asked: "Checked at 14:02: Zotero accepts the key, and it can read and write" (green), or the error (red), or "Key stored on this
+device. Not checked since the app opened", because a stored key proves nothing. **Check the connection** asks Zotero again
+(`GET /keys/current`) and takes up what it says, so a key whose access was changed on zotero.org (write added) takes effect
+without disconnecting; before, the app only learnt what a key could do when it was first connected. With no key it says "No key
+stored: not connected". Tried: the build; not tried against the real Zotero here, nor on the screen.
+
 ## Zotero
 
 Tune, Zotero library connects an account with an API key made at zotero.org/settings/keys. The

@@ -556,9 +556,20 @@ struct ZoteroSection: View {
         @Bindable var model = appModel
         Section {
             if let account = model.zotero {
+                LabeledContent("Key", value: SecretText.masked(account.key))
                 LabeledContent("Connected as", value: account.username.isEmpty ? "user \(account.userID)" : account.username)
-                Text(account.canWrite ? "This key can read your library and save papers to it."
-                                      : "This key can only read your library. Saving papers to it needs a key that may also write.")
+                // What the app was told when it was asked, not just what it kept: a stored key proves nothing.
+                if let check = model.zoteroCheck {
+                    Label(check.text, systemImage: check.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                        .font(.footnote).foregroundStyle(check.ok ? Color.green : Color.red)
+                } else {
+                    Label("Key stored on this device. Not checked since the app opened.", systemImage: "questionmark.circle")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Button(model.zoteroChecking ? "Checking…" : "Check the connection") { Task { await model.checkZotero() } }
+                    .disabled(model.zoteroChecking)
+                Text(account.canWrite ? "This key can read your library and add papers to it."
+                                      : "This key can only read your library. Adding papers to it needs a key that may also write: change the key's access on zotero.org, then check the connection.")
                     .font(.footnote).foregroundStyle(.secondary)
                 if account.canWrite {
                     Picker("Save papers into", selection: Binding(
@@ -587,6 +598,8 @@ struct ZoteroSection: View {
                 }
                 Button("Disconnect", role: .destructive) { model.zoteroCollection = nil; model.disconnectZotero() }
             } else {
+                Label("No key stored: not connected.", systemImage: "link.badge.plus")
+                    .font(.footnote).foregroundStyle(.secondary)
                 SecureField("Zotero API key", text: $key)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()

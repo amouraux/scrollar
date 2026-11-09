@@ -1872,5 +1872,6 @@ let pjBoth = ProjectText.combinedPassages([pjLong, pjShort], total: 20)
 check(pjBoth.count == 11 && pjBoth.last?.contains("transcranial") == true && pjBoth.first?.contains("number 1 ") == true && pjBoth.filter { $0.contains("Long project") }.count == 10, "projects: a long project is thinned to its share, so it does not drown a short one")
 check(ProjectText.combinedPassages([], total: 20).isEmpty && ProjectText.combinedPassages([pjShort], total: 20).count == 1, "projects: no project gives no passages, and a short one keeps all of its own")
 
+check(SecretText.masked("abcdefgh1234") == "••••••••1234" && SecretText.masked("abcd") == "••••••••" && SecretText.masked("") == "••••••••" && !SecretText.masked("SECRETVALUE9").contains("SECRET"), "a key is shown as dots and its last four characters, and a short one as dots alone")
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

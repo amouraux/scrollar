@@ -29,6 +29,14 @@ struct ZoteroAccount: Codable, Equatable {
     var canWrite: Bool
 }
 
+enum SecretText {
+    /// A key as a screen may show it: eight dots and its last four characters, which say which key it is
+    /// without saying what it is. A key of four characters or fewer is shown as dots alone.
+    static func masked(_ key: String) -> String {
+        String(repeating: "•", count: 8) + (key.count > 4 ? String(key.suffix(4)) : "")
+    }
+}
+
 enum Zotero {
     /// Things in a library that are not papers.
     static let notPapers: Set<String> = ["attachment", "note", "annotation"]

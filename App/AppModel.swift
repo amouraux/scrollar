@@ -762,8 +762,33 @@ final class AppModel {
         if !kept { show("Connected to Zotero, but this device would not keep the key: you will need to connect again after the app is closed.", seconds: 15) }
         zotero = account
         zoteroStatus = nil
+        zoteroCheck = ("Connected: Zotero accepted the key, and it can \(account.canWrite ? "read and write" : "only read").", true)
         // Pasting a key is asking to use the library.
         settings.useZotero = true
+    }
+
+    /// What the last check of the Zotero key found, for the screen: nil until one is made.
+    private(set) var zoteroCheck: (text: String, ok: Bool)?
+    private(set) var zoteroChecking = false
+
+    /// Ask Zotero who the key belongs to and what it may do now. A key whose access was changed on
+    /// zotero.org (write added or removed) is only known to the app from the moment it is asked, so this
+    /// is also how a changed key takes effect, without disconnecting.
+    func checkZotero() async {
+        guard let account = zotero, !zoteroChecking else { return }
+        zoteroChecking = true
+        defer { zoteroChecking = false }
+        let time = Date().formatted(date: .omitted, time: .shortened)
+        do {
+            let fresh = try await ZoteroClient.connect(key: account.key)
+            if fresh != account, let data = try? JSONEncoder().encode(fresh) {
+                Keychain.save(String(decoding: data, as: UTF8.self), service: Keychain.zotero)
+                zotero = fresh
+            }
+            zoteroCheck = ("Checked at \(time): Zotero accepts the key, and it can \(fresh.canWrite ? "read and write" : "only read").", true)
+        } catch {
+            zoteroCheck = ("Checked at \(time): \(error)", false)
+        }
     }
 
     func disconnectZotero() {
@@ -771,6 +796,7 @@ final class AppModel {
         store.saveZotero(nil)
         zotero = nil
         zoteroStatus = nil
+        zoteroCheck = nil
         settings.useZotero = false
     }
 

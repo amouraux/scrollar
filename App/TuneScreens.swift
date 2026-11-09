@@ -445,9 +445,7 @@ struct OpenAlexKeyRows: View {
     @State private var draft = ""
     @State private var replacing = false
 
-    private var masked: String {
-        String(repeating: "•", count: 8) + model.apiKey.suffix(4)
-    }
+    private var masked: String { SecretText.masked(model.apiKey) }
 
     var body: some View {
         switch model.keySource {
