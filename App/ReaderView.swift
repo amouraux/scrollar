@@ -49,7 +49,7 @@ private struct PaperReader: View {
                 .padding(.vertical, 8)
             }
             if mode == .pdf, let link = pdfLink {
-                PDFPane(loader: pdf, url: link)
+                PDFPane(loader: pdf, url: link, referer: paper.link)
             } else {
                 details
             }
@@ -308,13 +308,27 @@ final class PDFLoader {
     /// Files this large are left to the browser: they would be held in memory in full.
     private static let largest = 80_000_000
 
-    func load(_ url: URL) async {
+    /// Publishers commonly answer a bare `CFNetwork` request with 403 or a 500 while serving the
+    /// same file to a browser, so the request looks like one: a browser's User-Agent, and the
+    /// paper's own page as the referrer, which is where a reader would have clicked from.
+    private static let browser = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+        + "(KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+
+    func load(_ url: URL, referer: URL? = nil) async {
         switch state { case .idle, .failed: break; default: return }
         state = .loading
         var request = URLRequest(url: url, timeoutInterval: 30)
         request.setValue("application/pdf,*/*;q=0.5", forHTTPHeaderField: "Accept")
+        request.setValue(Self.browser, forHTTPHeaderField: "User-Agent")
+        request.setValue("en", forHTTPHeaderField: "Accept-Language")
+        if let referer { request.setValue(referer.absoluteString, forHTTPHeaderField: "Referer") }
         do {
-            let (file, response) = try await URLSession.shared.download(for: request)
+            var (file, response) = try await URLSession.shared.download(for: request)
+            // A 5xx from a publisher is often a momentary refusal of a first request: ask once more.
+            if let http = response as? HTTPURLResponse, http.statusCode >= 500 {
+                try? await Task.sleep(for: .seconds(1))
+                (file, response) = try await URLSession.shared.download(for: request)
+            }
             let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             guard size <= Self.largest else { state = .failed("This PDF is too large to show here."); return }
             let data = try Data(contentsOf: file)
@@ -335,6 +349,7 @@ private struct PDFPane: View {
     @Environment(\.openURL) private var openURL
     let loader: PDFLoader
     let url: URL
+    let referer: URL?
 
     var body: some View {
         Group {
@@ -350,12 +365,12 @@ private struct PDFPane: View {
                 } description: {
                     Text(message)
                 } actions: {
-                    Button("Try again") { Task { await loader.load(url) } }
+                    Button("Try again") { Task { await loader.load(url, referer: referer) } }
                     Button("Open in browser") { openURL(url) }
                 }
             }
         }
-        .task(id: url) { await loader.load(url) }
+        .task(id: url) { await loader.load(url, referer: referer) }
     }
 }
 
