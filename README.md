@@ -384,6 +384,28 @@ How each manager is reached, and why:
 The pieces I could only test against a stand-in for Zotero (`Tests/main.swift`, the whole upload
 sequence); I have not saved to a real Zotero library from here.
 
+## Submitting a beta (TestFlight)
+
+What the app already does for review: no accounts, purchases, tracking or private API; HTTPS only; no
+third-party code; all four iPad orientations; a privacy manifest (`App/PrivacyInfo.xcprivacy`,
+declaring UserDefaults `CA92.1` and file timestamps `C617.1`, no collected data, no tracking);
+`ITSAppUsesNonExemptEncryption` = NO (only the system's HTTPS, plus hashing); the Mac build is
+sandboxed with the network and user-selected-file entitlements it needs.
+
+What is left for App Store Connect, which only the account holder can do: a public privacy policy
+address (`PRIVACY.md` is a draft to host), the App Privacy answers, the beta description, a feedback
+email, and the age rating. Archive with the released Xcode and a new build number each time:
+
+```sh
+xcodebuild -project Scrollar.xcodeproj -scheme Scrollar -configuration Release \
+  -destination 'generic/platform=iOS' -archivePath Scrollar-ios.xcarchive \
+  DEVELOPMENT_TEAM=<team> CURRENT_PROJECT_VERSION=$(git rev-list --count HEAD) archive
+```
+
+then Distribute App → App Store Connect → Upload in the Organizer (it needs an Apple Distribution
+certificate). Use the same command with `-destination 'platform=macOS,variant=Mac Catalyst'` for the Mac.
+I archived both here to check the plist, the manifest and the entitlements; I did not upload.
+
 ## Filtering what you kept
 
 Saved, For me and Read share a **Filter** panel (the button at the top right; on a wide window it
