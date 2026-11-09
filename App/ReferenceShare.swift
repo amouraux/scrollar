@@ -69,7 +69,7 @@ struct ShareMenu<Label: View>: View {
         let ris = RIS.fileName(for: reference)
         let enw = EndNote.fileName(for: reference)
         let pdf = PDFCache.lookup(paper.dedupeKey)
-        let hasPDFLink = PDFLink.clean(paper.pdfURL) != nil
+        let hasPDFLink = paper.pdfLink != nil
         Menu {
             if let url = paper.link {
                 ShareLink(item: url, subject: Text(paper.title)) {
@@ -123,7 +123,7 @@ struct ShareMenu<Label: View>: View {
 extension AppModel {
     /// The paper's PDF as a file: the kept copy, or a direct download made now. Says so when there is none.
     private func pdfFile(for p: Paper) async -> URL? {
-        guard let link = PDFLink.clean(p.pdfURL).flatMap(URL.init(string:)) else {
+        guard let link = p.pdfLink.flatMap(URL.init(string:)) else {
             if let kept = PDFCache.lookup(p.dedupeKey) { return kept }
             show("No free PDF is known for this paper.")
             return nil

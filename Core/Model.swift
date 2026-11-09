@@ -35,6 +35,26 @@ enum PDFLink {
         return s
     }
 
+    /// The PDF of a preprint, which its server publishes at an address that follows from the DOI,
+    /// though neither OpenAlex nor Europe PMC always lists one (bioRxiv's usually are missing). The server
+    /// is known only from the venue for bioRxiv and medRxiv, which share one DOI prefix.
+    static func preprint(doi: String?, journal: String?) -> String? {
+        guard let doi = Identifiers.doi(doi) else { return nil }
+        let d = doi.lowercased()
+        if d.hasPrefix("10.1101/") {
+            let venue = (journal ?? "").lowercased()
+            let host = venue.contains("biorxiv") ? "www.biorxiv.org" : venue.contains("medrxiv") ? "www.medrxiv.org" : nil
+            return host.map { "https://\($0)/content/\(doi).full.pdf" }
+        }
+        if d.hasPrefix("10.48550/arxiv.") { return "https://arxiv.org/pdf/" + doi.dropFirst("10.48550/arXiv.".count) }
+        // PsyArXiv, SocArXiv, OSF Preprints and the other servers on the Open Science Framework.
+        if let range = d.range(of: "/osf.io/"), d.hasPrefix("10.31") {
+            let id = doi[range.upperBound...].split(separator: "_").first.map(String.init) ?? ""
+            return id.isEmpty ? nil : "https://osf.io/\(id)/download"
+        }
+        return nil
+    }
+
     /// OpenAlex: the best open-access location's PDF, else the one the paper is published at.
     static func openAlex(best: String?, primary: String?) -> String? { clean(best) ?? clean(primary) }
 
@@ -137,6 +157,9 @@ struct Paper: Hashable, Codable {
         if let pmid { return "pmid:" + pmid }
         return "oa:" + id
     }
+
+    /// The PDF the reader may try: the one a source listed, else the preprint server's own address.
+    var pdfLink: String? { PDFLink.clean(pdfURL) ?? PDFLink.preprint(doi: doi, journal: journal) }
 
     var link: URL? {
         if id.hasPrefix("epmc:"), doi == nil, pmid == nil {

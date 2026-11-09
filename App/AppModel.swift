@@ -833,7 +833,7 @@ final class AppModel {
         show("Saving to Zotero…")
         do {
             if let doi = p.doi, try await client.has(doi: doi) { show("Already in your Zotero library"); return }
-            let link = PDFLink.clean(p.pdfURL).flatMap(URL.init(string:))
+            let link = p.pdfLink.flatMap(URL.init(string:))
             var pdf: ZoteroClient.PDF?
             if zoteroAttachPDF, let link, let file = await PDFCache.file(for: p.dedupeKey, url: link, referer: p.link, stem: pdfStem(p)),
                let md5 = PDFCache.md5(of: file) {
@@ -919,7 +919,7 @@ final class AppModel {
     /// A paper just saved or marked For me has its PDF put in the shared folder, if the user has one:
     /// the kept copy, or a direct download made now, so the other devices have it without asking.
     private func shareKeptPDF(_ p: Paper) {
-        guard PDFFolder.url != nil, let link = PDFLink.clean(p.pdfURL).flatMap(URL.init(string:)) else { return }
+        guard PDFFolder.url != nil, let link = p.pdfLink.flatMap(URL.init(string:)) else { return }
         let stem = pdfStem(p)
         Task {
             if let file = await PDFCache.file(for: p.dedupeKey, url: link, referer: p.link, stem: stem) {

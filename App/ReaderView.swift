@@ -35,7 +35,7 @@ private struct PaperReader: View {
     /// Owned here, not by the PDF view, so going to Details and back does not fetch the file again.
     @State private var pdf = PDFLoader()
 
-    private var pdfLink: URL? { PDFLink.clean(paper.pdfURL).flatMap(URL.init(string:)) }
+    private var pdfLink: URL? { paper.pdfLink.flatMap(URL.init(string:)) }
 
     private var authors: Reader.AuthorList { Reader.authors(of: paper) }
 

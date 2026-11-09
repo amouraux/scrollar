@@ -1485,5 +1485,12 @@ check((try? await zClient.collections())?.map(\.name) == ["thesis"], "zotero cli
 check(PDFNames.fileName(stem: "Lovelace-2026-Machine-learning", tag: "abc123") == "Lovelace-2026-Machine-learning--abc123.pdf" && PDFNames.fileName(stem: "///", tag: "t") == "paper--t.pdf" && PDFNames.fileName(stem: String(repeating: "x", count: 200), tag: "t").count == 80 + 7, "pdf folder: a file is named for a person and tagged for a device")
 check(PDFNames.isFile("Lovelace--abc123.pdf", tag: "abc123") && PDFNames.isFile(".Lovelace--abc123.pdf.icloud", tag: "abc123") && !PDFNames.isFile("Lovelace--abc1234.pdf", tag: "abc123") && !PDFNames.isFile("notes.txt", tag: "abc123") && PDFNames.realName(".x.pdf.icloud") == "x.pdf", "pdf folder: a file is found by its tag, also when iCloud has not downloaded it")
 
+check(PDFLink.preprint(doi: "10.1101/2026.10.01.123456", journal: "bioRxiv") == "https://www.biorxiv.org/content/10.1101/2026.10.01.123456.full.pdf" && PDFLink.preprint(doi: "10.1101/2026.10.01.123456", journal: "medRxiv (Cold Spring Harbor)")?.contains("medrxiv.org") == true && PDFLink.preprint(doi: "https://doi.org/10.1101/2026.10.01.123456", journal: "bioRxiv")?.contains("/content/10.1101/2026") == true, "preprint pdf: bioRxiv and medRxiv follow from the DOI and the venue")
+check(PDFLink.preprint(doi: "10.1101/2026.10.01.123456", journal: "Cell") == nil && PDFLink.preprint(doi: "10.1016/j.cell.2026.01.001", journal: "bioRxiv") == nil && PDFLink.preprint(doi: nil, journal: "bioRxiv") == nil, "preprint pdf: a shared DOI prefix without a preprint venue, and an ordinary paper, get no guess")
+check(PDFLink.preprint(doi: "10.48550/arXiv.2601.01234", journal: "arXiv") == "https://arxiv.org/pdf/2601.01234" && PDFLink.preprint(doi: "10.31234/osf.io/abc12_v1", journal: "PsyArXiv") == "https://osf.io/abc12/download", "preprint pdf: arXiv and the Open Science Framework servers")
+var ppPaper = paper("pp", "A preprint"); ppPaper.doi = "10.1101/2026.10.01.123456"; ppPaper.journal = "bioRxiv"
+var ppListed = ppPaper; ppListed.pdfURL = "https://example.org/x.pdf"
+check(ppPaper.pdfLink?.contains("biorxiv.org") == true && ppListed.pdfLink == "https://example.org/x.pdf", "preprint pdf: a listed PDF comes first, the derived one when none is listed")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)
