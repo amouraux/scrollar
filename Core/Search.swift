@@ -41,6 +41,39 @@ enum SearchLog {
     }
 }
 
+enum SearchTerms {
+    /// Little words that would only narrow a search to titles that happen to contain them.
+    static let little: Set<String> = ["a", "an", "and", "at", "by", "for", "in", "of", "on", "or", "the", "to", "with"]
+
+    /// The terms of a search: each word on its own, so a paper needs every word but not in that order, and a
+    /// phrase in quotes kept whole. Little words are dropped unless they are all there is.
+    static func terms(_ query: String) -> [String] {
+        var out: [String] = []
+        var current = "", quoted = false
+        func flush() {
+            let t = current.trimmingCharacters(in: .whitespaces)
+            if !t.isEmpty { out.append(t) }
+            current = ""
+        }
+        for ch in query {
+            if ch == "\"" || ch == "\u{201C}" || ch == "\u{201D}" { flush(); quoted.toggle() }
+            else if ch.isWhitespace && !quoted { flush() }
+            else { current.append(ch) }
+        }
+        flush()
+        let kept = out.filter { !little.contains($0.lowercased()) }
+        return kept.isEmpty ? out : kept
+    }
+
+    /// What the sources are asked for: the first term, and the others as conditions beside it, which every source
+    /// reads as "this AND that" (an unadorned phrase is read by Europe PMC and arXiv as an exact string).
+    static func seed(_ query: String) -> Seed {
+        let t = terms(query)
+        guard let first = t.first else { return .keyword(query) }
+        return .keyword(first, also: Array(t.dropFirst()))
+    }
+}
+
 enum SearchRanking {
     /// How much the phrase itself counts beside what the user has kept: a search is for that phrase first.
     static let phraseWeight = 3.0

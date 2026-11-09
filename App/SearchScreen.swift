@@ -3,7 +3,9 @@ import SwiftUI
 // Searching for a phrase. The sources that are on are asked for the last twelve months, and what comes back is
 // ranked the way the feed is: by the phrase first, then by what the user keeps, their library and projects, what
 // they searched for lately and the levels they set. A search is remembered on this device and, for a while, counts
-// as an interest of its own in the feed. The rules are in Core/Search.swift.
+// as an interest of its own in the feed, but only when the user agrees after seeing the results, and a search
+// that finds nothing is tried again with its misspelled words put right. The rules are in Core/Search.swift
+// and Core/Typos.swift.
 
 private struct SearchingKey: EnvironmentKey { static let defaultValue = false }
 
@@ -22,11 +24,13 @@ struct SearchScreen: View {
     @State private var state: Phase = .idle
     @State private var task: Task<Void, Never>?
     @FocusState private var focused: Bool
+    /// Phrases the user has answered the question for in this visit, so it is not asked twice.
+    @State private var answered: Set<String> = []
 
     private enum Phase {
         case idle
         case searching
-        case found(query: String, [RankedPaper])
+        case found(AppModel.SearchOutcome)
         case failed(String)
     }
 
@@ -44,7 +48,7 @@ struct SearchScreen: View {
                     } description: { Text(message) } actions: {
                         Button("Try again") { run(text) }
                     }
-                case .found(let query, let papers): results(query, papers)
+                case .found(let outcome): results(outcome)
                 }
             }
             .background(Color(.systemGroupedBackground))
@@ -95,7 +99,7 @@ struct SearchScreen: View {
         task = Task {
             do {
                 let found = try await model.search(phrase)
-                if !Task.isCancelled { state = .found(query: phrase, found) }
+                if !Task.isCancelled { state = .found(found) }
             } catch {
                 if !Task.isCancelled { state = .failed("\(error)") }
             }
@@ -133,9 +137,11 @@ struct SearchScreen: View {
                 }
             }
             Section {
-                Toggle("Let recent searches shape the feed", isOn: $model.settings.countsSearches)
+                Toggle("Let searches shape the feed", isOn: $model.settings.countsSearches)
+                Toggle("Ask me after each search", isOn: $model.settings.asksAboutSearches)
+                    .disabled(!model.settings.countsSearches)
             } footer: {
-                Text("Searches are kept on this device only. They are not synced or backed up, and the phrase is sent to the sources that are on, as a search term, like any keyword you follow.")
+                Text("After a search, you are asked whether it should count toward your feed. Searches you agree to are kept on this device only. They are not synced or backed up, and the phrase is sent to the sources that are on, as a search term, like any keyword you follow.")
             }
         }
     }
@@ -147,26 +153,82 @@ struct SearchScreen: View {
 
     // MARK: After
 
-    @ViewBuilder private func results(_ query: String, _ papers: [RankedPaper]) -> some View {
-        if papers.isEmpty {
+    @ViewBuilder private func results(_ outcome: AppModel.SearchOutcome) -> some View {
+        let query = outcome.query
+        if outcome.papers.isEmpty {
             ContentUnavailableView {
                 Label("Nothing found", systemImage: "magnifyingglass")
             } description: {
-                Text("No paper in the last twelve months matches “\(query)”, or what you hid and muted took them all out. Try other words.")
+                Text("No paper in the last twelve months matches “\(query)”, or what you hid and muted took them all out. Check the spelling, or try other words.")
             }
         } else {
             ScrollView {
                 LazyVStack(spacing: 8) {
-                    Text("\(papers.count) papers from the last twelve months, ranked by your search first, then by what you keep, your library and projects, and the levels you set.")
+                    if outcome.corrected {
+                        note("No results for “\(outcome.original)”, so these are for “\(query)”.", symbol: "textformat.abc")
+                    }
+                    if let suggestion = outcome.suggestion {
+                        Button { run(suggestion) } label: {
+                            HStack {
+                                Label("Did you mean “\(suggestion)”?", systemImage: "textformat.abc")
+                                    .font(.subheadline.weight(.medium))
+                                Spacer()
+                                Text("Search").font(.subheadline)
+                            }
+                            .padding(12)
+                            .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    countQuestion(query)
+                    Text("\(outcome.papers.count) papers from the last twelve months, ranked by your search first, then by what you keep, your library and projects, and the levels you set.")
                         .font(.footnote).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.bottom, 4)
-                    ForEach(papers, id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+                    ForEach(outcome.papers, id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
                 }
                 .padding(.horizontal, 16).padding(.vertical, 12)
                 .frame(maxWidth: 700)
                 .frame(maxWidth: .infinity)
             }
+        }
+    }
+
+    private func note(_ text: String, symbol: String) -> some View {
+        Label(text, systemImage: symbol)
+            .font(.subheadline)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// Whether this search should count toward the feed: asked once the results are on screen, so the user knows
+    /// what the search was before agreeing; not asked if they turned searches off, said not to ask, or already agreed.
+    @ViewBuilder private func countQuestion(_ query: String) -> some View {
+        let key = query.lowercased()
+        if model.settings.countsSearches, model.settings.asksAboutSearches, !model.isCounted(query), !answered.contains(key) {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Count this search toward your feed?", systemImage: "arrow.up.right.circle")
+                    .font(.subheadline.weight(.semibold))
+                Text("If you agree, your feed leans toward “\(query)” for a while, and less each week. If not, this stays a one-off search and nothing is kept.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    Button { answered.insert(key); model.countSearch(query) } label: {
+                        Text("Yes, count it").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button { answered.insert(key) } label: {
+                        Text("No, just this once").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            .padding(12)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+        } else if model.isCounted(query) {
+            Label("This search counts toward your feed", systemImage: "checkmark.circle")
+                .font(.footnote).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

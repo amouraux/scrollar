@@ -698,7 +698,24 @@ or set to Hide, is not shown. The user's own publications are not part of the ra
 feeds), which is the one way it differs from the feed; a hundred results at most. Results are the ordinary posts, thumbs and Read later
 included, but a tap unfolds the abstract in the list even on a wide window, because these papers are not in the feed the reader steps through.
 
-**Recent searches count.** Each search is kept (newest first, repeats moved to the top, thirty at most) and, until it fades, counts in the
+**Every word, in any order.** A search is split into its words, each of which a paper must have, but not side by side
+(`SearchTerms`, tested): the sources were first asked for the exact phrase, which Europe PMC and arXiv take literally, and "migraine
+prophylaxis" found nothing. A phrase in quotes is kept whole, and little words (of, the, in...) are dropped.
+
+**Misspellings** (`Core/Typos.swift`, tested). A scientific word is not in a dictionary, so a dictionary alone would "correct" good words.
+A word is put right only toward a word the app has actually seen (what the user follows, keeps and has searched, and the titles the sources
+just returned), within one slip (two for a long word, none for three letters or fewer), and only when that word is seen at least three
+times and five times as often as the odd one. When results came back but a word looks off, the screen offers "Did you mean…". When a search
+**finds nothing**, the system dictionary's guesses are used too, and the top three corrections are searched together and the one that finds
+most is shown, with a line saying so: its first guess alone is often another real word (it offered "migrant" for "migrane"). Tried on the
+iPhone simulator with "migrane prophylaxis" and "transcranal magnatic stimulaton". Not tried: a long phrase with two misspelled words, nor
+a language other than English (the dictionary is asked for en_US only; what the app has seen works in any language).
+
+**Recent searches count, if the user agrees.** After the results, a question asks "Count this search toward your feed?" (Yes, count it | No,
+just this once). Only a yes keeps the phrase; a no keeps nothing, not even in the recent list. Searching again for a phrase already agreed to
+refreshes it without asking. Two switches in the search screen: **Let searches shape the feed** (`countsSearches`; off keeps nothing and asks
+nothing) and **Ask me after each search** (`asksAboutSearches`, synced; off counts every search with results, as the first version did).
+A search with no results is never counted. Each agreed search is kept (newest first, repeats moved to the top, thirty at most) and, until it fades, counts in the
 feed as an interest of its own, at full weight when new and **half as much after two weeks**, and for nothing once under 5%
 (`SearchLog`). So searching for a subject for a few days pulls the next feed toward it, and stops doing so on its own. The search screen
 lists them, each with how much it still counts, with swipe to forget, Forget all, and a switch (**Let recent searches shape the feed**,

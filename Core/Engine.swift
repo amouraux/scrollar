@@ -276,7 +276,7 @@ struct FeedEngine {
     func search(_ phrase: String, settings: FeedSettings, extra: [ProfileEntry], days: Int = 365,
                 today: Date = Date()) async throws -> [RankedPaper] {
         guard openAlex != nil || europePMC != nil || crossref != nil || arXiv != nil || osf != nil else { throw EngineError.noSource }
-        let seed = Seed.keyword(phrase)
+        let seed = SearchTerms.seed(phrase)
         let since = Ranker.dayString(today.addingTimeInterval(-Double(days) * 86_400))
         let until = Ranker.dayString(today)
         let targets = SourceRouting.targets(for: seed, openAlex: openAlex != nil, europePMC: europePMC != nil,

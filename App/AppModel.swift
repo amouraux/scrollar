@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 import os
 
 private let log = Logger(subsystem: "com.andremouraux.scrollar", category: "feed")
@@ -548,12 +549,51 @@ final class AppModel {
 
     // MARK: Search
 
+    /// What a search came to: the phrase that was run (the user's, or its correction when that found nothing), the
+    /// papers, and a correction to offer when the papers came but a word looks misspelled.
+    struct SearchOutcome {
+        var query: String
+        var original: String
+        var papers: [RankedPaper]
+        /// The phrase put right, offered as "Did you mean".
+        var suggestion: String?
+        /// The search found nothing as typed, so `query` is the corrected phrase that was run instead.
+        var corrected: Bool
+    }
+
     /// What a search for `phrase` finds: from every source that is on, ranked by the phrase, by what the user has
-    /// kept, their library and projects and what they searched for lately, and by the levels they set. The phrase
-    /// is remembered, so it counts for a while in the feed itself.
-    func search(_ phrase: String) async throws -> [RankedPaper] {
+    /// kept, their library and projects, what they searched for lately, and by the levels they set. A search that
+    /// finds nothing is tried again with its misspelled words put right, toward words the app has seen. Nothing is
+    /// remembered here: whether the search counts toward the feed is the user's to say (`countSearch`).
+    func search(_ phrase: String) async throws -> SearchOutcome {
         let text = phrase.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.count >= 2 else { return [] }
+        guard text.count >= 2 else { return SearchOutcome(query: text, original: text, papers: [], suggestion: nil, corrected: false) }
+        var outcome = SearchOutcome(query: text, original: text, papers: try await runSearch(text), suggestion: nil, corrected: false)
+        if outcome.papers.isEmpty {
+            // Nothing as typed: try the likeliest corrections together and keep the one that finds most. A
+            // dictionary's first guess is often another real word ("migrant" for "migrane"), so one guess is not trusted.
+            let fixes = Typos.alternatives(text, vocabulary: searchVocabulary(), guesses: Self.dictionaryGuesses)
+                .filter { $0.lowercased() != text.lowercased() }
+            let tries = fixes.map { fix in Task { (fix, try? await self.runSearch(fix)) } }
+            var best: (fix: String, papers: [RankedPaper])?
+            for t in tries {
+                let (fix, papers) = await t.value
+                if let papers, papers.count > (best?.papers.count ?? 0) { best = (fix, papers) }
+            }
+            if let best { outcome = SearchOutcome(query: best.fix, original: text, papers: best.papers, suggestion: nil, corrected: true) }
+        } else {
+            let seen = Typos.vocabulary(outcome.papers.map(\.paper.title))
+            outcome.suggestion = Typos.suggest(text, vocabulary: Typos.merge(searchVocabulary(), seen))
+        }
+        // A phrase the user already agreed to count is refreshed; a new one waits for their answer, unless they said
+        // not to ask.
+        if !outcome.papers.isEmpty, settings.countsSearches, isCounted(outcome.query) || !settings.asksAboutSearches {
+            countSearch(outcome.query)
+        }
+        return outcome
+    }
+
+    private func runSearch(_ text: String) async throws -> [RankedPaper] {
         let settings = self.settings
         let library = await zoteroTexts(allowNetwork: false) + libraryFileTexts()
         let extra = FeedBuilder.profile(settings, own: [], library: library, project: projectPassages,
@@ -572,10 +612,37 @@ final class AppModel {
             return (found, cache?.snapshot(keeping: found.map { Ranker.text($0.paper) } + extra.map(\.text)))
         }.value
         if let vectors { store.saveEmbeddings(vectors) }
-        searches = SearchLog.adding(text, to: searches, at: Date())
+        return ranked
+    }
+
+    /// The words the app has seen the user care about: what they follow (counted three times, being deliberate), what
+    /// they searched, and the titles they kept. Misspellings are put right toward these.
+    private func searchVocabulary() -> [String: Int] {
+        let deliberate = settings.followedKeywords.map(\.phrase) + settings.followedTopics.map(\.name)
+            + settings.followedJournals.map(\.name) + settings.followedAuthors.map(\.name) + searches.map(\.text)
+        let kept = (settings.feedback.saved + settings.feedback.liked).map(\.title)
+        return Typos.vocabulary(deliberate + deliberate + deliberate + kept + projectPassages)
+    }
+
+    /// The system dictionary's offer for a word, tried only when a search found nothing (a scientific word is not in
+    /// it, so it must not be trusted over what the app has seen).
+    private static func dictionaryGuesses(_ word: String) -> [String] {
+        let checker = UITextChecker()
+        let range = NSRange(location: 0, length: (word as NSString).length)
+        guard checker.rangeOfMisspelledWord(in: word, range: range, startingAt: 0, wrap: false, language: "en_US").location != NSNotFound
+        else { return [] }
+        return checker.guesses(forWordRange: range, in: word, language: "en_US") ?? []
+    }
+
+    func isCounted(_ phrase: String) -> Bool {
+        searches.contains { $0.text.lowercased() == phrase.lowercased() }
+    }
+
+    /// The user agreed: from now this search counts toward the feed, fading as time passes.
+    func countSearch(_ phrase: String) {
+        searches = SearchLog.adding(phrase, to: searches, at: Date())
         store.saveSearches(searches)
         if settings.countsSearches { needsRefresh = true }
-        return ranked
     }
 
     func forgetSearch(_ search: Search) {
