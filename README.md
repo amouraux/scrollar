@@ -468,6 +468,25 @@ and the newest are the newest. What was read (not the file) is kept in Applicati
 when each item first appeared cannot be fetched again; it is not synced (do it on each device). Adding
 by paste adds to what is held, a paper pasted twice is one, and the cap is 5,000 items.
 
+## Your project
+
+For someone with few papers yet (a PhD student, say), Tune, **Your project** takes the description of what
+they are about to work on: paste a grant proposal, a thesis plan or an abstract, or choose a PDF or a text file
+(`Core/Project.swift`, tested). It does two things, both on the device. **Ranking:** the text is cut into
+passages of a few sentences (line wraps and words split across a line end joined, headings, tables of numbers,
+links and reference lists left out, at most 40, spread over the whole text) and they join the profile texts like
+a library's items, so a paper close to the project ranks higher. There is no switch: the project is used while
+it is pasted, and **Remove it** stops it. **Keywords:** the phrases it keeps returning to are offered in a list
+to choose from. It is plain counting, not a model: phrases of two or three words said more than once, with the
+words every proposal uses ("project", "work package", "year", "patients") never at an edge, a longer phrase
+dropped when it only extends one already offered, and single words (long, at least three times) offered
+unticked, because a keyword listed alone is listed in full. Nothing is searched before the choice: the text and
+the phrases offered stay on the device, and a keyword is searched only once it is followed, like any other. The
+project is kept in `project.json` in Application Support, is not synced and is not in an exported settings
+file, because a proposal may be confidential. Replacing or removing it re-ranks the feed without fetching.
+Not tried: a proposal in another language than English (the stop words and the sentence model are English),
+and the real proposals of anyone but the sample in the tests.
+
 ## Zotero
 
 Tune, Zotero library connects an account with an API key made at zotero.org/settings/keys. The

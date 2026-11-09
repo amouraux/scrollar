@@ -1,4 +1,5 @@
 import SwiftUI
+import PDFKit
 import UniformTypeIdentifiers
 
 extension PaperKind {
@@ -277,6 +278,8 @@ struct SettingsView: View {
                 ZoteroSection()
 
                 LibraryFileSection()
+
+                ProjectSection()
 
                 PDFStorageSection()
 
@@ -1021,6 +1024,182 @@ struct LibraryFileSection: View {
     }
 }
 
+
+/// A research project in the user's own words (a grant proposal, a thesis plan, an abstract): what the
+/// feed is for, in the place of papers that do not exist yet. Read on the device and kept there.
+struct ProjectSection: View {
+    @Environment(AppModel.self) private var appModel
+    @State private var pasting = false
+    @State private var suggesting = false
+    @State private var message: String?
+
+    var body: some View {
+        Section {
+            if let project = appModel.project {
+                LabeledContent("Using", value: project.name)
+                Text("\(ProjectText.wordCount(project.text)) words, \(ProjectText.passages(project.text).count) passages read, pasted \(pasted(project.addedAt)).")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Button("Suggest keywords from it…") { suggesting = true }
+                Button("Replace it…") { pasting = true }
+                Button("Remove it", role: .destructive) { appModel.removeProject(); message = nil }
+            } else {
+                Button("Paste your project…") { pasting = true }
+            }
+            if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
+        } header: {
+            Text("Your project")
+        } footer: {
+            Text("Paste a grant proposal, a thesis plan or an abstract: what you are about to work on, before there are papers to show it. Papers close to it rank higher, and it can suggest keywords to follow, which you choose from a list. It is read on this device and kept only here: it is not synced, not sent to any service, and not in the settings file you can export. Only a keyword you choose to follow is searched, like any other.")
+        }
+        .sheet(isPresented: $pasting) {
+            PasteProjectSheet { text in
+                do {
+                    try appModel.setProject(text)
+                    message = nil
+                    // After this sheet has gone: a second one cannot open while it is leaving.
+                    Task { try? await Task.sleep(for: .milliseconds(500)); suggesting = true }
+                } catch {
+                    message = error.localizedDescription
+                }
+            }
+        }
+        .sheet(isPresented: $suggesting) { ProjectKeywordsSheet() }
+    }
+
+    private func pasted(_ iso: String) -> String {
+        guard let d = ISO8601DateFormatter().date(from: iso) else { return "earlier" }
+        return d.formatted(date: .abbreviated, time: .omitted)
+    }
+}
+
+/// A window to paste a project into, or to take one from a PDF or a text file.
+struct PasteProjectSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+    @State private var choosing = false
+    @State private var problem: String?
+    let save: (String) -> Void
+
+    private var words: Int { ProjectText.wordCount(text) }
+    private var enough: Bool { words >= ProjectText.fewestWords && !ProjectText.passages(text).isEmpty }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Paste the description of your project: the aims and background of a grant proposal, a thesis plan or an abstract. The more of it that is about the subject, and the less about budgets and schedules, the better it works.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                TextEditor(text: $text)
+                    .font(.callout)
+                    .padding(6)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.3)))
+                    .frame(minHeight: 220)
+                HStack {
+                    Button("Paste from clipboard", systemImage: "doc.on.clipboard") {
+                        if let clip = UIPasteboard.general.string { text = clip }
+                    }
+                    Spacer()
+                    Button("From a file…", systemImage: "doc") { choosing = true }
+                }
+                Text(problem ?? (text.isEmpty ? "" : enough ? "\(words) words" : "Too short to tell what it is about"))
+                    .font(.footnote).foregroundStyle(problem != nil || !enough ? Color.red : Color.secondary)
+            }
+            .padding()
+            .navigationTitle("Your project")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Use it") { save(text); dismiss() }.disabled(!enough)
+                }
+            }
+            .fileImporter(isPresented: $choosing, allowedContentTypes: [.pdf, .plainText, .text]) { result in
+                switch result {
+                case .success(let url):
+                    let scoped = url.startAccessingSecurityScopedResource()
+                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                    let read = url.pathExtension.lowercased() == "pdf" ? PDFDocument(url: url)?.string : try? String(contentsOf: url)
+                    if let read, !read.isEmpty { text = read; problem = nil } else { problem = "That file has no text that could be read." }
+                case .failure(let error):
+                    problem = error.localizedDescription
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+}
+
+/// What the project keeps returning to, to choose from. Nothing is searched until it is added; the
+/// phrases come from the text on this device, and are not sent anywhere before the choice.
+struct ProjectKeywordsSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var found: [ProjectKeyword] = []
+    @State private var chosen: Set<String> = []
+    @State private var loaded = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if loaded && found.isEmpty {
+                    ContentUnavailableView("No repeated phrases", systemImage: "text.magnifyingglass",
+                                           description: Text("The project does not return to any phrase often enough to suggest it. Add keywords by hand under Follow."))
+                } else {
+                    Section {
+                        Text("Phrases the project returns to, most often first. A keyword is searched in titles and abstracts and listed in full, so a broad one lists a great deal: leave out what is too general. You can narrow one afterwards, under Follow, Keywords.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    Section("Phrases") { ForEach(found.filter { $0.words > 1 }) { row($0) } }
+                    let singles = found.filter { $0.words == 1 }
+                    if !singles.isEmpty {
+                        Section {
+                            ForEach(singles) { row($0) }
+                        } header: {
+                            Text("Single words")
+                        } footer: {
+                            Text("A word on its own is searched everywhere it appears, so none is ticked.")
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Suggested keywords")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add \(chosen.count)") {
+                        model.followKeywords(found.filter { chosen.contains($0.id) }.map(\.phrase))
+                        dismiss()
+                    }
+                    .disabled(chosen.isEmpty)
+                }
+            }
+            .task {
+                let text = model.project?.text ?? ""
+                found = ProjectText.keywords(text).filter { k in
+                    !model.settings.followedKeywords.contains { $0.phrase.lowercased() == k.id }
+                }
+                chosen = Set(found.filter(\.selected).map(\.id))
+                loaded = true
+            }
+        }
+    }
+
+    private func row(_ k: ProjectKeyword) -> some View {
+        Button {
+            if chosen.contains(k.id) { chosen.remove(k.id) } else { chosen.insert(k.id) }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: chosen.contains(k.id) ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(chosen.contains(k.id) ? Color.accentColor : Color.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(k.phrase).foregroundStyle(.primary)
+                    Text("\(k.count) times").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
 
 /// A window to paste into: anything a reference manager or a bibliography will copy.
 struct PasteReferencesSheet: View {

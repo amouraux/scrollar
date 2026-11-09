@@ -55,6 +55,9 @@ final class AppModel {
     private(set) var zotero: ZoteroAccount?
     /// The RIS or BibTeX export last imported, for managers that have no API to read.
     private(set) var libraryFile: LibraryFile?
+    /// A research project the user pasted (a proposal, a plan): its passages stand for what they are
+    /// into, and its phrases can be offered as keywords. On this device only.
+    private(set) var project: ProjectFile?
     /// A Claude or ChatGPT account for takeaways on a device with no on-device model; from the Keychain.
     private(set) var remoteSummary: RemoteSummaryConfig?
     /// Why takeaways from it are not arriving, if they are not; shown in Tune.
@@ -145,6 +148,7 @@ final class AppModel {
         apiKey = Keychain.load()
         remoteSummary = Keychain.load(service: Keychain.summaries).data(using: .utf8).flatMap { try? JSONDecoder().decode(RemoteSummaryConfig.self, from: $0) }
         libraryFile = store.loadLibraryFile()
+        project = store.loadProject()
         zotero = Keychain.load(service: Keychain.zotero).data(using: .utf8).flatMap { try? JSONDecoder().decode(ZoteroAccount.self, from: $0) }
         history = store.loadHistory()
         summaries = store.loadSummaries()
@@ -265,6 +269,7 @@ final class AppModel {
         let settings = self.settings
         // Going back asks for nothing from Zotero: the copy already held ranks what it fetches.
         let library = await zoteroTexts(allowNetwork: !older) + libraryFileTexts()
+        let projectPassages = project.map { ProjectText.passages($0.text) } ?? []
         let useOpenAlex = usesOpenAlex
         // What this feed is built for, taken now: the user may change a follow
         // while it runs, and the result must not claim to match that.
@@ -282,7 +287,7 @@ final class AppModel {
                 let engine = FeedEngine(openAlex: useOpenAlex ? OpenAlexClient(apiKey: key) : nil,
                                         europePMC: settings.useEuropePMC ? EuropePMCClient() : nil,
                                         embedder: cache, log: report)
-                let result = try await engine.build(settings, previous: previous, older: older, library: library)
+                let result = try await engine.build(settings, previous: previous, older: older, library: library, project: projectPassages)
                 let used = result.profileTexts + (result.citedYou + result.forYou).map { Ranker.text($0.paper) }
                 return (result, cache?.snapshot(keeping: used))
             }.value
@@ -761,9 +766,10 @@ final class AppModel {
     // MARK: A library file
 
     enum ImportProblem: LocalizedError {
-        case unreadable, noPapers
+        case unreadable, noPapers, projectTooShort
         var errorDescription: String? {
             switch self {
+            case .projectTooShort: return "That says too little to tell what the project is about. Paste at least a few sentences of it: the aims, the background or the abstract."
             case .unreadable: return "That file could not be read."
             case .noPapers: return "No papers were found. Paste a RIS or BibTeX export, a list of references, or titles one per line (a bare DOI says nothing about the paper)."
             }
@@ -807,6 +813,41 @@ final class AppModel {
         store.saveLibraryFile(nil)
         libraryFile = nil
         settings.useLibraryFile = false
+    }
+
+    // MARK: A project description
+
+    /// Keep a project the user pasted, in place of any earlier one. It changes what "close to my work"
+    /// means, so the feed is ranked again (nothing is fetched again). Throws if it says too little.
+    func setProject(_ text: String) throws {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ProjectText.wordCount(text) >= ProjectText.fewestWords, !ProjectText.passages(text).isEmpty else {
+            throw ImportProblem.projectTooShort
+        }
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        let file = ProjectFile(name: ProjectText.title(text), text: String(text.prefix(ProjectText.maxCharacters)), addedAt: stamp)
+        store.saveProject(file)
+        project = file
+        needsRefresh = true
+    }
+
+    func removeProject() {
+        store.saveProject(nil)
+        project = nil
+        needsRefresh = true
+    }
+
+    /// Follow these phrases as keywords, those not followed already, in one change to the settings.
+    @discardableResult
+    func followKeywords(_ phrases: [String]) -> Int {
+        var s = settings
+        var added = 0
+        for phrase in phrases where !s.followedKeywords.contains(where: { $0.phrase.lowercased() == phrase.lowercased() }) {
+            s.addKeyword(phrase)
+            added += 1
+        }
+        if added > 0 { settings = s }
+        return added
     }
 
     private func libraryFileTexts() -> [String] {

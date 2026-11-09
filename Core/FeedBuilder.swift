@@ -43,13 +43,16 @@ enum FeedBuilder {
 
     /// The text that stands for the user's interests: their own papers (if
     /// enabled), everything they have saved and, if they connected one, their reference library.
-    static func profileTexts(_ s: FeedSettings, own: [Paper], library: [String] = []) -> [String] {
+    /// `project` is the passages of a pasted project description. Having one pasted is the choice, so
+    /// there is no switch to read: removing it is how to stop using it.
+    static func profileTexts(_ s: FeedSettings, own: [Paper], library: [String] = [], project: [String] = []) -> [String] {
         var texts = s.useMyPublications ? own.map { $0.title + ". " + ($0.abstract ?? "") } : []
         texts += s.feedback.saved.map { $0.title + ". " + ($0.abstract ?? "") }
         // "For me" says the same as saving, for a paper the user already knows.
         texts += s.feedback.liked.map { $0.title + ". " + ($0.abstract ?? "") }
         // The reference library, already chosen and turned to text; empty unless the user connected one.
         if s.useZotero || s.useLibraryFile { texts += library }
+        texts += project
         return texts
     }
 

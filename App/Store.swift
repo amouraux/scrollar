@@ -71,6 +71,7 @@ struct Store {
     private var summariesURL: URL { folder(.cachesDirectory).appendingPathComponent("summaries.json") }
     private var zoteroURL: URL { folder(.cachesDirectory).appendingPathComponent("zotero.json") }
     private var libraryFileURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("library-import.json") }
+    private var projectURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("project.json") }
     private var embeddingsURL: URL { folder(.cachesDirectory).appendingPathComponent("embeddings.plist") }
 
     enum SettingsResult {
@@ -175,6 +176,18 @@ struct Store {
     func saveLibraryFile(_ file: LibraryFile?) {
         guard let file, let data = try? JSONEncoder().encode(file) else { try? fm.removeItem(at: libraryFileURL); return }
         try? data.write(to: libraryFileURL, options: .atomic)
+    }
+
+    /// The project description the user pasted. Application Support, for the same reason as the
+    /// library file: it cannot be fetched again. Never synced: it may be a confidential proposal.
+    func loadProject() -> ProjectFile? {
+        guard let data = try? Data(contentsOf: projectURL) else { return nil }
+        return try? JSONDecoder().decode(ProjectFile.self, from: data)
+    }
+
+    func saveProject(_ project: ProjectFile?) {
+        guard let project, let data = try? JSONEncoder().encode(project) else { try? fm.removeItem(at: projectURL); return }
+        try? data.write(to: projectURL, options: .atomic)
     }
 
     func loadEmbeddings() -> Data? { try? Data(contentsOf: embeddingsURL) }

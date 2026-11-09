@@ -1492,5 +1492,48 @@ var ppPaper = paper("pp", "A preprint"); ppPaper.doi = "10.1101/2026.10.01.12345
 var ppListed = ppPaper; ppListed.pdfURL = "https://example.org/x.pdf"
 check(ppPaper.pdfLink?.contains("biorxiv.org") == true && ppListed.pdfLink == "https://example.org/x.pdf", "preprint pdf: a listed PDF comes first, the derived one when none is listed")
 
+// A project description: passages for ranking, keywords to follow.
+let proposal = """
+Neural mechanisms of chronic pain relief
+
+1. Background and aims
+
+Chronic pain affects one adult in five, and current treatments help fewer than half of patients. We will test whether
+transcranial magnetic stimulation of the motor cortex relieves chronic pain by changing connectivity in the
+descending pain modulation system. Preliminary EEG recordings in 24 patients suggest that relief tracks a change in
+alpha oscillations over the motor cortex.
+
+2. Work packages
+
+WP1 tests transcranial magnetic stimulation in 80 patients with chronic neuropathic pain, using a sham-controlled
+design. Pain intensity is rated daily, and EEG is recorded before and after each session of stimulation. WP2
+quantifies the change in alpha oscillations and relates it to the relief that chronic pain patients report. Budget:
+EUR 120,000 in year 1; EUR 95,000 in year 2; EUR 80 000 in year 3.
+
+References
+[1] Smith J, et al. (2021) Motor cortex stimulation. Pain 162:1-10. https://doi.org/10.1000/xyz
+"""
+let projPassages = ProjectText.passages(proposal)
+check(projPassages.count >= 2 && projPassages.allSatisfy { $0.count <= 700 && !$0.contains("\n") }, "project: the text becomes passages of a few sentences, with line wraps joined")
+check(!projPassages.contains { $0.hasPrefix("1. Background") || $0.hasPrefix("References") || $0.contains("https://") } && !projPassages.contains { $0.contains("Budget") && $0.contains("EUR 80 000") && $0.count < 40 }, "project: headings and links are not passages")
+check(ProjectText.paragraphs("The inter-\nnational study of sleep in older adults\ncontinues this year with a new cohort.").first == "The international study of sleep in older adults continues this year with a new cohort.", "project: a word split across a line end is joined, and wrapped lines make one paragraph")
+check(ProjectText.passages("Methods\n\n12 14 15 16 17 18 19 20 21 22 23 24\n\nToo short.").isEmpty, "project: a table of numbers and a fragment are not passages")
+let longText = (1...300).map { "Sentence number \($0) is about the way that sleep spindles consolidate memory in the young brain." }.joined(separator: "\n\n")
+let longPassages = ProjectText.passages(longText)
+check(longPassages.count == ProjectText.maxPassages && longPassages.first!.contains("number 1 ") && longPassages.last!.contains("number 2"), "project: a long text is thinned evenly, not cut")
+check(ProjectText.title("Neural mechanisms of chronic pain relief\nmore") == "Neural mechanisms of chronic pain relief" && ProjectText.title("  \n ") == "Project" && ProjectText.title(String(repeating: "x", count: 100)).count == 61, "project: it is named for its first line")
+let projWords = ProjectText.keywords(proposal).map(\.phrase)
+check(projWords.contains("chronic pain") && projWords.contains("transcranial magnetic stimulation") || projWords.contains("magnetic stimulation"), "project keywords: the phrases it keeps returning to")
+check(projWords.contains("EEG") || projWords.contains("alpha oscillations"), "project keywords: an acronym or a technical phrase that recurs")
+check(!projWords.contains { ["work packages", "year", "budget", "background", "relief", "will"].contains($0) || $0.hasPrefix("the ") || $0.hasSuffix(" of") }, "project keywords: the words every proposal uses are not offered")
+check(!projWords.contains("chronic pain patients") && !projWords.contains("pain"), "project keywords: neither a longer way to say a phrase already chosen, nor a word inside it")
+let projKeywords = ProjectText.keywords(proposal)
+check(projKeywords.filter(\.selected).allSatisfy { $0.words > 1 && $0.count >= 2 } && projKeywords.filter { $0.words == 1 }.allSatisfy { !$0.selected }, "project keywords: only phrases of several words are ticked to begin with")
+check(ProjectText.keywords("A short note about nothing in particular.").isEmpty && ProjectText.keywords("").isEmpty, "project keywords: a text that repeats nothing offers nothing")
+let projFile = ProjectFile(name: "n", text: "t", addedAt: "2026-11-09T10:00:00.000Z")
+check((try? JSONDecoder().decode(ProjectFile.self, from: JSONEncoder().encode(projFile))) == projFile && (try? JSONDecoder().decode(ProjectFile.self, from: Data(#"{"text":"My plan\nmore"}"#.utf8)))?.name == "My plan", "project: it is stored and read back, and an older or partial file still loads")
+let projSettings = FeedSettings()
+check(FeedBuilder.profileTexts(projSettings, own: [], project: ["a passage"]).contains("a passage") && !FeedBuilder.profileTexts(projSettings, own: []).contains("a passage"), "project: its passages join the profile as soon as one is pasted, with no switch")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

@@ -62,7 +62,7 @@ struct FeedEngine {
     /// refreshing the recent ones. `library` is the user's reference library already turned to text
     /// (see `Zotero.profileTexts`); the engine does not fetch it, so it stays out of the command line.
     func build(_ settings: FeedSettings, previous: PreviousFeed? = nil, today: Date = Date(), older: Bool = false,
-                library: [String] = []) async throws -> FeedResult {
+                library: [String] = [], project: [String] = []) async throws -> FeedResult {
         guard openAlex != nil || europePMC != nil else { throw EngineError.noSource }
         // What is held reaches back past the look-back when the reader has scrolled to the end.
         let heldExtra = previous?.extraDays ?? 0
@@ -124,7 +124,7 @@ struct FeedEngine {
                 }
             }
         }
-        let profileTexts = FeedBuilder.profileTexts(settings, own: own + others, library: library)
+        let profileTexts = FeedBuilder.profileTexts(settings, own: own + others, library: library, project: project)
 
         // 2. One query per seed. A seed that fails (an id that no longer exists) is
         //    reported and skipped; it must not take the rest of the feed with it.
