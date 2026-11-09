@@ -60,6 +60,14 @@ struct ScrollarApp: App {
         // Menu items on the Mac, and the shortcut sheet on an iPad with a keyboard.
         // There is no pull-to-refresh with a mouse, so refreshing needs a command.
         .commands {
+            // The Mac's own place for a sidebar toggle, with its usual shortcut.
+            CommandGroup(replacing: .sidebar) {
+                Button(model.feedPanelShown && model.feedPanelFits ? "Hide Reasons Panel" : "Show Reasons Panel") {
+                    model.toggleFeedPanel()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .control])
+                .disabled(tab != .feed || !model.readerShown)
+            }
             CommandGroup(after: .newItem) {
                 Button("Refresh Feed") { Task { await model.refresh() } }
                     .keyboardShortcut("r")

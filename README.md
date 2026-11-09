@@ -678,6 +678,14 @@ by the paper's own words, topic, journal or author, as a mute does; a mute set t
 above for each paper that carries the thing, the total held between −1.5 and +2) and nothing else. They sync (sync format 5). Tried on the iPhone
 simulator: the screen and the starting levels. Not tried: setting a level and seeing the feed change, nor on a real feed.
 
+## Folding the panel away
+
+On the Mac and the iPad the panel of reasons folds away from three places: the button at the head of the panel itself, the **Hide / Show Reasons
+Panel** command in the View menu (⌃⌘S, the Mac's usual sidebar shortcut), and, once folded, a thin strip down the left edge that holds one
+button to open it again (it shows a filled filter icon while a filter is on, so a narrowed feed is never forgotten). The choice is remembered.
+On a window too narrow for the panel beside the feed, the same button and command open it as a sheet (`AppModel.toggleFeedPanel`). The Mac
+window and the menu command were built, not tried: the Mac app is never launched from here.
+
 ## Search
 
 The magnifier beside All | New on the feed (⌘F on the Mac) opens a search (`App/SearchScreen.swift`, `Core/Search.swift`, tested). The phrase is

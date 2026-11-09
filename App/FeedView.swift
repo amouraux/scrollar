@@ -23,9 +23,13 @@ struct FeedView: View {
             let feedWidth = Reader.feedColumnWidth(total: inner, fraction: storedFraction)
             HStack(spacing: 0) {
                 if panelInline {
-                    FeedFacetPanel()
+                    FeedFacetPanel(collapse: { withAnimation { model.feedPanelShown = false } })
                         .frame(width: Self.panelWidth)
                         .background(Color.accentColor.opacity(0.06))
+                    Divider()
+                } else if model.feedPanelFits {
+                    // Collapsed, but never lost: a thin strip keeps the way back at the left edge.
+                    PanelEdge()
                     Divider()
                 }
                 feedColumn
@@ -35,6 +39,7 @@ struct FeedView: View {
                     ReaderPane()
                 }
             }
+            .animation(.default, value: model.feedPanelShown)
             .onChange(of: wide, initial: true) { _, now in model.readerShown = now }
             .onChange(of: total, initial: true) { _, now in model.feedPanelFits = Reader.isWide(width: now - Self.panelWidth - 1) }
             // The answer to Add to Zotero and the like: a post far down the list cannot show it.
@@ -297,7 +302,7 @@ private struct NewSwitch: View {
             HStack(spacing: 8) {
                 if model.readerShown {
                     Button {
-                        if model.feedPanelFits { model.feedPanelShown.toggle() } else { model.feedPanelSheet = true }
+                        model.toggleFeedPanel()
                     } label: {
                         Image(systemName: model.feedFilter.isActive ? "line.3.horizontal.decrease.circle.fill" : "sidebar.left")
                             .font(.title3)
@@ -332,10 +337,30 @@ private struct NewSwitch: View {
 /// feed to it, to catch up on that subject; choosing it again, or Everything, shows all.
 struct FeedFacetPanel: View {
     @Environment(AppModel.self) private var model
+    /// Set when the panel sits beside the feed: a button at its head folds it away. nil in the sheet, which has Done.
+    var collapse: (() -> Void)? = nil
 
     var body: some View {
         let facets = model.feedFacets
         let all = model.layout.entries(includeRead: model.settings.showReadPapers)
+        VStack(spacing: 0) {
+            if let collapse {
+                HStack {
+                    Text("Why it is here").font(.headline)
+                    Spacer()
+                    Button(action: collapse) { Image(systemName: "sidebar.left").font(.title3) }
+                        .buttonStyle(.plain)
+                        .help("Hide this panel (⌃⌘S)")
+                        .accessibilityLabel("Hide the panel of reasons")
+                }
+                .padding(.horizontal, 16).padding(.vertical, 12)
+                Divider()
+            }
+            list(facets: facets, all: all)
+        }
+    }
+
+    private func list(facets: [FeedFilter.Facet], all: [(RankedPaper, Bool)]) -> some View {
         List {
             Section {
                 row("Everything", symbol: "tray.full", count: all.count, new: all.filter(\.1).count,
@@ -349,7 +374,7 @@ struct FeedFacetPanel: View {
                     }
                 }
             } header: {
-                Text("Why it is here")
+                if collapse == nil { Text("Why it is here") }
             } footer: {
                 Text("Choose one to see only the papers that are in your feed for that reason, and catch up on it.")
             }
@@ -375,6 +400,30 @@ struct FeedFacetPanel: View {
         .buttonStyle(.plain)
         .listRowBackground(selected ? Color.accentColor.opacity(0.18) : nil)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// What is left of the panel when it is folded away: a strip down the left edge with one button to open it again,
+/// tinted like the panel so it reads as the same thing, and showing a filter is still on.
+private struct PanelEdge: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        VStack {
+            Button { withAnimation { model.feedPanelShown = true } } label: {
+                Image(systemName: model.feedFilter.isActive ? "line.3.horizontal.decrease.circle.fill" : "sidebar.left")
+                    .font(.title3)
+                    .frame(width: 36, height: 36)
+            }
+            .buttonStyle(.plain)
+            .help("Show why papers are in the feed (⌃⌘S)")
+            .accessibilityLabel("Show the panel of reasons")
+            Spacer()
+        }
+        .padding(.top, 8)
+        .frame(width: 40)
+        .frame(maxHeight: .infinity)
+        .background(Color.accentColor.opacity(0.06))
     }
 }
 

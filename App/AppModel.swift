@@ -76,6 +76,12 @@ final class AppModel {
     }
     /// Whether the window has room for it beside the feed (set by the feed), and the sheet that stands in when it has not.
     var feedPanelFits = false
+
+    /// Hide or show the panel of reasons: beside the feed when there is room, else as a sheet. One place, for the
+    /// buttons, the edge strip and the menu command.
+    func toggleFeedPanel() {
+        if feedPanelFits { feedPanelShown.toggle() } else { feedPanelSheet = true }
+    }
     var feedPanelSheet = false
     /// What the feed draws: all of it or only the new, and only what is there for the reason chosen.
     var shownLayout: FeedLayout { (feedNewOnly ? layout.newOnly : layout).filtered(by: feedFilter) }
