@@ -1401,7 +1401,7 @@ check(FeedBuilder.profileTexts(fmSettings, own: []).contains { $0.hasPrefix("A p
 check(device(fmSettings, stamp: at(1)).apply(to: FeedSettings()).feedback.liked.map(\.id) == [fmPaper.dedupeKey], "for me: it syncs")
 fmFeedback.unlike(fmPaper.dedupeKey)
 check(!fmFeedback.isLiked(fmPaper) && (try? JSONDecoder().decode(Feedback.self, from: Data(#"{"saved":[],"hidden":[]}"#.utf8)))?.liked.isEmpty == true, "for me: it can be taken back, and a settings file from before it still loads")
-check(SyncDocument.currentFormat == 4, "sync: the format is raised, so an app that does not know the newer entries leaves the file alone instead of erasing them")
+check(SyncDocument.currentFormat == 5, "sync: the format is raised, so an app that does not know the newer entries leaves the file alone instead of erasing them")
 
 func keptPaper(_ id: String, _ reasons: [String], followed: Bool = true, age: Int = 3) -> SavedPaper {
     var p = paper(id, "Paper \(id)", age: age); p.reasons = reasons; p.followed = followed
@@ -1910,6 +1910,82 @@ check(ffByKeyword.newCount == 3 && ffByKeyword.newOnly.displayOrder(settings: Fe
 check(FeedFilter(kind: .keyword, detail: "tms").matches(ffLayout.feed.fresh[0].paper) && !FeedFilter(kind: .keyword, detail: "tms").matches(ffLayout.feed.fresh[2].paper) && !FeedFilter(kind: .other, detail: "x").matches(ffLayout.feed.earlier[1].paper), "feed filter: a paper matches its own reasons and no others")
 
 check(Why.Kind.allCases.allSatisfy { !FeedFilter.heading($0).isEmpty && FeedFilter.heading($0).count <= 24 } && FeedFilter.heading(.keyword) == "Keywords" && FeedFilter.heading(.citesYou) == "Cites your work", "feed filter: every kind has a short heading for the panel")
+
+// Levels.
+func lvPaper(_ id: String, title: String = "A study", journal: String? = nil, journalID: String? = nil, authors: [String] = [], authorIDs: [String] = [],
+             topics: [String] = [], topicIDs: [String] = [], reasons: [String] = []) -> Paper {
+    var p = paper(id, title); p.journal = journal; p.journalID = journalID; p.authors = authors; p.authorIDs = authorIDs
+    p.topics = topics; p.topicIDs = topicIDs; p.reasons = reasons; p.abstract = "Abstract of \(title)."
+    return p
+}
+var lvs = FeedSettings()
+lvs.followedJournals = [Entity(id: "S1", name: "Pain")]; lvs.followedTopics = [Entity(id: "T1", name: "Neural dynamics")]
+lvs.followedKeywords = [KeywordRule(phrase: "TMS")]; lvs.mutedAuthors = [Entity(id: "A9", name: "Mute M")]; lvs.mutedKeywords = ["horoscope"]
+let lvJournal = FacetRef(kind: .journal, id: "S1", name: "Pain"), lvTopic = FacetRef(kind: .topic, id: "T1", name: "Neural dynamics")
+check(lvs.level(of: lvJournal) == .maximum && lvs.level(of: lvTopic) == .higher && lvs.level(of: .keyword("tms")) == .maximum && lvs.level(of: FacetRef(kind: .author, id: "A9", name: "Mute M")) == .hide && lvs.level(of: .keyword("horoscope")) == .hide && lvs.level(of: .keyword("unknown")) == .normal, "levels: the lists give each thing its starting level: a follow of something narrow is Maximum, of something broad Higher, a mute is Hide")
+var lvSet = lvs
+lvSet.setLevel(.higher, for: lvJournal)
+check(lvSet.levels.count == 1 && lvSet.level(of: lvJournal) == .higher && lvSet.override(lvJournal) == .higher, "levels: a level set on something followed overrides it")
+lvSet.setLevel(.maximum, for: lvJournal)
+check(lvSet.levels.isEmpty && lvSet.level(of: lvJournal) == .maximum, "levels: setting the starting level again is no override, so the lists stay the whole story")
+lvSet.setLevel(.maximum, for: lvTopic)
+check(lvSet.level(of: lvTopic) == .higher && lvSet.levels.isEmpty, "levels: something broad cannot be kept in full, so Maximum falls back to Higher, which is where a followed topic starts")
+check(FacetKind.topic.levels == [.hide, .lower, .normal, .higher] && FacetKind.keyword.levels == Level.allCases && Level.hide < Level.maximum && !Level.normal.fetches && Level.higher.fetches && Level.maximum.pins && !Level.higher.pins, "levels: five steps for what is narrow and four for what is broad, and what each one does")
+var lvStep = FeedSettings()
+lvStep.step(.keyword("pain"), by: 1); lvStep.step(.keyword("pain"), by: 1)
+check(lvStep.level(of: .keyword("pain")) == .maximum, "levels: each step goes one level up")
+lvStep.step(.keyword("pain"), by: 1)
+check(lvStep.level(of: .keyword("pain")) == .maximum, "levels: and stops at the top")
+lvStep.step(.keyword("pain"), by: -3); lvStep.step(.keyword("pain"), by: -3)
+check(lvStep.level(of: .keyword("pain")) == .hide, "levels: and at the bottom")
+var lvTopicStep = FeedSettings(); let lvT = FacetRef(kind: .topic, id: "T9", name: "Pain")
+for _ in 0..<5 { lvTopicStep.step(lvT, by: 1) }
+check(lvTopicStep.level(of: lvT) == .higher, "levels: a broad thing steps up to Higher and no further")
+let lvList = lvs.facets()
+check(lvList.map(\.ref.name).contains("Pain") && lvList.contains { $0.ref.name == "Mute M" && $0.level == .hide } && lvList.first?.ref.kind == .keyword && !lvList.contains { $0.isOverride }, "levels: every followed or muted thing is listed with its level, none yet an override")
+lvSet.setLevel(.lower, for: .keyword("tms"))
+check(lvSet.facets().first { $0.ref.key == "keyword/tms" }.map { $0.isOverride && $0.level == .lower } == true, "levels: a listed thing shows when its level was set by the user")
+
+// what the levels do to the search
+check(FeedBuilder.seeds(lvs, myWorkIDs: []).map(\.explicit).allSatisfy { $0 } && FeedBuilder.seeds(lvs, myWorkIDs: []).count == 3, "levels: with none set the follows are searched for as before, all of them kept in full")
+var lvLow = lvs; lvLow.setLevel(.normal, for: lvJournal)
+check(!FeedBuilder.seeds(lvLow, myWorkIDs: []).contains { $0.seed == .journal(id: "S1", name: "Pain") } && FeedBuilder.seeds(lvLow, myWorkIDs: []).count == 2, "levels: a followed journal set to Normal is no longer searched for")
+var lvHigher = lvs; lvHigher.setLevel(.higher, for: lvJournal)
+check(FeedBuilder.seeds(lvHigher, myWorkIDs: []).first { $0.seed == .journal(id: "S1", name: "Pain") }?.explicit == false, "levels: a followed journal set to Higher is searched for, but its papers are not kept in full")
+var lvRaise = FeedSettings(); lvRaise.setLevel(.higher, for: .keyword("nociception")); lvRaise.setLevel(.maximum, for: FacetRef(kind: .author, id: "A5", name: "Ada L"))
+let lvRaised = FeedBuilder.seeds(lvRaise, myWorkIDs: [])
+check(lvRaised.first { $0.seed == .keyword("nociception") }?.explicit == false && lvRaised.first { $0.seed == .author(id: "A5", name: "Ada L") }?.explicit == true, "levels: something not followed that was raised is searched for, kept in full only at Maximum")
+var lvLower = FeedSettings(); lvLower.setLevel(.lower, for: .keyword("nociception"))
+check(FeedBuilder.seeds(lvLower, myWorkIDs: []).isEmpty, "levels: something lowered is not searched for")
+
+// what the levels do to what is kept
+var lvKeep = FeedSettings(); lvKeep.mutedJournals = [Entity(id: "S7", name: "Noise")]
+let lvNoise = lvPaper("n1", journal: "Noise", journalID: "S7"), lvOther = lvPaper("o1", journal: "Pain", journalID: "S1")
+check(FeedBuilder.keep([lvNoise, lvOther], settings: lvKeep).map(\.id) == ["o1"], "levels: a muted journal is removed, as before")
+lvKeep.setLevel(.lower, for: FacetRef(kind: .journal, id: "S7", name: "Noise"))
+check(FeedBuilder.keep([lvNoise, lvOther], settings: lvKeep).map(\.id) == ["n1", "o1"], "levels: a muted journal set to Lower is no longer removed, it ranks lower instead")
+var lvHide = FeedSettings(); lvHide.setLevel(.hide, for: .keyword("horoscope")); lvHide.setLevel(.hide, for: FacetRef(kind: .topic, id: "T5", name: "Astrology")); lvHide.setLevel(.hide, for: FacetRef(kind: .author, id: "A3", name: "Pat"))
+let lvKept = FeedBuilder.keep([lvPaper("h1", title: "Your horoscope today"), lvPaper("h2", topicIDs: ["T5"]), lvPaper("h3", authorIDs: ["A3"]), lvPaper("h4", title: "Real science")], settings: lvHide)
+check(lvKept.map(\.id) == ["h4"], "levels: what is set to Hide is removed by what the paper says: its words, its topic, its author")
+
+// what the levels do to the ranking
+let lvBase = Ranker.rank([lvPaper("x", title: "Transcranial magnetic stimulation study")], profileTexts: ["pain"], settings: FeedSettings(), today: now)[0].score
+func lvScore(_ f: (inout FeedSettings) -> Void) -> Double {
+    var s = FeedSettings(); f(&s)
+    return Ranker.rank([lvPaper("x", title: "Transcranial magnetic stimulation study")], profileTexts: ["pain"], settings: s, today: now)[0].score
+}
+check(abs(lvScore { _ in } - lvBase) < 1e-12 && abs(lvScore { $0.setLevel(.higher, for: .keyword("magnetic stimulation")) } - (lvBase + 0.8)) < 1e-9 && abs(lvScore { $0.setLevel(.lower, for: .keyword("magnetic stimulation")) } - (lvBase - 0.6)) < 1e-9 && abs(lvScore { $0.setLevel(.maximum, for: .keyword("magnetic stimulation")) } - (lvBase + 0.4)) < 1e-9, "levels: Higher adds to a paper's score, Lower takes from it, and with no level set nothing changes")
+check(lvScore { $0.setLevel(.higher, for: .keyword("magnetic stimulation")) } > lvScore { $0.setLevel(.lower, for: .keyword("magnetic stimulation")) } && abs(lvScore { s in for w in ["transcranial", "magnetic", "stimulation", "study", "magnetic stimulation"] { s.setLevel(.higher, for: .keyword(w)) } } - (lvBase + 2.0)) < 1e-9, "levels: a pile of raised things is held within bounds")
+check(abs(lvScore { $0.setLevel(.normal, for: .keyword("magnetic stimulation")) } - lvBase) < 1e-12 && abs(lvScore { $0.setLevel(.higher, for: .keyword("zebrafish")) } - lvBase) < 1e-12, "levels: Normal, and a level on something the paper is not about, change nothing")
+
+// keeping the levels
+var lvSync = FeedSettings(); lvSync.setLevel(.higher, for: .keyword("nociception")); lvSync.setLevel(.lower, for: FacetRef(kind: .journal, id: "S2", name: "Noise"))
+let lvBack = device(lvSync, stamp: at(1)).apply(to: FeedSettings())
+check(Set(lvBack.levels) == Set(lvSync.levels) && (try! FeedSettings.decode(Data("{}".utf8))).levels.isEmpty && (try? JSONDecoder().decode(FeedSettings.self, from: JSONEncoder().encode(lvSync)))?.levels == lvSync.levels, "levels: they sync, round-trip through the settings file, and an older file without them reads as none")
+var lvGone = lvSync; lvGone.levels = []
+var lvDoc = device(lvSync, stamp: at(1)); lvDoc.reconcile(lvGone, at: at(3))
+check(lvDoc.apply(to: lvSync).levels.isEmpty, "levels: setting one back to what the lists give removes it on every device")
+check(lvSync.forFetching != FeedSettings().forFetching && lvSync.forRanking != FeedSettings().forRanking, "levels: setting one searches and ranks again")
 
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

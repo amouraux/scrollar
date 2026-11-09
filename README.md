@@ -649,6 +649,20 @@ panel leaves those out. The order is not changed. The segments are Reading list,
 cannot write shows "Add to Zotero (the key is read-only)" greyed out, not hidden, and failures are shown for fifteen
 seconds and put away by a tap. Older notes in this file may still say "Saved" or "Save to Zotero": they mean these.
 
+## Levels: promoting and demoting by degrees
+
+Follow and mute were all or nothing. Tune, Follow and mute, **Levels** gives each keyword, journal, researcher, topic, institution and
+funder one of five levels (`Core/Levels.swift`, tested): **Hide** (removed), **Lower** (ranks lower, −0.6), **Normal** (no effect), **Higher**
+(searched for, ranks higher, +0.8) and **Maximum** (searched for and everything it finds is kept in full, however low it scores, +0.4 on top
+of the 0.8 a followed paper already gets). A topic, an institution or a funder names hundreds of papers a month, so those stop at Higher, as a
+follow of one never was kept in full. The lists give each thing its starting level (a follow of something narrow is Maximum, of something broad
+Higher, a mute is Hide); a level the user sets is an override kept beside them, and one equal to the starting level is no override. **With no
+override anywhere the feed is exactly what it was.** An override changes four things: what is searched for (below Higher a followed thing is
+not; at Higher it is, but its papers are not kept in full; something raised that is not followed is searched for too), what is removed (Hide,
+by the paper's own words, topic, journal or author, as a mute does; a mute set to another level is no longer a mute), the ranking (the table
+above for each paper that carries the thing, the total held between −1.5 and +2) and nothing else. They sync (sync format 5). Tried on the iPhone
+simulator: the screen and the starting levels. Not tried: setting a level and seeing the feed change, nor on a real feed.
+
 ## Catching up on one topic
 
 On a window wide enough for the reader (the iPad and the Mac), a panel before the feed lists **why papers are in it**: Cites your work, then

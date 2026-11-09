@@ -30,7 +30,7 @@ struct SyncEntry: Codable, Equatable {
 struct SyncDocument: Codable, Equatable {
     /// Raise for any change an older app would misread, and never remove the guard
     /// in the storage: an app writes only a format it knows.
-    static let currentFormat = 4
+    static let currentFormat = 5
 
     var format = SyncDocument.currentFormat
     var entries: [String: SyncEntry] = [:]
@@ -203,6 +203,7 @@ enum SyncProjection {
         for p in s.feedback.liked { out["lk/\(p.id)"] = json(p) }
         for h in s.feedback.hidden { out["hd/\(h)"] = "" }
         for p in s.feedback.hiddenPapers { out["hp/\(p.id)"] = json(p) }
+        for e in s.levels { out["lv/\(e.key)"] = json(e) }
         for sc in scalars { out["v/\(sc.name)"] = sc.read(s) }
         return out
     }
@@ -245,6 +246,7 @@ enum SyncProjection {
         s.feedback.liked = ordered(s.feedback.liked, key: { $0.id }, prefix: "lk/", entries: entries)
         s.feedback.hidden = orderedNames(s.feedback.hidden, prefix: "hd/", entries: entries)
         s.feedback.hiddenPapers = ordered(s.feedback.hiddenPapers, key: { $0.id }, prefix: "hp/", entries: entries)
+        s.levels = ordered(s.levels, key: { $0.key }, prefix: "lv/", entries: entries)
         for sc in scalars {
             if let e = entries["v/\(sc.name)"], e.present, let text = e.value { sc.write(&s, text) }
         }

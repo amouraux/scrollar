@@ -28,15 +28,54 @@ enum FeedBuilder {
         if s.useMyPublications {
             if !myWorkIDs.isEmpty { add(.cites(workIDs: myWorkIDs, label: "Cites your work"), explicit: false) }
         }
+        // A level the user set overrides the list: below Higher the thing is not searched for at all; at Higher it is
+        // searched for but its papers are not kept in full; at Maximum, as before, they are.
+        func level(_ kind: FacetKind, _ id: String, _ name: String) -> Level? { s.override(FacetRef(kind: kind, id: id, name: name)) }
+        func explicit(_ l: Level?) -> Bool { l == nil || l == .maximum }
         for e in s.followedTopics {
+            let l = level(.topic, e.id, e.name)
+            if let l, !l.fetches { continue }
             // A topic taken from a paper's MeSH headings has no OpenAlex id.
-            if let seed = Seed.forTopic(e) { add(seed, explicit: true) }
+            if let seed = Seed.forTopic(e) { add(seed, explicit: explicit(l)) }
         }
-        for e in s.followedJournals { add(.journal(id: e.id, name: e.name), explicit: true) }
-        for e in s.followedAuthors { add(.author(id: e.id, name: e.name), explicit: true) }
-        for e in s.followedInstitutions { add(.institution(id: e.id, name: e.name), explicit: true) }
-        for e in s.followedFunders { add(.funder(id: e.id, name: e.name), explicit: true) }
-        for k in s.followedKeywords where !k.phrase.isEmpty { add(k.seed, explicit: true) }
+        for e in s.followedJournals {
+            let l = level(.journal, e.id, e.name)
+            if let l, !l.fetches { continue }
+            add(.journal(id: e.id, name: e.name), explicit: explicit(l))
+        }
+        for e in s.followedAuthors {
+            let l = level(.author, e.id, e.name)
+            if let l, !l.fetches { continue }
+            add(.author(id: e.id, name: e.name), explicit: explicit(l))
+        }
+        for e in s.followedInstitutions {
+            let l = level(.institution, e.id, e.name)
+            if let l, !l.fetches { continue }
+            add(.institution(id: e.id, name: e.name), explicit: explicit(l))
+        }
+        for e in s.followedFunders {
+            let l = level(.funder, e.id, e.name)
+            if let l, !l.fetches { continue }
+            add(.funder(id: e.id, name: e.name), explicit: explicit(l))
+        }
+        for k in s.followedKeywords where !k.phrase.isEmpty {
+            let l = level(.keyword, k.phrase.lowercased(), k.phrase)
+            if let l, !l.fetches { continue }
+            add(k.seed, explicit: explicit(l))
+        }
+        // What the user raised that is not in a follow list is searched for too.
+        for e in s.levels where e.level.fetches && !s.defaultLevel(e.ref).fetches {
+            let seed: Seed?
+            switch e.kind {
+            case .keyword: seed = .keyword(e.name)
+            case .journal: seed = .journal(id: e.id, name: e.name)
+            case .author: seed = .author(id: e.id, name: e.name)
+            case .topic: seed = Seed.forTopic(Entity(id: e.id, name: e.name))
+            case .institution: seed = .institution(id: e.id, name: e.name)
+            case .funder: seed = .funder(id: e.id, name: e.name)
+            }
+            if let seed { add(seed, explicit: e.level.pins) }
+        }
         for p in s.trackedPapers { add(.cites(workIDs: [p.id], label: "Cites: \(p.name)"), explicit: true) }
         return planned
     }
@@ -53,12 +92,22 @@ enum FeedBuilder {
     /// abstracts and types, or "require an abstract" and "hide case reports"
     /// would act on papers that were about to be completed.
     static func keep(_ papers: [Paper], settings s: FeedSettings) -> [Paper] {
-        let mutedJournals = Set(s.mutedJournals.map { $0.id.lowercased() })
+        // A mute the user has since given another level is not a mute.
+        func muted(_ kind: FacetKind, _ e: Entity) -> Bool {
+            let l = s.override(FacetRef(kind: kind, id: e.id, name: e.name))
+            return l == nil || l == .hide
+        }
+        let mutedJournalList = s.mutedJournals.filter { muted(.journal, $0) }
+        let mutedJournals = Set(mutedJournalList.map { $0.id.lowercased() })
         // A journal muted by typing its name has no id to match, so it matches by name.
-        let mutedJournalNames = Set(s.mutedJournals.filter { SourceRouting.isNamed($0.id) }.map { $0.name.lowercased() })
-        let mutedAuthors = Set(s.mutedAuthors.map { $0.id.lowercased() })
-        let mutedTopics = Set(s.mutedTopics.map { $0.id.lowercased() })
-        let mutedWords = s.mutedKeywords.map { $0.lowercased() }.filter { !$0.isEmpty }
+        let mutedJournalNames = Set(mutedJournalList.filter { SourceRouting.isNamed($0.id) }.map { $0.name.lowercased() })
+        let mutedAuthors = Set(s.mutedAuthors.filter { muted(.author, $0) }.map { $0.id.lowercased() })
+        let mutedTopics = Set(s.mutedTopics.filter { muted(.topic, $0) }.map { $0.id.lowercased() })
+        let mutedWords = s.mutedKeywords.filter {
+            let l = s.override(.keyword($0)); return l == nil || l == .hide
+        }.map { $0.lowercased() }.filter { !$0.isEmpty }
+        // And what the user set to Hide is removed like a mute, wherever it came from.
+        let hiddenByLevel = s.levels.filter { $0.level == .hide }
         let languages = Set(s.languages.map { $0.lowercased() })
         let hidden = Set(s.feedback.hidden)
         // Rules on one phrase with the same required words share a reason; a paper passes if any
@@ -76,6 +125,7 @@ enum FeedBuilder {
             if p.topicIDs.contains(where: { mutedTopics.contains($0.lowercased()) }) { continue }
             let text = (p.title + " " + (p.abstract ?? "")).lowercased()
             if mutedWords.contains(where: { text.contains($0) }) { continue }
+            if hiddenByLevel.contains(where: { $0.matches(p, text: text) }) { continue }
             if s.requireAbstract && p.abstract == nil { continue }
             if s.openAccessOnly && !p.isOpenAccess { continue }
             if !languages.isEmpty, let l = p.language, !languages.contains(l.lowercased()) { continue }

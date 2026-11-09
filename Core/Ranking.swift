@@ -250,6 +250,7 @@ enum Ranker {
             if let importance = settings.keywordImportance(of: paper) { score += importance.bonus }
             score += impactBoost(paper.journalImpact, weight: settings.impactWeight)
             score += authorBoost(paper, weight: settings.authorWeight, focus: settings.byline)
+            score += levelBonus(paper, settings)
             if i < lowering.count, lowering[i].factor > 0, !paper.followed, !paper.citesYou {
                 score -= avoidScale * settings.hideStrength * lowering[i].factor
                 paper.loweredBy = lowering[i].nearest.flatMap { avoid[$0].title } ?? "a paper you hid"
@@ -312,6 +313,16 @@ enum Ranker {
             guard let v = embedder.vector(for: text(p)).map(Vectors.normalise) else { return nil }
             return topMean(profile.map { Vectors.dot(v, $0.vector) * $0.weight })
         }
+    }
+
+    /// What the levels the user set add to a paper that carries the thing: up for Higher and Maximum, down for Lower,
+    /// kept within bounds so that no pile of them decides the feed alone. Nothing at all with no level set.
+    static func levelBonus(_ paper: Paper, _ settings: FeedSettings) -> Double {
+        let active = settings.levels.filter { $0.level != .hide && $0.level != .normal }
+        guard !active.isEmpty else { return 0 }
+        let text = active.contains { $0.kind == .keyword } ? (paper.title + " " + (paper.abstract ?? "")).lowercased() : nil
+        let total = active.filter { $0.matches(paper, text: text) }.reduce(0.0) { $0 + $1.level.bonus }
+        return min(max(total, -1.5), 2.0)
     }
 
     // MARK: Moving away from what was hidden

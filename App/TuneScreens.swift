@@ -75,6 +75,16 @@ struct FollowScreen: View {
         @Bindable var model = appModel
         Form {
             Section {
+                NavigationLink {
+                    InterestsScreen()
+                } label: {
+                    LabeledContent("Levels", value: model.settings.levels.isEmpty ? "As listed" : "\(model.settings.levels.count) set")
+                }
+            } footer: {
+                Text("Set how hard each keyword, journal, researcher or topic counts, from Hide to Maximum, instead of only following or muting it.")
+            }
+
+            Section {
                 tuneEntityLink("Topics", kind: .topics, items: $model.settings.followedTopics, seedFor: Seed.forTopic,
                            explanation: "Papers OpenAlex files under a topic (each paper has up to three). A topic is broad, a few hundred papers a month, so what it finds is ranked with everything else and gets a small bonus, not listed in full. Searched in OpenAlex; a topic taken from a paper's MeSH headings is searched in Europe PMC.")
                 tuneEntityLink("Journals", kind: .sources, items: $model.settings.followedJournals, byName: true,
@@ -525,5 +535,54 @@ struct OpenAlexKeyRows: View {
 
     private func status(_ text: String, systemImage: String, color: Color) -> some View {
         Label(text, systemImage: systemImage).font(.footnote).foregroundStyle(color)
+    }
+}
+
+/// Every keyword, journal, researcher and topic that is followed or muted, or that has a level, each with its level:
+/// five steps (four for what is broad), so that promoting or demoting can be mild or complete.
+struct InterestsScreen: View {
+    @Environment(AppModel.self) private var appModel
+
+    var body: some View {
+        @Bindable var model = appModel
+        let facets = model.settings.facets()
+        Form {
+            Section {
+                ForEach(Level.allCases, id: \.self) { level in
+                    LabeledContent(level.title) { Text(level.summary).font(.footnote).multilineTextAlignment(.trailing) }
+                }
+            } header: {
+                Text("The levels")
+            } footer: {
+                Text("Something followed starts at Maximum, or at Higher for a topic, an institution or a funder, which name too many papers to keep in full. Something muted starts at Hide. A level you set replaces that.")
+            }
+            if facets.isEmpty {
+                Section { Text("Nothing is followed or muted yet. Follow something, or give a paper a thumb, and it will be listed here.").foregroundStyle(.secondary) }
+            }
+            ForEach(FacetKind.allCases, id: \.self) { kind in
+                let items = facets.filter { $0.ref.kind == kind }
+                if !items.isEmpty {
+                    Section(kind.title) {
+                        ForEach(items, id: \.ref.key) { item in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.ref.name).lineLimit(2)
+                                    if item.isOverride { Text("Set by you").font(.caption2).foregroundStyle(Color.accentColor) }
+                                }
+                                Spacer()
+                                Picker(item.ref.name, selection: Binding(
+                                    get: { item.level },
+                                    set: { model.settings.setLevel($0, for: item.ref) })) {
+                                    ForEach(kind.levels, id: \.self) { Text($0.title).tag($0) }
+                                }
+                                .labelsHidden()
+                                .pickerStyle(.menu)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Levels")
     }
 }
