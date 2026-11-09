@@ -211,7 +211,7 @@ final class AppModel {
     var usesOpenAlex: Bool { settings.useOpenAlex && hasKey }
 
     /// A feed can be built when some source is on. Europe PMC needs nothing.
-    var canBuild: Bool { usesOpenAlex || settings.useEuropePMC }
+    var canBuild: Bool { usesOpenAlex || settings.useEuropePMC || settings.useCrossref || settings.useArXiv }
 
     var isLoading: Bool {
         if case .loading = phase { return true }
@@ -259,7 +259,7 @@ final class AppModel {
         if isLoading { return }
         let key = effectiveKey
         guard canBuild else {
-            phase = .failed("No source is on. Turn on Europe PMC, or add your OpenAlex key, in Tune.")
+            phase = .failed("No source is on. Turn one on in Tune, under Sources.")
             return
         }
         let previous = previousFeed()
@@ -286,6 +286,8 @@ final class AppModel {
                 let cache = await TextEmbedders.best().map { CachingEmbedder($0, stored: cachedVectors) }
                 let engine = FeedEngine(openAlex: useOpenAlex ? OpenAlexClient(apiKey: key) : nil,
                                         europePMC: settings.useEuropePMC ? EuropePMCClient() : nil,
+                                        crossref: settings.useCrossref ? CrossrefClient() : nil,
+                                        arXiv: settings.useArXiv ? ArxivClient() : nil,
                                         embedder: cache, log: report)
                 let result = try await engine.build(settings, previous: previous, older: older, library: library, project: projectPassages)
                 let used = result.profileTexts + (result.citedYou + result.forYou).map { Ranker.text($0.paper) }
@@ -491,7 +493,9 @@ final class AppModel {
     /// What following `seed` would find, without following it.
     func preview(_ seed: Seed, rule: KeywordRule? = nil) async throws -> SeedPreview {
         let engine = FeedEngine(openAlex: usesOpenAlex ? openAlex : nil,
-                                europePMC: settings.useEuropePMC ? EuropePMCClient() : nil, embedder: nil)
+                                europePMC: settings.useEuropePMC ? EuropePMCClient() : nil,
+                                crossref: settings.useCrossref ? CrossrefClient() : nil,
+                                arXiv: settings.useArXiv ? ArxivClient() : nil, embedder: nil)
         return try await engine.preview(seed, rule: rule, settings: settings)
     }
 

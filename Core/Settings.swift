@@ -249,6 +249,10 @@ struct FeedSettings: Codable, Equatable {
     /// the preprint servers) needs nothing. Either can be switched off.
     var useOpenAlex = true
     var useEuropePMC = true
+    /// Crossref, asked only when OpenAlex is off (it is the keyless way outside biomedicine); arXiv, for
+    /// physics, mathematics and computer science, off until the user wants it.
+    var useCrossref = true
+    var useArXiv = false
 
     // MARK: What the thumbs count for
     /// How many of the newest hides count (the newest counts fully, the oldest of them a quarter), and
@@ -457,6 +461,7 @@ extension FeedSettings {
     enum CodingKeys: String, CodingKey {
         case formatVersion, orcid, profileOrcids, profileFilled, useMyPublications, useOpenAlex, useEuropePMC
         case hideMemory, hideMaxAgeMonths, likeMemory, likeMaxAgeMonths, hideStrength, likeStrength
+        case useCrossref, useArXiv
         case useZotero, useLibraryFile, zoteroRecent
         case followedTopics, followedJournals, followedAuthors, followedInstitutions
         case followedFunders, followedKeywords, trackedPapers, feedOrder, highlightCount, highlightCloseness, highlightImpact, highlightAuthorH, dwellSeconds
@@ -478,6 +483,8 @@ extension FeedSettings {
         useMyPublications = get(.useMyPublications, useMyPublications)
         useOpenAlex = get(.useOpenAlex, useOpenAlex)
         useEuropePMC = get(.useEuropePMC, useEuropePMC)
+        useCrossref = get(.useCrossref, useCrossref)
+        useArXiv = get(.useArXiv, useArXiv)
         hideMemory = min(max(get(.hideMemory, hideMemory), 10), 500)
         hideMaxAgeMonths = min(max(get(.hideMaxAgeMonths, hideMaxAgeMonths), 0), 36)
         likeMemory = min(max(get(.likeMemory, likeMemory), 20), 1000)

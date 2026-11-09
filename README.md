@@ -53,7 +53,7 @@ build and then an incremental one and checks they agree.
 
 ## Sources
 
-Two, either of which can be switched off in Tune, and a paper found by both is shown once.
+Four, each of which can be switched off (arXiv is off until it is switched on) in Tune, and a paper found by more than one is shown once. Crossref and arXiv are described last.
 
 - **Europe PMC** (no key): PubMed and MEDLINE records and the preprint servers.
   Biomedicine only. Answers keywords, journals, MeSH headings (made from your own
@@ -405,6 +405,26 @@ xcodebuild -project Scrollar.xcodeproj -scheme Scrollar -configuration Release \
 then Distribute App → App Store Connect → Upload in the Organizer (it needs an Apple Distribution
 certificate). Use the same command with `-destination 'platform=macOS,variant=Mac Catalyst'` for the Mac.
 I archived both here to check the plist, the manifest and the entitlements; I did not upload.
+
+### Crossref and arXiv
+
+- **Crossref** (no key, `Core/Crossref.swift`): every DOI from every publisher. Asked **only when OpenAlex is off**, as
+  the keyless way outside biomedicine. It can search a phrase in *titles* (it has no abstract search; about a third of
+  records carry an abstract), a journal by its name and an author by their name, and nothing else: not citations,
+  institutions, funders or topics. Crossref ranks by loose likeness, so every record is checked: a phrase must be in the
+  title or abstract, a journal's name must be the one asked for, an author's name must match one on the paper. A month-only
+  date takes the exact day the DOI was registered when it falls in the same month. A paper is called open, with a PDF, only
+  where a Creative Commons licence says so. Requests are spaced a second apart, and a "too many requests" answer is waited out.
+- **arXiv** (no key, `Core/Arxiv.swift`): physics, mathematics, computer science, statistics and quantitative biology, with the
+  abstract, the day a paper is posted. A phrase in titles and abstracts, and an author's words. It is off until switched on.
+  Its terms allow one request in three seconds, so all calls go through one gate; the version is not part of a paper's id
+  and its own DOI (10.48550/arXiv…) makes it the same paper as OpenAlex's copy. It says: Thank you to arXiv for use of its
+  open access interoperability.
+- No contact address is sent: the requests say "Scrollar" and the project's web page. Crossref gives a faster pool to requests
+  that carry an email address; I did not put one in, because it would be sent from every user's device.
+- Tried against the real services here, from the code that the app uses: a phrase, a journal and an author on Crossref
+  and a phrase and an author on arXiv returned what they should (45 papers for "chronic pain", only the journal asked for).
+  The app itself has not been run with them switched on in a real feed.
 
 ## Filtering what you kept
 

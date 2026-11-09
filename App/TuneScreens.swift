@@ -321,6 +321,15 @@ struct SourcesScreen: View {
             } footer: {
                 Text("Europe PMC covers PubMed and the preprint servers for biomedicine and needs nothing. OpenAlex covers every field and adds topics, authors by id, the impact and h-index options and more complete lists of your papers; it needs your own free key, which stays in this device's Keychain and is sent only to OpenAlex. A paper found by both is shown once.")
             }
+
+            Section {
+                Toggle("Crossref", isOn: $model.settings.useCrossref)
+                Toggle("arXiv", isOn: $model.settings.useArXiv)
+            } header: {
+                Text("More sources")
+            } footer: {
+                Text("Crossref has every DOI from every publisher, in every field, and needs nothing, but it can only look for a phrase in titles, a journal by its name and an author by their name, and about a third of its records carry an abstract. It is asked only when OpenAlex is off: it is the way to follow keywords and journals outside biomedicine without an OpenAlex key. arXiv covers physics, mathematics, computer science, statistics and quantitative biology, with the abstract, the day a paper is posted (OpenAlex can be days behind); it looks for a phrase and for an author's name, beside the other sources, and is asked no more than once in three seconds. Neither can list who cites a paper, or an institution's or a funder's papers. Both are free services that receive the phrases and names you follow, and nothing else. Thank you to arXiv for use of its open access interoperability.")
+            }
         }
         .navigationTitle("Sources")
     }

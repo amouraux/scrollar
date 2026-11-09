@@ -11,7 +11,7 @@ enum EngineError: Error, CustomStringConvertible {
         case .nothingToFollow:
             return "Nothing to build a feed from: add an ORCID, or follow a topic, journal, author or keyword."
         case .noSource:
-            return "No source is on: turn on Europe PMC, or OpenAlex with your key, in Tune."
+            return "No source is on: turn one on in Tune, under Sources."
         case .nothingOlder:
             return "There is nothing older to ask for."
         case .cannotSearch:
@@ -53,6 +53,10 @@ struct FeedEngine {
     var openAlex: OpenAlexClient?
     /// nil when the user switched it off.
     var europePMC: EuropePMCClient? = EuropePMCClient()
+    /// nil unless the user switched it on; asked only when OpenAlex is off (see `SourceRouting.targets`).
+    var crossref: CrossrefClient?
+    /// nil unless the user switched it on.
+    var arXiv: ArxivClient?
     var pubmed = PubMedClient()
     var embedder: TextEmbedder? = NLTextEmbedder()
     /// Progress and numbers, for the command line; the app can ignore it.
@@ -63,7 +67,7 @@ struct FeedEngine {
     /// (see `Zotero.profileTexts`); the engine does not fetch it, so it stays out of the command line.
     func build(_ settings: FeedSettings, previous: PreviousFeed? = nil, today: Date = Date(), older: Bool = false,
                 library: [String] = [], project: [String] = []) async throws -> FeedResult {
-        guard openAlex != nil || europePMC != nil else { throw EngineError.noSource }
+        guard openAlex != nil || europePMC != nil || crossref != nil || arXiv != nil else { throw EngineError.noSource }
         // What is held reaches back past the look-back when the reader has scrolled to the end.
         let heldExtra = previous?.extraDays ?? 0
         let windowStart = Ranker.dayString(today.addingTimeInterval(-Double(settings.daysBack + heldExtra) * 86_400))
@@ -139,8 +143,8 @@ struct FeedEngine {
         let until = untilOverride ?? Ranker.dayString(today)
         var perSource: [SourceKind: Int] = [:]
         for step in planned {
-            let targets = SourceRouting.targets(for: step.seed, openAlex: openAlex != nil,
-                                                europePMC: europePMC != nil, hasOwnPMIDs: !ownPMIDs.isEmpty)
+            let targets = SourceRouting.targets(for: step.seed, openAlex: openAlex != nil, europePMC: europePMC != nil,
+                                                crossref: crossref != nil, arXiv: arXiv != nil, hasOwnPMIDs: !ownPMIDs.isEmpty)
             if targets.isEmpty { log("  no source answers \(step.seed.reason)"); continue }
             for target in targets {
                 do {
@@ -157,6 +161,14 @@ struct FeedEngine {
                             list[i].reasons = [step.seed.reason]
                             list[i].citesYou = step.seed.citesYou
                         }
+                    case .crossref:
+                        guard let crossref else { continue }
+                        list = try await crossref.papers(seed: step.seed, since: since, until: until, maxPages: min(maxPages, 2))
+                        for i in list.indices { list[i].reasons = [step.seed.reason] }
+                    case .arXiv:
+                        guard let arXiv else { continue }
+                        list = try await arXiv.papers(seed: step.seed, since: since, until: until, maxPages: min(maxPages, 2))
+                        for i in list.indices { list[i].reasons = [step.seed.reason] }
                     }
                     for i in list.indices { list[i].sources = [target.rawValue] }
                     if step.explicit && !step.seed.citesYou {
@@ -255,10 +267,11 @@ struct FeedEngine {
     /// What following `seed` would find: one request per source that can answer it, over the
     /// look-back, run through the same words, mutes and filters as the feed. Nothing is stored.
     func preview(_ seed: Seed, rule: KeywordRule? = nil, settings: FeedSettings, today: Date = Date()) async throws -> SeedPreview {
-        guard openAlex != nil || europePMC != nil else { throw EngineError.noSource }
+        guard openAlex != nil || europePMC != nil || crossref != nil || arXiv != nil else { throw EngineError.noSource }
         let since = Ranker.dayString(today.addingTimeInterval(-Double(settings.daysBack) * 86_400))
         let until = Ranker.dayString(today)
-        let targets = SourceRouting.targets(for: seed, openAlex: openAlex != nil, europePMC: europePMC != nil, hasOwnPMIDs: false)
+        let targets = SourceRouting.targets(for: seed, openAlex: openAlex != nil, europePMC: europePMC != nil,
+                                            crossref: crossref != nil, arXiv: arXiv != nil, hasOwnPMIDs: false)
         guard !targets.isEmpty else { throw EngineError.cannotSearch }
         var found: [Paper] = []
         var fullPage = false
@@ -273,6 +286,12 @@ struct FeedEngine {
                 case .europePMC:
                     guard let europePMC, let query = EuropePMCQuery.build(seed, since: since, until: until) else { continue }
                     list = try await europePMC.papers(query: query, maxPages: 1)
+                case .crossref:
+                    guard let crossref else { continue }
+                    list = try await crossref.papers(seed: seed, since: since, until: until, maxPages: 1)
+                case .arXiv:
+                    guard let arXiv else { continue }
+                    list = try await arXiv.papers(seed: seed, since: since, until: until, maxPages: 1)
                 }
                 fullPage = fullPage || list.count >= Previews.pageSize
                 found += list

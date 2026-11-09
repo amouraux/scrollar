@@ -9,6 +9,8 @@ import Foundation
 enum SourceKind: String, CaseIterable, Codable {
     case openAlex = "OpenAlex"
     case europePMC = "Europe PMC"
+    case crossref = "Crossref"
+    case arXiv = "arXiv"
 }
 
 enum SourceRouting {
@@ -27,16 +29,25 @@ enum SourceRouting {
     /// Which sources can answer a seed. A seed an OpenAlex id answers precisely is
     /// not asked again by name elsewhere while OpenAlex is on: names are ambiguous.
     /// With OpenAlex off, the same seeds fall back to their names.
-    static func targets(for seed: Seed, openAlex: Bool, europePMC: Bool, hasOwnPMIDs: Bool) -> [SourceKind] {
+    ///
+    /// Crossref is the keyless way outside biomedicine, so it is asked only when OpenAlex is off. arXiv
+    /// is asked about what it can answer, a phrase and an author's name, beside whatever else is on.
+    static func targets(for seed: Seed, openAlex: Bool, europePMC: Bool, crossref: Bool = false, arXiv: Bool = false,
+                        hasOwnPMIDs: Bool) -> [SourceKind] {
         var out: [SourceKind] = []
         func offerEurope(_ ok: Bool) { if europePMC && ok { out.append(.europePMC) } }
+        func offerCrossref(_ ok: Bool) { if crossref && !openAlex && ok { out.append(.crossref) } }
+        func offerArxiv(_ ok: Bool) { if arXiv && ok { out.append(.arXiv) } }
         switch seed {
         case .keyword:
             if openAlex { out.append(.openAlex) }
             offerEurope(true)
+            offerCrossref(true)
+            offerArxiv(true)
         case .journal(let id, _):
             if openAlex && !isNamed(id) { out.append(.openAlex) }
             offerEurope(true)
+            offerCrossref(true)
         case .mesh:
             offerEurope(true)
         case .topic(let id, _):
@@ -44,6 +55,7 @@ enum SourceRouting {
         case .author(let id, _), .institution(let id, _), .funder(let id, _):
             if openAlex && !isNamed(id) { out.append(.openAlex) }
             offerEurope(isNamed(id) || !openAlex)
+            if case .author = seed { offerCrossref(true); offerArxiv(isNamed(id) || !openAlex) }
         case .cites(let ids, let label):
             if openAlex && !ids.isEmpty && ids.allSatisfy(isOpenAlexID) { out.append(.openAlex) }
             offerEurope(label == "Cites your work" && hasOwnPMIDs)

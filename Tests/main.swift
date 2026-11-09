@@ -1698,5 +1698,98 @@ var tsyncGone = tsync; tsyncGone.feedback.unhide(id: tsync.feedback.hiddenPapers
 var tsyncDoc = device(tsync, stamp: at(1)); tsyncDoc.reconcile(tsyncGone, at: at(3))
 check(tsyncDoc.apply(to: tsync).feedback.hiddenPapers.isEmpty && tsyncDoc.apply(to: tsync).feedback.hidden.isEmpty, "sync: taking a hide back removes it, and what it taught, everywhere")
 
+// Crossref and arXiv.
+check(AuthorName.matches("Mouraux A", given: "André", family: "Mouraux") && AuthorName.matches("André Mouraux", given: "André", family: "Mouraux") && AuthorName.matches("Mouraux", given: "", family: "A. Mouraux"), "author name: a surname with an initial, a full name and a bare surname all match, with or without accents")
+check(!AuthorName.matches("Mouraux B", given: "André", family: "Mouraux") && !AuthorName.matches("Moraux A", given: "André", family: "Mouraux") && !AuthorName.matches("", given: "A", family: "B"), "author name: another initial, another surname and an empty name do not")
+func routes2(_ seed: Seed, oa: Bool = true, epmc: Bool = true, cr: Bool = true, ax: Bool = true) -> [SourceKind] {
+    SourceRouting.targets(for: seed, openAlex: oa, europePMC: epmc, crossref: cr, arXiv: ax, hasOwnPMIDs: false)
+}
+check(routes2(.keyword("tactile")) == [.openAlex, .europePMC, .arXiv], "routing: with OpenAlex on, a keyword goes to it, to Europe PMC and to arXiv, and Crossref waits")
+check(routes2(.keyword("tactile"), oa: false) == [.europePMC, .crossref, .arXiv], "routing: with OpenAlex off, Crossref answers a keyword too")
+check(routes2(.keyword("tactile"), oa: false, ax: false) == [.europePMC, .crossref] && routes2(.keyword("tactile"), oa: false, cr: false, ax: false) == [.europePMC], "routing: each source is asked only when it is on")
+check(routes2(.journal(id: "S1", name: "Pain"), oa: false) == [.europePMC, .crossref] && !routes2(.journal(id: "S1", name: "Pain")).contains(.arXiv), "routing: a journal goes to Crossref by name when OpenAlex is off, and never to arXiv")
+check(routes2(.author(id: "A1", name: "Ada L"), oa: false) == [.europePMC, .crossref, .arXiv] && routes2(.author(id: "A1", name: "Ada L")) == [.openAlex], "routing: an author is searched by name where OpenAlex cannot be asked")
+check(routes2(.author(id: "name:Ada L", name: "Ada L")) == [.europePMC, .arXiv], "routing: an author added by name goes where names work, except Crossref while OpenAlex is on")
+check(routes2(.topic(id: "T1", name: "x"), oa: false).isEmpty && routes2(.institution(id: "I1", name: "x")) == [.openAlex] && routes2(.funder(id: "F1", name: "x")) == [.openAlex] && routes2(.cites(workIDs: ["W1"], label: "Cites your work")) == [.openAlex] && !routes2(.institution(id: "I1", name: "x"), oa: false).contains(.crossref) && !routes2(.funder(id: "F1", name: "x"), oa: false).contains(.arXiv), "routing: topics, institutions, funders and citations are for OpenAlex; neither new source is asked")
+
+let crossrefQuery = CrossrefQuery.build(.keyword("chronic pain", also: ["EEG"]), since: "2026-10-01", until: "2026-11-09")!
+check(crossrefQuery.first == URLQueryItem(name: "query.title", value: "chronic pain EEG") && crossrefQuery.contains { $0.name == "filter" && $0.value == "from-pub-date:2026-10-01,until-pub-date:2026-11-09,type:journal-article,type:posted-content" } && crossrefQuery.contains { $0.name == "rows" && $0.value == "100" }, "crossref query: a keyword is searched in titles, in the window, for articles and preprints")
+check(!(crossrefQuery.first { $0.name == "select" }?.value ?? "").contains("language") && (crossrefQuery.first { $0.name == "select" }?.value ?? "").contains("abstract"), "crossref query: it asks only for fields Crossref has (it has no language field)")
+check(CrossrefQuery.build(.journal(id: "name:Pain", name: "x"), since: "a", until: "b")?.first == URLQueryItem(name: "query.container-title", value: "Pain") && CrossrefQuery.build(.author(id: "A1", name: "Ada Lovelace"), since: "a", until: "b")?.first == URLQueryItem(name: "query.author", value: "Ada Lovelace") && CrossrefQuery.build(.topic(id: "T", name: "x"), since: "a", until: "b") == nil && CrossrefQuery.build(.cites(workIDs: ["W"], label: "x"), since: "a", until: "b") == nil, "crossref query: a journal and an author by name; what it cannot answer is nil")
+
+let crossrefAnswer = #"""
+{"status":"ok","message-type":"work-list","message":{"total-results":3,"items":[
+ {"DOI":"10.1000/PAIN.1","title":["Chronic pain and sleep: <i>a cohort</i>"],"container-title":["Pain Reports"],
+  "abstract":"<jats:title>Abstract</jats:title><jats:p>We followed adults with chronic pain for a year.</jats:p>",
+  "type":"journal-article","published":{"date-parts":[[2026,10]]},"created":{"date-parts":[[2026,10,19]],"date-time":"2026-10-19T08:00:00Z"},
+  "is-referenced-by-count":4,"author":[{"given":"Ada","family":"Lovelace","affiliation":[{"name":"Department of Neurology, University of Oslo, Oslo"}]},{"given":"Grace","family":"Hopper","affiliation":[]}],
+  "license":[{"URL":"https://creativecommons.org/licenses/by/4.0/","content-version":"vor"}],
+  "link":[{"URL":"https://example.org/p1.pdf","content-type":"application/pdf"},{"URL":"https://example.org/p1.html","content-type":"text/html"}]},
+ {"DOI":"10.1000/OTHER.2","title":["Dark matter halos"],"container-title":["Astro Letters"],"type":"journal-article","published":{"date-parts":[[2026,10,28]]},"author":[{"given":"Ada","family":"Lovelace"}]},
+ {"DOI":"10.1000/PRE.3","title":["Pain thresholds and chronic pain in a preprint"],"container-title":[],"type":"posted-content","published":{"date-parts":[[2026,11,2]]},"author":[{"name":"A Consortium"}]}
+]}}
+"""#
+let crPapers = CrossrefParser.papers(from: Data(crossrefAnswer.utf8), seed: .keyword("chronic pain"))
+check(crPapers.map(\.doi) == ["10.1000/pain.1", "10.1000/pre.3"], "crossref reading: only the records whose title or abstract holds the phrase are kept")
+let crFirst = crPapers[0]
+check(crFirst.title == "Chronic pain and sleep: a cohort" && crFirst.abstract == "We followed adults with chronic pain for a year." && crFirst.journal == "Pain Reports" && crFirst.authors == ["Ada Lovelace", "Grace Hopper"], "crossref reading: markup is taken out of the title, the heading out of the abstract, and names are joined")
+check(crFirst.date == "2026-10-19" && crFirst.citedBy == 4 && crFirst.sources == ["Crossref"] && crFirst.firstInstitution == "University of Oslo", "crossref reading: a month-only date takes the exact day the DOI was registered, and the institution is read from the affiliation")
+check(crFirst.isOpenAccess && crFirst.pdfURL == "https://example.org/p1.pdf" && !crFirst.isRepository, "crossref reading: a Creative Commons licence makes it open, with its PDF link")
+check(crPapers[1].isRepository && crPapers[1].openAlexType == "preprint" && !crPapers[1].isOpenAccess && crPapers[1].pdfURL == nil && crPapers[1].date == "2026-11-02", "crossref reading: a posted record is a preprint, and without a licence has no free PDF")
+check(CrossrefParser.papers(from: Data(crossrefAnswer.utf8), seed: .journal(id: "S1", name: "pain  reports")).map(\.doi) == ["10.1000/pain.1"], "crossref reading: a journal is matched by its name, whatever the case and spacing")
+check(CrossrefParser.papers(from: Data(crossrefAnswer.utf8), seed: .author(id: "A1", name: "Lovelace A")).map(\.doi) == ["10.1000/pain.1", "10.1000/other.2"] && CrossrefParser.papers(from: Data(crossrefAnswer.utf8), seed: .author(id: "A1", name: "Hopper B")).isEmpty, "crossref reading: an author is matched on the paper's own author list")
+check(CrossrefParser.papers(from: Data(crossrefAnswer.utf8), seed: .topic(id: "T", name: "x")).isEmpty && CrossrefParser.papers(from: Data("not json".utf8), seed: .keyword("x")).isEmpty && CrossrefParser.total(in: Data(crossrefAnswer.utf8)) == 3, "crossref reading: a seed it cannot answer and an unreadable answer give nothing; the total is read")
+check(CrossrefParser.date(["published": ["date-parts": [[2026]]], "created": ["date-parts": [[2026, 3, 5]]]]) == "2026-03-05" && CrossrefParser.date(["published": ["date-parts": [[2026, 10]]], "created": ["date-parts": [[2026, 12, 5]]]]) == "2026-10-01" && CrossrefParser.date([:]) == nil, "crossref reading: a created date is used only inside the published year and month")
+
+let arxivQuery = ArxivQuery.build(.keyword("neural network"), since: "2026-11-01", until: "2026-11-09")!
+check(arxivQuery.first == URLQueryItem(name: "search_query", value: "((ti:\"neural network\" OR abs:\"neural network\")) AND submittedDate:[202611010000 TO 202611092359]") && arxivQuery.contains { $0.name == "sortBy" && $0.value == "submittedDate" } && arxivQuery.contains { $0.name == "max_results" && $0.value == "100" }, "arxiv query: a phrase in titles and abstracts, in the window, newest first")
+check(ArxivQuery.build(.author(id: "name:Mouraux A", name: "x"), since: "2026-11-01", until: "2026-11-09")?.first?.value?.hasPrefix("(au:mouraux) AND") == true && ArxivQuery.build(.author(id: "A1", name: "André Mouraux"), since: "2026-11-01", until: "2026-11-09")?.first?.value?.hasPrefix("(au:andre AND au:mouraux)") == true, "arxiv query: an author is searched by the words of the name, without accents or initials")
+check(ArxivQuery.build(.journal(id: "S", name: "x"), since: "a", until: "b") == nil && ArxivQuery.build(.topic(id: "T", name: "x"), since: "a", until: "b") == nil && ArxivQuery.build(.author(id: "name:A", name: "A"), since: "a", until: "b") == nil, "arxiv query: a journal, a topic and a name of one letter are nil")
+let arxivFeed = """
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns="http://www.w3.org/2005/Atom">
+  <id>https://arxiv.org/api/x</id>
+  <title>arXiv Query: search_query=ti:"neural network"</title>
+  <opensearch:totalResults>2</opensearch:totalResults>
+  <entry>
+    <id>http://arxiv.org/abs/2611.09805v2</id>
+    <updated>2026-11-06T17:55:35Z</updated>
+    <title>Scaling Graph Similarity
+      Learning with Graph Neural Networks</title>
+    <link href="https://arxiv.org/abs/2611.09805v2" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.09805v2" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Graph similarity is an important task.
+  We propose FiLSim on {150,000} nodes.</summary>
+    <published>2026-11-06T17:55:35Z</published>
+    <author><name>Ahmet Tüzen</name><arxiv:affiliation>Norwegian University of Science and Technology</arxiv:affiliation></author>
+    <author><name>Helge Langseth</name></author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/hep-th/9901001v1</id>
+    <title>An old style identifier</title>
+    <summary>Strings.</summary>
+    <published>1999-01-02T10:00:00Z</published>
+    <arxiv:doi>10.1000/published.version</arxiv:doi>
+    <author><name>Edward Witten</name></author>
+  </entry>
+</feed>
+"""
+let axPapers = ArxivParser.papers(from: Data(arxivFeed.utf8), seed: .keyword("neural network"))
+check(axPapers.count == 2 && ArxivParser.entryCount(in: Data(arxivFeed.utf8)) == 2, "arxiv reading: two entries are read, and counted")
+let axFirst = axPapers[0]
+check(axFirst.id == "arxiv:2611.09805" && axFirst.doi == "10.48550/arxiv.2611.09805" && axFirst.title == "Scaling Graph Similarity Learning with Graph Neural Networks" && axFirst.abstract == "Graph similarity is an important task. We propose FiLSim on {150,000} nodes.", "arxiv reading: the version is not part of the id, the DOI is arXiv's own, and line breaks in a title and an abstract are joined")
+check(axFirst.date == "2026-11-06" && axFirst.authors == ["Ahmet Tüzen", "Helge Langseth"] && axFirst.pdfURL == "https://arxiv.org/pdf/2611.09805" && axFirst.isRepository && axFirst.isOpenAccess && axFirst.openAlexType == "preprint" && axFirst.sources == ["arXiv"] && axFirst.journal == "arXiv" && axFirst.firstInstitution == "Norwegian University of Science and Technology", "arxiv reading: the date, authors, free PDF and institution, and it is a preprint")
+check(axPapers[1].id == "arxiv:hep-th/9901001" && axPapers[1].doi == "10.1000/published.version", "arxiv reading: an old-style identifier is kept whole, and a DOI the authors gave is used")
+check(ArxivParser.papers(from: Data(arxivFeed.utf8), seed: .author(id: "A", name: "Langseth H")).map(\.id) == ["arxiv:2611.09805"] && ArxivParser.papers(from: Data(arxivFeed.utf8), seed: .author(id: "A", name: "Langseth X")).isEmpty, "arxiv reading: an author is matched on the paper's own list, initial and all")
+check(ArxivParser.papers(from: Data("<feed></feed>".utf8), seed: .keyword("x")).isEmpty && ArxivParser.papers(from: Data("not xml".utf8), seed: .keyword("x")).isEmpty && ArxivParser.identifier("http://arxiv.org/abs/2611.09805v12") == "2611.09805" && ArxivParser.identifier("nonsense") == nil, "arxiv reading: an empty or unreadable feed gives nothing")
+let gate = RequestGate(interval: 0.2)
+let gateStart = Date()
+for _ in 0..<3 { await gate.wait() }
+check(Date().timeIntervalSince(gateStart) >= 0.38, "arxiv: requests are let through one at a time, an interval apart")
+
+check(FeedSettings().useCrossref && !FeedSettings().useArXiv && (try! FeedSettings.decode(Data(#"{"useArXiv":true,"useCrossref":false}"#.utf8))).useArXiv && !(try! FeedSettings.decode(Data(#"{"useCrossref":false}"#.utf8))).useCrossref, "settings: Crossref is on and arXiv off to begin with, and a file from before reads as that")
+var tsrc = FeedSettings(); tsrc.useArXiv = true; tsrc.useCrossref = false
+check(device(tsrc, stamp: at(1)).apply(to: FeedSettings()).useArXiv && !device(tsrc, stamp: at(1)).apply(to: FeedSettings()).useCrossref, "settings: the two switches sync")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

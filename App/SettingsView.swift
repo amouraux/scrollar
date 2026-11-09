@@ -109,7 +109,8 @@ struct SettingsView: View {
 
     private var sourcesStatus: String {
         let s = appModel.settings
-        let on = [s.useEuropePMC ? "Europe PMC" : nil, s.useOpenAlex ? "OpenAlex" : nil].compactMap { $0 }
+        let on = [s.useEuropePMC ? "Europe PMC" : nil, s.useOpenAlex ? "OpenAlex" : nil,
+                  s.useCrossref ? "Crossref" : nil, s.useArXiv ? "arXiv" : nil].compactMap { $0 }
         return on.isEmpty ? "None on" : on.joined(separator: ", ")
     }
 }
