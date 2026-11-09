@@ -654,9 +654,10 @@ seconds and put away by a tap. Older notes in this file may still say "Saved" or
 A thumb used to teach the feed by a similarity score no one could read. **For me** and **Not for me** now ask what the thumb is about
 (`Core/Thumbs.swift`, `App/ThumbSheet.swift`, tested): a sheet lists what the paper has that could be why (the keyword or journal or
 author or topic that put it in the feed first, then its journal, first and last author and topics, at most eight, each with its level
-now and where one step would take it), with the first reason chosen. Each thing chosen moves **one level** up for a thumb up and down for a
+now and where one step would take it), with the first reason chosen. **One choice only** (a single selection, plus "None of these, just this paper"): with several, people
+ended up with the first reason and whatever else they touched on the way, so the user names the best reason. That one thing moves **one level** up for a thumb up and down for a
 thumb down (Levels, below), in one change that shows in Follow and mute, Levels, and a line says what moved ("“TMS” Maximum → Higher").
-Choose none, and the thumb is about the paper alone, as before. "Next time, use the first reason without asking" turns the question off (Tune,
+Choose none, and the thumb is about the paper alone, as before. (The first version allowed several at once; changed on the user's advice.) "Next time, use the first reason without asking" turns the question off (Tune,
 Ranking, Your feedback: "Ask what a thumb is about"). Taking back a For me asks nothing, and leaves the levels as they are. A topic with no
 OpenAlex id, an institution and a funder are not offered, since they cannot be raised from a paper. A journal that is a repository is not
 offered either. The reading list's weaker background signal, and the pull toward and push away from what was liked and hid (above), are

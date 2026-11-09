@@ -1155,8 +1155,8 @@ final class AppModel {
         if settings.asksThumbBasis {
             thumbRequest = ThumbRequest(paper: p, up: up, candidates: candidates)
         } else {
-            let keys = ThumbBasis.preselected(candidates, paper: p)
-            applyThumb(p, up: up, chosen: candidates.filter { keys.contains($0.ref.key) }.map(\.ref))
+            let key = ThumbBasis.preselected(candidates, paper: p)
+            applyThumb(p, up: up, chosen: candidates.filter { $0.ref.key == key }.map(\.ref))
         }
     }
 

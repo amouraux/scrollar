@@ -2,7 +2,7 @@ import Foundation
 
 // What a thumb is about. A paper has many things that could be why it is liked or not: a keyword that found
 // it, its journal, its authors, its topics. Asking which makes the effect of a thumb something the user chose
-// and can see: each thing picked moves one level (see Levels.swift), up for a thumb up and down for a thumb
+// and can see: the one thing picked, the best reason, moves one level (see Levels.swift), up for a thumb up and down for a thumb
 // down. Pure and tested; the question is a sheet.
 
 enum ThumbBasis {
@@ -79,10 +79,11 @@ enum ThumbBasis {
     }
 
     /// What is chosen to begin with: the first reason the paper is in the feed for, if it has one, which is the one
-    /// the post itself names.
-    static func preselected(_ candidates: [Candidate], paper: Paper) -> Set<String> {
+    /// the post itself names. One only: the thumb is about the best reason, not a handful, because with several
+    /// people end up with the first and whatever else they touched on the way.
+    static func preselected(_ candidates: [Candidate], paper: Paper) -> String? {
         let named = Why.tags(reasons: paper.reasons, followed: paper.followed).first { !$0.detail.isEmpty }
-        guard let named else { return [] }
+        guard let named else { return nil }
         let kind: FacetKind?
         switch named.kind {
         case .author: kind = .author
@@ -93,8 +94,8 @@ enum ThumbBasis {
         case .followedTopic, .ownTopic: kind = .topic
         default: kind = nil
         }
-        guard let kind, let first = candidates.first(where: { $0.ref.kind == kind && $0.ref.name.lowercased() == named.detail.lowercased() }) else { return [] }
-        return [first.ref.key]
+        guard let kind, let first = candidates.first(where: { $0.ref.kind == kind && $0.ref.name.lowercased() == named.detail.lowercased() }) else { return nil }
+        return first.ref.key
     }
 
     /// The thumb applied: each chosen thing moves one level, up or down. Returns what moved, for saying so.
