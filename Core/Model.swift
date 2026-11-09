@@ -137,6 +137,9 @@ struct Paper: Hashable, Codable {
     /// A DOI lookup found no PubMed record, so it is not tried again on every
     /// refresh. Optional so a cache written before this field existed still loads.
     var notInPubMed: Bool? = nil
+    /// The title of the paper the user hid that this one is close to, when that lowered it in the
+    /// ranking. Set at each ranking, never kept from an earlier one. Optional so an older cache loads.
+    var loweredBy: String? = nil
     /// Which sources returned it ("OpenAlex", "Europe PMC"). Empty in a cache written
     /// before there was more than one, when every paper came from OpenAlex.
     var sources: [String]? = nil

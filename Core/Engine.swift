@@ -124,7 +124,10 @@ struct FeedEngine {
                 }
             }
         }
-        let profileTexts = FeedBuilder.profileTexts(settings, own: own + others, library: library, project: project)
+        let profile = FeedBuilder.profile(settings, own: own + others, library: library, project: project, now: today)
+        let avoid = FeedBuilder.avoid(settings, now: today)
+        // The avoided texts are kept with the profile's, so a cache keeps their vectors too.
+        let profileTexts = profile.map(\.text) + avoid.map(\.text)
 
         // 2. One query per seed. A seed that fails (an id that no longer exists) is
         //    reported and skipped; it must not take the rest of the feed with it.
@@ -195,7 +198,7 @@ struct FeedEngine {
 
         // DOI-only papers with no abstract: look them up, but only those a
         // quick ranking puts near the top, because each lookup is a request.
-        let firstPass = Ranker.rank(papers, profileTexts: profileTexts, settings: settings, today: today)
+        let firstPass = Ranker.rank(papers, profile: profile, settings: settings, today: today)
         var wanted: [Paper] = []
         for r in firstPass.prefix(60) {
             let p = r.paper
@@ -232,7 +235,7 @@ struct FeedEngine {
         log("Filters: \(papers.count) → \(kept.count) papers")
 
         // 5. Rank.
-        let ranked = Ranker.rank(kept, profileTexts: profileTexts, embedder: embedder, settings: settings, today: today)
+        let ranked = Ranker.rank(kept, profile: profile, avoid: avoid, embedder: embedder, settings: settings, today: today)
         log((embedder == nil ? "Similarity: word counts only" : "Similarity: \(embedder?.modelID ?? "embeddings") + word counts") + "  [\(lap())]")
 
         return FeedResult(author: me,

@@ -561,6 +561,31 @@ panel leaves those out. The order is not changed. The segments are Reading list,
 cannot write shows "Add to Zotero (the key is read-only)" greyed out, not hidden, and failures are shown for fifteen
 seconds and put away by a tap. Older notes in this file may still say "Saved" or "Save to Zotero": they mean these.
 
+## What the thumbs do
+
+**Read later** and **For me** pull the feed toward what is like them; **Not for me** now also pushes it away from what
+is like the hidden paper. The rules are in `Core/FeedbackMemory.swift` (tested), the screens in `App/FeedbackScreens.swift`
+(Tune, Ranking, Your feedback).
+
+- **Pull.** The title and abstract of each paper on the reading list or marked For me join the profile, as before. They are
+  counted as one pool, newest first. Only the newest 200 count (the newest in full, the oldest of those a quarter as much,
+  by position, so no date is needed), a paper older than an age limit (off by default) drops out, and a strength setting
+  scales them against the user's own papers and library.
+- **Push.** A hidden paper keeps its title and abstract with the date (`feedback.hiddenPapers`; the ids in `feedback.hidden`
+  are unchanged, so an older app still hides). Each candidate is compared with them by the same two measures as everything
+  else, but on one raw scale, so that "closer to what was hidden than to anything the user wants" can be told. Only a paper
+  that is, and is also among the closest tenth of the feed to what was hidden, is lowered, by up to 1.0 at the default
+  strength (the whole range of closeness is 4), less for an older hide. A hide counts for the newest 100, within 6 months.
+  What the user follows, and what cites their work, is never lowered. A paper hidden before this existed is only an id and
+  teaches nothing. The post says "Lowered: like “…”, which you hid".
+- **Seeing it.** Your feedback lists every paper with when it was kept and how much it still counts ("Counts fully", "Counts
+  partly", "Fading", "No longer counted"). A paper can be set to be ignored without deleting it, a hidden paper shown again,
+  and the screen lists what is pushed down (exact, from the last ranking) and what is pulled up (worked out on the device).
+- **Sync.** Hidden snapshots and the settings sync, and the sync format is 3, so an older app leaves the file alone rather
+  than erase the snapshots it does not know. Ranking is made repeatable: scores that differ only by rounding noise are ties.
+- **Not tried:** the strength and the tenth are first guesses, set from tests on made-up papers and not from a real feed, and
+  the effect on the on-screen feed after a hide is only seen at the next refresh.
+
 ## Tune
 
 Tune opens on a short list of eight rows, each with a line saying what is set (`App/SettingsView.swift`), and each

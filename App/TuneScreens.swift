@@ -118,6 +118,10 @@ struct FollowScreen: View {
     }
 }
 
+func feedbackStatus(_ f: Feedback) -> String {
+    "\(f.saved.count) on list · \(f.liked.count) for me · \(f.hidden.count) hidden"
+}
+
 /// How the feed is ordered: highlights, the kinds of paper, the sliders, and what you have told it.
 struct RankingScreen: View {
     @Environment(AppModel.self) private var appModel
@@ -209,17 +213,15 @@ struct RankingScreen: View {
             }
 
             Section {
-                LabeledContent("On your reading list", value: "\(model.settings.feedback.saved.count)")
-                LabeledContent("Hidden", value: "\(model.settings.feedback.hidden.count)")
-                if !model.settings.feedback.hidden.isEmpty {
-                    Button("Show hidden papers again", role: .destructive) {
-                        model.settings.feedback.hidden = []
-                    }
+                NavigationLink {
+                    FeedbackScreen()
+                } label: {
+                    LabeledContent("Your feedback", value: feedbackStatus(model.settings.feedback))
                 }
             } header: {
                 Text("What you have told it")
             } footer: {
-                Text("Papers on your reading list make the feed look for more like them. Hidden papers never come back.")
+                Text("What is on your reading list, marked For me or hidden teaches the feed. Open it to see how much each counts, for how long, and what it is doing to the feed now.")
             }
         }
         .navigationTitle("Ranking")

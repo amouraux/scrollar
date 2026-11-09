@@ -216,11 +216,26 @@ enum Ranker {
 
     static func rank(_ candidates: [Paper], profileTexts: [String], embedder: TextEmbedder? = nil,
                      settings: FeedSettings = FeedSettings(), today: Date) -> [RankedPaper] {
+        rank(candidates, profile: profileTexts.map { ProfileEntry(text: $0) }, embedder: embedder,
+             settings: settings, today: today)
+    }
+
+    /// `profile` is what the feed moves toward, each text with how much it counts; `avoid` is what it
+    /// moves away from (the papers the user hid). A paper is lowered only if it is among the few closest
+    /// to what was hidden, and closer to that than to anything the user wants; one the user follows, or
+    /// that cites their work, is never lowered.
+    static func rank(_ candidates: [Paper], profile: [ProfileEntry], avoid: [ProfileEntry] = [],
+                     embedder: TextEmbedder? = nil, settings: FeedSettings = FeedSettings(),
+                     today: Date) -> [RankedPaper] {
         guard !candidates.isEmpty else { return [] }
-        let similarity = similarities(candidates, profileTexts: profileTexts, embedder: embedder)
+        let similarity = similarities(candidates, profile: profile, embedder: embedder)
+        let lowering = avoid.isEmpty || settings.hideStrength <= 0 ? []
+            : avoidance(candidates, profile: profile, avoid: avoid, embedder: embedder)
 
         var ranked: [RankedPaper] = []
-        for (i, paper) in candidates.enumerated() {
+        for (i, original) in candidates.enumerated() {
+            var paper = original
+            paper.loweredBy = nil
             var score = similarityScale * settings.closeness * similarity[i]
             score += extraSeedBonus * Double(max(paper.reasons.count - 1, 0))
             if paper.citesYou { score += citesYouBonus }
@@ -235,6 +250,10 @@ enum Ranker {
             if let importance = settings.keywordImportance(of: paper) { score += importance.bonus }
             score += impactBoost(paper.journalImpact, weight: settings.impactWeight)
             score += authorBoost(paper, weight: settings.authorWeight, focus: settings.byline)
+            if i < lowering.count, lowering[i].factor > 0, !paper.followed, !paper.citesYou {
+                score -= avoidScale * settings.hideStrength * lowering[i].factor
+                paper.loweredBy = lowering[i].nearest.flatMap { avoid[$0].title } ?? "a paper you hid"
+            }
             ranked.append(RankedPaper(paper: paper, score: score, similarity: similarity[i]))
         }
         return ranked.sorted {
@@ -246,8 +265,12 @@ enum Ranker {
 
     static func similarities(_ candidates: [Paper], profileTexts: [String],
                              embedder: TextEmbedder?) -> [Double] {
-        let lexical = percentiles(lexicalScores(candidates, profileTexts: profileTexts))
-        guard let embedder, let semantic = semanticScores(candidates, profileTexts: profileTexts, embedder: embedder)
+        similarities(candidates, profile: profileTexts.map { ProfileEntry(text: $0) }, embedder: embedder)
+    }
+
+    static func similarities(_ candidates: [Paper], profile: [ProfileEntry], embedder: TextEmbedder?) -> [Double] {
+        let lexical = percentiles(lexicalScores(candidates, profile: profile))
+        guard let embedder, let semantic = semanticScores(candidates, profile: profile, embedder: embedder)
         else { return lexical }
 
         // A paper the embedder could not read falls back to its lexical score.
@@ -267,26 +290,148 @@ enum Ranker {
         return top.isEmpty ? 0 : top.reduce(0, +) / Double(top.count)
     }
 
-    private static func lexicalScores(_ candidates: [Paper], profileTexts: [String]) -> [Double] {
-        let profile = profileTexts.map(Words.tokens)
+    private static func lexicalScores(_ candidates: [Paper], profile entries: [ProfileEntry]) -> [Double] {
+        let profile = entries.map { Words.tokens($0.text) }
         let cands = candidates.map { Words.tokens(text($0)) }
         let model = TfIdf(documents: profile + cands)
         let profileVectors = profile.map(model.vector)
         return cands.map { tokens in
             let v = model.vector(tokens)
-            return topMean(profileVectors.map { TfIdf.cosine(v, $0) })
+            return topMean(profileVectors.enumerated().map { TfIdf.cosine(v, $0.element) * entries[$0.offset].weight })
         }
     }
 
     /// nil when the embedder cannot read the profile at all (no model on this device).
-    private static func semanticScores(_ candidates: [Paper], profileTexts: [String],
+    private static func semanticScores(_ candidates: [Paper], profile entries: [ProfileEntry],
                                        embedder: TextEmbedder) -> [Double?]? {
-        let profile = profileTexts.compactMap { embedder.vector(for: $0) }.map(Vectors.normalise)
+        let profile: [(vector: [Double], weight: Double)] = entries.compactMap { e in
+            embedder.vector(for: e.text).map { (Vectors.normalise($0), e.weight) }
+        }
         guard !profile.isEmpty else { return nil }
         return candidates.map { p in
             guard let v = embedder.vector(for: text(p)).map(Vectors.normalise) else { return nil }
-            return topMean(profile.map { Vectors.dot(v, $0) })
+            return topMean(profile.map { Vectors.dot(v, $0.vector) * $0.weight })
         }
+    }
+
+    // MARK: Moving away from what was hidden
+
+    /// How hard a paper at the very closest to what was hidden is lowered, at full strength. The whole
+    /// range of closeness to the user's work is 4; the default strength is half.
+    static let avoidScale = 2.0
+    /// Only this share of the feed, the papers closest to what was hidden, can be lowered.
+    static let avoidShare = 0.1
+    /// Fewer papers than this say too little about what is close to what.
+    static let avoidFewest = 20
+
+    struct Avoidance {
+        /// 0 for no lowering, up to 1 for the paper closest to what was hidden.
+        var factor: Double
+        /// Which of the avoided entries it is closest to.
+        var nearest: Int?
+    }
+
+    struct RawScore {
+        /// The mean of the three nearest, each weighted, blended from the meaning model and the words.
+        var value: Double
+        /// The entry that came nearest.
+        var nearest: Int?
+    }
+
+    private static func argmax(_ values: [Double]) -> Int? {
+        guard let best = values.max(), best > 0 else { return nil }
+        return values.firstIndex(of: best)
+    }
+
+    /// For each group of entries, how close each candidate is to it on one scale for all groups, so
+    /// that two groups can be compared with each other. (The percentile similarity cannot: it only says
+    /// how a candidate ranks among the others.)
+    static func rawScores(_ candidates: [Paper], groups: [[ProfileEntry]], embedder: TextEmbedder?) -> [[RawScore]] {
+        let groupTokens = groups.map { $0.map { Words.tokens($0.text) } }
+        let candidateTokens = candidates.map { Words.tokens(text($0)) }
+        let model = TfIdf(documents: groupTokens.flatMap { $0 } + candidateTokens)
+        let groupVectors = groupTokens.map { $0.map(model.vector) }
+        let candidateVectors = candidateTokens.map(model.vector)
+
+        var groupMeaning: [[[Double]?]]?
+        var candidateMeaning: [[Double]?] = []
+        if let embedder {
+            let vectors = groups.map { $0.map { embedder.vector(for: $0.text).map(Vectors.normalise) } }
+            if vectors.contains(where: { $0.contains { $0 != nil } }) {
+                groupMeaning = vectors
+                candidateMeaning = candidates.map { embedder.vector(for: text($0)).map(Vectors.normalise) }
+            }
+        }
+        return groups.indices.map { g in
+            candidates.indices.map { i in
+                let words = groupVectors[g].enumerated().map { TfIdf.cosine(candidateVectors[i], $0.element) * groups[g][$0.offset].weight }
+                let wordValue = topMean(words)
+                guard let groupMeaning, let cv = candidateMeaning[i] else { return RawScore(value: wordValue, nearest: argmax(words)) }
+                var meaning: [Double] = []
+                var index: [Int] = []
+                for (j, v) in groupMeaning[g].enumerated() {
+                    guard let v else { continue }
+                    meaning.append(Vectors.dot(cv, v) * groups[g][j].weight)
+                    index.append(j)
+                }
+                guard !meaning.isEmpty else { return RawScore(value: (1 - embeddingShare) * wordValue, nearest: argmax(words)) }
+                return RawScore(value: embeddingShare * topMean(meaning) + (1 - embeddingShare) * wordValue,
+                                nearest: argmax(meaning).map { index[$0] })
+            }
+        }
+    }
+
+    /// Who is to be lowered, and by how much of the full amount. A paper counts only if it is closer to
+    /// what was hidden than to anything the user wants, and among the closest tenth of the feed to what
+    /// was hidden: so a hide cannot flatten a field, and a field the user has since come to want is
+    /// not lowered, however much of it was hidden once.
+    static func avoidance(_ candidates: [Paper], profile: [ProfileEntry], avoid: [ProfileEntry],
+                          embedder: TextEmbedder?) -> [Avoidance] {
+        let none = Avoidance(factor: 0, nearest: nil)
+        guard candidates.count >= avoidFewest, !avoid.isEmpty else { return candidates.map { _ in none } }
+        let raw = rawScores(candidates, groups: [profile, avoid], embedder: embedder)
+        let margin = candidates.indices.map { raw[1][$0].value - raw[0][$0].value }
+        let percentile = percentiles(margin)
+        return candidates.indices.map { i in
+            guard margin[i] > 0, percentile[i] > 1 - avoidShare else { return none }
+            // The percentile says how far into the closest tenth it is; the weight of the hide it is
+            // closest to says how much that hide still counts, so an older hide lowers less.
+            let nearest = raw[1][i].nearest
+            let counts = nearest.map { avoid[$0].weight } ?? 1
+            return Avoidance(factor: (percentile[i] - (1 - avoidShare)) / avoidShare * counts, nearest: nearest)
+        }
+    }
+
+    // MARK: Showing what the thumbs do
+
+    struct Influence {
+        struct Pull { var paper: Paper; var because: String; var strength: Double }
+        struct Push { var paper: Paper; var because: String; var factor: Double }
+        /// The papers most like what was put on the reading list or marked For me, with the one each is like.
+        var pulled: [Pull]
+        /// The papers lowered because of what was hidden, with the hidden paper each is like.
+        var pushed: [Push]
+    }
+
+    static func influence(_ papers: [Paper], profile: [ProfileEntry], avoid: [ProfileEntry],
+                          embedder: TextEmbedder?, limit: Int = 8) -> Influence {
+        let liked = profile.filter { $0.title != nil }
+        var pulled: [Influence.Pull] = []
+        if !liked.isEmpty, !papers.isEmpty {
+            let raw = rawScores(papers, groups: [liked], embedder: embedder)[0]
+            pulled = papers.indices.compactMap { i in
+                guard raw[i].value > 0, let n = raw[i].nearest, let title = liked[n].title else { return nil }
+                return Influence.Pull(paper: papers[i], because: title, strength: raw[i].value)
+            }.sorted { $0.strength > $1.strength }
+            pulled = Array(pulled.prefix(limit))
+        }
+        let lowering = avoidance(papers, profile: profile, avoid: avoid, embedder: embedder)
+        let pushed = papers.indices.compactMap { i -> Influence.Push? in
+            guard lowering[i].factor > 0, !papers[i].followed, !papers[i].citesYou,
+                  let n = lowering[i].nearest, let title = avoid[n].title else { return nil }
+            return Influence.Push(paper: papers[i], because: title, factor: lowering[i].factor)
+        }.sorted { $0.factor > $1.factor }
+        return Influence(pulled: pulled, pushed: Array(pushed.prefix(limit)))
     }
 
     /// Replace each value by its rank among the others, 0…1, ties sharing their
@@ -294,6 +439,9 @@ enum Ranker {
     /// (sentence embeddings sit between 0.5 and 0.9 whatever the topic), so the
     /// only comparison that means anything is "closer than most of the others".
     static func percentiles(_ values: [Double]) -> [Double] {
+        // Two scores that differ only by rounding noise (a sum taken in another order) are a tie:
+        // without this the same feed could rank differently twice, and equal papers swap places.
+        let values = values.map { ($0 * 1e9).rounded() / 1e9 }
         let n = values.count
         guard n > 1 else { return Array(repeating: 0.5, count: n) }
         let order = values.indices.sorted { values[$0] < values[$1] }

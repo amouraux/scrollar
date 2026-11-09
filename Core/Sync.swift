@@ -30,7 +30,7 @@ struct SyncEntry: Codable, Equatable {
 struct SyncDocument: Codable, Equatable {
     /// Raise for any change an older app would misread, and never remove the guard
     /// in the storage: an app writes only a format it knows.
-    static let currentFormat = 2
+    static let currentFormat = 3
 
     var format = SyncDocument.currentFormat
     var entries: [String: SyncEntry] = [:]
@@ -186,6 +186,9 @@ enum SyncProjection {
         scalar("highlightCloseness", \.highlightCloseness), scalar("highlightImpact", \.highlightImpact),
         scalar("highlightAuthorH", \.highlightAuthorH), scalar("profileFilled", \.profileFilled),
         scalar("dwellSeconds", \.dwellSeconds), scalar("useZotero", \.useZotero), scalar("useLibraryFile", \.useLibraryFile), scalar("zoteroRecent", \.zoteroRecent),
+        scalar("hideMemory", \.hideMemory), scalar("hideMaxAgeMonths", \.hideMaxAgeMonths),
+        scalar("likeMemory", \.likeMemory), scalar("likeMaxAgeMonths", \.likeMaxAgeMonths),
+        scalar("hideStrength", \.hideStrength), scalar("likeStrength", \.likeStrength),
     ]
 
     /// Every decision a settings value holds, by key. An empty string is an item with no payload.
@@ -198,6 +201,7 @@ enum SyncProjection {
         for p in s.feedback.saved { out["sv/\(p.id)"] = json(p) }
         for p in s.feedback.liked { out["lk/\(p.id)"] = json(p) }
         for h in s.feedback.hidden { out["hd/\(h)"] = "" }
+        for p in s.feedback.hiddenPapers { out["hp/\(p.id)"] = json(p) }
         for sc in scalars { out["v/\(sc.name)"] = sc.read(s) }
         return out
     }
@@ -239,6 +243,7 @@ enum SyncProjection {
         s.feedback.saved = ordered(s.feedback.saved, key: { $0.id }, prefix: "sv/", entries: entries)
         s.feedback.liked = ordered(s.feedback.liked, key: { $0.id }, prefix: "lk/", entries: entries)
         s.feedback.hidden = orderedNames(s.feedback.hidden, prefix: "hd/", entries: entries)
+        s.feedback.hiddenPapers = ordered(s.feedback.hiddenPapers, key: { $0.id }, prefix: "hp/", entries: entries)
         for sc in scalars {
             if let e = entries["v/\(sc.name)"], e.present, let text = e.value { sc.write(&s, text) }
         }

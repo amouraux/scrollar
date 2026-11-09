@@ -926,6 +926,37 @@ final class AppModel {
 
     func dismissToast() { toast = nil }
 
+    // MARK: After the fact: what the thumbs count for
+
+    /// A thumb was changed from Tune (set to be ignored, taken back): the ranking follows at the next refresh.
+    func feedbackChanged() { needsRefresh = true }
+
+    func setIgnored(_ ignored: Bool, id: String, in kind: Feedback.Kind) {
+        settings.feedback.setIgnored(ignored, id: id, in: kind)
+        feedbackChanged()
+    }
+
+    func removeFeedback(id: String, in kind: Feedback.Kind) {
+        switch kind {
+        case .saved: settings.feedback.saved.removeAll { $0.id == id }
+        case .liked: settings.feedback.unlike(id)
+        case .hidden: settings.feedback.unhide(id: id)
+        }
+        feedbackChanged()
+    }
+
+    /// The papers in the feed now that are most like what the user put on the reading list or marked
+    /// For me, each with the one it is like, worked out here on the device with the same model that ranks.
+    func likedInfluence() async -> [Ranker.Influence.Pull] {
+        let entries = FeedBuilder.profile(settings, own: [], now: Date())
+        let papers = layout.all.map(\.paper)
+        let cached = store.loadEmbeddings()
+        return await Task.detached(priority: .userInitiated) {
+            let embedder = await TextEmbedders.best().map { CachingEmbedder($0, stored: cached) }
+            return Ranker.influence(papers, profile: entries, avoid: [], embedder: embedder, limit: 12).pulled
+        }.value
+    }
+
     // MARK: What the user does with a paper
 
     func status(of p: Paper) -> History.Status { history.status(of: p.dedupeKey) }

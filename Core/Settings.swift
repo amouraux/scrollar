@@ -141,8 +141,14 @@ struct SavedPaper: Codable, Hashable {
     /// reason as the two above; `SavedFilter.enriched` fills them in from the feed for older entries.
     var reasons: [String]?
     var followed: Bool?
+    /// When the user kept it (seconds since 1970); nil for what was kept before this was recorded,
+    /// which counts as inside any age limit. Only the order says how recent such a paper is.
+    var keptAt: Double?
+    /// The user said not to count it, without deleting it.
+    var ignored: Bool?
 
-    init(_ p: Paper) {
+    init(_ p: Paper, at: Date? = nil) {
+        keptAt = at?.timeIntervalSince1970
         id = p.dedupeKey
         title = p.title
         abstract = p.abstract
@@ -173,28 +179,52 @@ struct Feedback: Codable, Equatable {
     var liked: [SavedPaper] = []
     /// Hidden papers (dedupeKeys) never come back.
     var hidden: [String] = []
+    /// What a paper said when it was hidden, kept from the time this was added, so a hide can teach the
+    /// feed to lower similar papers. A paper hidden before then is only an id, and teaches nothing.
+    var hiddenPapers: [SavedPaper] = []
 
-    mutating func save(_ p: Paper) {
+    mutating func save(_ p: Paper, at: Date = Date()) {
         guard !saved.contains(where: { $0.id == p.dedupeKey }) else { return }
-        saved.append(SavedPaper(p))
+        saved.append(SavedPaper(p, at: at))
     }
 
     mutating func unsave(_ p: Paper) { saved.removeAll { $0.id == p.dedupeKey } }
 
     func isLiked(_ p: Paper) -> Bool { liked.contains { $0.id == p.dedupeKey } }
 
-    mutating func like(_ p: Paper) {
+    mutating func like(_ p: Paper, at: Date = Date()) {
         guard !isLiked(p) else { return }
-        liked.append(SavedPaper(p))
+        liked.append(SavedPaper(p, at: at))
     }
 
     mutating func unlike(_ id: String) { liked.removeAll { $0.id == id } }
 
-    mutating func hide(_ p: Paper) {
+    mutating func hide(_ p: Paper, at: Date = Date()) {
         if !hidden.contains(p.dedupeKey) { hidden.append(p.dedupeKey) }
+        if !hiddenPapers.contains(where: { $0.id == p.dedupeKey }) { hiddenPapers.append(SavedPaper(p, at: at)) }
     }
 
-    mutating func unhide(_ p: Paper) { hidden.removeAll { $0 == p.dedupeKey } }
+    mutating func unhide(_ p: Paper) { unhide(id: p.dedupeKey) }
+
+    /// The paper may be shown again, and what it taught is forgotten.
+    mutating func unhide(id: String) {
+        hidden.removeAll { $0 == id }
+        hiddenPapers.removeAll { $0.id == id }
+    }
+
+    /// Stop counting a paper, or count it again, without deleting it.
+    enum Kind { case saved, liked, hidden }
+
+    mutating func setIgnored(_ ignored: Bool, id: String, in kind: Kind) {
+        func mark(_ list: inout [SavedPaper]) {
+            if let i = list.firstIndex(where: { $0.id == id }) { list[i].ignored = ignored ? true : nil }
+        }
+        switch kind {
+        case .saved: mark(&saved)
+        case .liked: mark(&liked)
+        case .hidden: mark(&hiddenPapers)
+        }
+    }
 }
 
 struct FeedSettings: Codable, Equatable {
@@ -219,6 +249,19 @@ struct FeedSettings: Codable, Equatable {
     /// the preprint servers) needs nothing. Either can be switched off.
     var useOpenAlex = true
     var useEuropePMC = true
+
+    // MARK: What the thumbs count for
+    /// How many of the newest hides count (the newest counts fully, the oldest of them a quarter), and
+    /// how old one may be, in months (0 for no limit). A hide teaches the feed to lower similar papers.
+    var hideMemory = 100
+    var hideMaxAgeMonths = 6
+    /// The same for what the user added to the reading list or marked For me.
+    var likeMemory = 200
+    var likeMaxAgeMonths = 0
+    /// How hard a hide pushes (0 is off, 1 about as hard as closeness to your work pulls), and how much
+    /// the reading list and For me count beside the user's papers and library (1 is as counted so far).
+    var hideStrength = 0.5
+    var likeStrength = 1.0
 
     /// Learn what interests the user from the most recently added items of their Zotero library,
     /// as from the papers they save. The key is not a setting: it lives in the Keychain.
@@ -341,6 +384,12 @@ struct FeedSettings: Codable, Equatable {
         s.highlightAuthorH = d.highlightAuthorH
         s.dwellSeconds = d.dwellSeconds
         s.profileFilled = d.profileFilled
+        s.hideMemory = d.hideMemory
+        s.hideMaxAgeMonths = d.hideMaxAgeMonths
+        s.likeMemory = d.likeMemory
+        s.likeMaxAgeMonths = d.likeMaxAgeMonths
+        s.hideStrength = d.hideStrength
+        s.likeStrength = d.likeStrength
         // The library only changes how what is held is ranked, like a slider.
         s.useZotero = d.useZotero
         s.useLibraryFile = d.useLibraryFile
@@ -393,19 +442,21 @@ extension Weight {
 }
 
 extension Feedback {
-    enum CodingKeys: String, CodingKey { case saved, hidden, liked }
+    enum CodingKeys: String, CodingKey { case saved, hidden, liked, hiddenPapers }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         saved = (try? c.decodeIfPresent([SavedPaper].self, forKey: .saved)) ?? []
         liked = (try? c.decodeIfPresent([SavedPaper].self, forKey: .liked)) ?? []
         hidden = (try? c.decodeIfPresent([String].self, forKey: .hidden)) ?? []
+        hiddenPapers = (try? c.decodeIfPresent([SavedPaper].self, forKey: .hiddenPapers)) ?? []
     }
 }
 
 extension FeedSettings {
     enum CodingKeys: String, CodingKey {
         case formatVersion, orcid, profileOrcids, profileFilled, useMyPublications, useOpenAlex, useEuropePMC
+        case hideMemory, hideMaxAgeMonths, likeMemory, likeMaxAgeMonths, hideStrength, likeStrength
         case useZotero, useLibraryFile, zoteroRecent
         case followedTopics, followedJournals, followedAuthors, followedInstitutions
         case followedFunders, followedKeywords, trackedPapers, feedOrder, highlightCount, highlightCloseness, highlightImpact, highlightAuthorH, dwellSeconds
@@ -427,6 +478,12 @@ extension FeedSettings {
         useMyPublications = get(.useMyPublications, useMyPublications)
         useOpenAlex = get(.useOpenAlex, useOpenAlex)
         useEuropePMC = get(.useEuropePMC, useEuropePMC)
+        hideMemory = min(max(get(.hideMemory, hideMemory), 10), 500)
+        hideMaxAgeMonths = min(max(get(.hideMaxAgeMonths, hideMaxAgeMonths), 0), 36)
+        likeMemory = min(max(get(.likeMemory, likeMemory), 20), 1000)
+        likeMaxAgeMonths = min(max(get(.likeMaxAgeMonths, likeMaxAgeMonths), 0), 36)
+        hideStrength = min(max(get(.hideStrength, hideStrength), 0), 1)
+        likeStrength = min(max(get(.likeStrength, likeStrength), 0), 1)
         useZotero = get(.useZotero, useZotero)
         useLibraryFile = get(.useLibraryFile, useLibraryFile)
         zoteroRecent = min(max(get(.zoteroRecent, zoteroRecent), 10), 500)

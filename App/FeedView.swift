@@ -372,6 +372,7 @@ struct PaperCard: View {
                 if !people.isEmpty { byline }
                 if let highlight { highlightLine(highlight) }
                 if let why = Why.main(for: paper) { whyLine(why) }
+                if let hidden = paper.loweredBy { loweredLine(hidden) }
                 if expanded && !inReader { details.transition(.opacity) }
                 Divider()
                 actionBar
@@ -424,6 +425,13 @@ struct PaperCard: View {
         .foregroundStyle(why.isCitation ? Color.accentColor : Color.secondary)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Shown because: \(why.text)")
+    }
+
+    /// Said on the post, so a lowered paper is never lowered in silence.
+    private func loweredLine(_ title: String) -> some View {
+        Label("Lowered: like “\(title)”, which you hid", systemImage: "arrow.down.circle")
+            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            .accessibilityLabel("Lowered in the feed because it is like a paper you hid: \(title)")
     }
 
     private func toggle() {

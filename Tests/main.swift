@@ -1401,7 +1401,7 @@ check(FeedBuilder.profileTexts(fmSettings, own: []).contains { $0.hasPrefix("A p
 check(device(fmSettings, stamp: at(1)).apply(to: FeedSettings()).feedback.liked.map(\.id) == [fmPaper.dedupeKey], "for me: it syncs")
 fmFeedback.unlike(fmPaper.dedupeKey)
 check(!fmFeedback.isLiked(fmPaper) && (try? JSONDecoder().decode(Feedback.self, from: Data(#"{"saved":[],"hidden":[]}"#.utf8)))?.liked.isEmpty == true, "for me: it can be taken back, and a settings file from before it still loads")
-check(SyncDocument.currentFormat == 2, "sync: the format is raised, so an app that does not know the newer entries leaves the file alone instead of erasing them")
+check(SyncDocument.currentFormat == 3, "sync: the format is raised, so an app that does not know the newer entries leaves the file alone instead of erasing them")
 
 func keptPaper(_ id: String, _ reasons: [String], followed: Bool = true, age: Int = 3) -> SavedPaper {
     var p = paper(id, "Paper \(id)", age: age); p.reasons = reasons; p.followed = followed
@@ -1567,6 +1567,136 @@ check(pbReq.url?.host == "api.anthropic.com" && pbBody["system"] as? String == P
 check(RemoteSummary.request(pbConfig, title: "t", abstract: "a").httpBody == RemoteSummary.request(pbConfig, system: RemoteSummary.instructions, user: RemoteSummary.prompt(title: "t", abstract: "a")).httpBody, "project model: the takeaway request is the same as before the general one was made")
 ZoteroStub.answer = { _ in (200, [:], Data(#"{"content":[{"type":"text","text":"chronic pain\nEEG"}],"stop_reason":"end_turn"}"#.utf8)) }
 check((try? await RemoteSummary.answer(pbConfig, system: "s", user: "u", session: zSession)) == .some("chronic pain\nEEG"), "project model: the service's answer is read as text")
+
+// What the thumbs count for, and for how long.
+func kept(_ title: String, at date: Date? = nil, ignored: Bool = false) -> SavedPaper {
+    var s = SavedPaper(paper(title, title), at: date); s.ignored = ignored ? true : nil; return s
+}
+let fmWeights = FeedbackMemory.weights((1...5).map { kept("p\($0)") }, memory: 5, maxAgeMonths: 0, now: now)
+check(fmWeights.last == 1 && fmWeights.first! > 0.25 && fmWeights.first! < 0.5 && zip(fmWeights, fmWeights.dropFirst()).allSatisfy { $0 < $1 }, "memory: the newest counts fully, and each older one a little less, the oldest in the window about a quarter")
+let fmCut = FeedbackMemory.weights((1...8).map { kept("p\($0)") }, memory: 3, maxAgeMonths: 0, now: now)
+check(fmCut.prefix(5).allSatisfy { $0 == 0 } && fmCut.suffix(3).allSatisfy { $0 > 0 }, "memory: only the newest few count; the rest are out of the window")
+let fmDay = 86_400.0
+let fmDated = [kept("old", at: now.addingTimeInterval(-300 * fmDay)), kept("mid", at: now.addingTimeInterval(-100 * fmDay)),
+               kept("new", at: now.addingTimeInterval(-5 * fmDay)), kept("undated")]
+let fmAge = FeedbackMemory.weights(fmDated, memory: 10, maxAgeMonths: 6, now: now)
+check(fmAge[0] == 0 && fmAge[1] > 0 && fmAge[2] > 0 && fmAge[3] > 0, "memory: an age limit drops what is older, and a paper with no date is never dropped by it")
+check(FeedbackMemory.weights(fmDated, memory: 10, maxAgeMonths: 0, now: now).allSatisfy { $0 > 0 }, "memory: with no age limit none is dropped for age")
+let fmIgnore = FeedbackMemory.weights([kept("a"), kept("b", ignored: true), kept("c")], memory: 2, maxAgeMonths: 0, now: now)
+check(fmIgnore[1] == 0 && fmIgnore[0] > 0 && fmIgnore[2] == 1, "memory: an ignored paper counts for nothing and takes no place in the window")
+check(FeedbackMemory.weights([kept("a")], memory: 0, maxAgeMonths: 0, now: now) == [0], "memory: a window of nothing counts nothing")
+check(FeedbackMemory.standing(weight: 1, ignored: false) == "Counts fully" && FeedbackMemory.standing(weight: 0.3, ignored: false) == "Fading" && FeedbackMemory.standing(weight: 0, ignored: false) == "No longer counted" && FeedbackMemory.standing(weight: 1, ignored: true) == "Ignored", "memory: a paper's standing is said in words")
+
+var tfb = Feedback()
+let tfbPaper = paper("hid", "A paper about zebrafish tail regeneration")
+tfb.hide(tfbPaper, at: now)
+check(tfb.hidden == [tfbPaper.dedupeKey] && tfb.hiddenPapers.first?.title == tfbPaper.title && tfb.hiddenPapers.first?.keptAt == now.timeIntervalSince1970, "hide: the id is kept, and what the paper said, with when")
+tfb.hide(tfbPaper, at: now)
+check(tfb.hidden.count == 1 && tfb.hiddenPapers.count == 1, "hide: hiding twice keeps one")
+tfb.setIgnored(true, id: tfbPaper.dedupeKey, in: .hidden)
+check(tfb.hiddenPapers.first?.ignored == true, "hide: a paper can be set to be ignored")
+tfb.setIgnored(false, id: tfbPaper.dedupeKey, in: .hidden)
+check(tfb.hiddenPapers.first?.ignored == nil, "hide: and counted again")
+tfb.unhide(id: tfbPaper.dedupeKey)
+check(tfb.hidden.isEmpty && tfb.hiddenPapers.isEmpty, "hide: taking it back forgets the id and what it taught")
+check((try? JSONDecoder().decode(Feedback.self, from: Data(#"{"saved":[],"hidden":["doi:1"]}"#.utf8)))?.hiddenPapers.isEmpty == true, "hide: a file from before hides were kept with their text still loads")
+var tfbOld = Feedback(); tfbOld.save(paper("s", "Saved title"), at: now)
+check(tfbOld.saved.first?.keptAt != nil && (try? JSONDecoder().decode(SavedPaper.self, from: Data(#"{"id":"doi:1","title":"T","date":"2026-01-01"}"#.utf8)))?.keptAt == nil, "feedback: what is kept is dated from now on, and an entry from before still loads without a date")
+
+check(FeedSettings().hideMemory == 100 && FeedSettings().hideMaxAgeMonths == 6 && FeedSettings().likeMemory == 200 && FeedSettings().likeMaxAgeMonths == 0 && FeedSettings().hideStrength == 0.5 && FeedSettings().likeStrength == 1, "feedback settings: the defaults")
+let tfsDecoded = try! FeedSettings.decode(Data(#"{"hideMemory":99999,"likeMemory":1,"hideStrength":7,"likeStrength":-3,"hideMaxAgeMonths":500}"#.utf8))
+check(tfsDecoded.hideMemory == 500 && tfsDecoded.likeMemory == 20 && tfsDecoded.hideStrength == 1 && tfsDecoded.likeStrength == 0 && tfsDecoded.hideMaxAgeMonths == 36, "feedback settings: out-of-range values are brought back into range")
+var tfsMoved = FeedSettings(); tfsMoved.hideStrength = 1; tfsMoved.likeMemory = 50; tfsMoved.hideMaxAgeMonths = 12
+check(tfsMoved.forFetching == FeedSettings().forFetching && tfsMoved.forRanking != FeedSettings().forRanking, "feedback settings: moving them re-ranks and does not fetch again")
+
+// The profile with its weights, and what is avoided.
+var tps = FeedSettings(); tps.useMyPublications = false
+tps.feedback.save(paper("s1", "Saved paper one"), at: now.addingTimeInterval(-10 * fmDay))
+tps.feedback.like(paper("l1", "Liked paper two"), at: now.addingTimeInterval(-5 * fmDay))
+tps.feedback.save(paper("s2", "Saved paper three"), at: now)
+let tpsProfile = FeedBuilder.profile(tps, own: [], now: now)
+check(tpsProfile.map(\.title) == ["Saved paper one", "Liked paper two", "Saved paper three"] && tpsProfile.last?.weight == 1 && tpsProfile.first!.weight < 1, "profile: the reading list and For me are one pool, oldest first, the newest counting most")
+var tpsWeak = tps; tpsWeak.likeStrength = 0.5
+check(FeedBuilder.profile(tpsWeak, own: [], now: now).last?.weight == 0.5, "profile: the strength scales what the thumbs count for")
+tpsWeak.likeStrength = 0
+check(FeedBuilder.profile(tpsWeak, own: [], now: now).isEmpty, "profile: with the strength off the thumbs add nothing")
+var tpsLib = tps; tpsLib.useLibraryFile = true
+check(FeedBuilder.profile(tpsLib, own: [], library: ["from a library"], project: ["a project"], now: now).suffix(2).map(\.text) == ["from a library", "a project"] && FeedBuilder.profile(tpsLib, own: [], library: ["from a library"], project: ["a project"], now: now).suffix(2).allSatisfy { $0.weight == 1 && $0.title == nil }, "profile: a library and a project count fully and are not named as thumbs")
+var tpa = FeedSettings(); tpa.feedback.hide(paper("h1", "Hidden one"), at: now); tpa.feedback.hide(paper("h2", "Hidden two"), at: now.addingTimeInterval(-400 * fmDay))
+check(FeedBuilder.avoid(tpa, now: now).map(\.title) == ["Hidden one"], "avoid: a hide older than the age limit no longer counts")
+tpa.hideStrength = 0
+check(FeedBuilder.avoid(tpa, now: now).isEmpty, "avoid: with the strength off nothing is avoided")
+
+// Moving away from what was hidden.
+let zebra = "Zebrafish tail fin regeneration blastema signalling during larval development"
+func topicPapers(_ prefix: String, _ words: String, count: Int) -> [Paper] {
+    (0..<count).map { i in
+        var p = paper("\(prefix)\(i)", "\(words) study number \(i) \(["alpha", "beta", "gamma", "delta", "kappa"][i % 5])")
+        p.abstract = "\(words) measured in cohort \(i)"
+        return p
+    }
+}
+let tzCandidates = topicPapers("fish", "Zebrafish fin regeneration blastema", count: 6)
+    + topicPapers("pain", "Cortical responses to painful heat stimuli", count: 18)
+let tzProfile = [ProfileEntry(text: "Laser evoked potentials reveal cortical responses to painful heat stimuli", weight: 1, title: "Pain paper")]
+let tzHidden = [ProfileEntry(text: zebra, weight: 1, title: "A zebrafish paper")]
+let tzPlain = Ranker.rank(tzCandidates, profile: tzProfile, today: now)
+let tzAvoid = Ranker.rank(tzCandidates, profile: tzProfile, avoid: tzHidden, today: now)
+check(tzAvoid.filter { $0.paper.loweredBy != nil }.allSatisfy { $0.paper.id.hasPrefix("fish") } && tzAvoid.contains { $0.paper.loweredBy == "A zebrafish paper" }, "avoid: what is close to a hidden paper is lowered, and says which one it is close to")
+check(tzAvoid.filter { $0.paper.id.hasPrefix("pain") }.allSatisfy { $0.paper.loweredBy == nil }, "avoid: what is not close to the hidden paper is left alone")
+check(Set(tzAvoid.filter { $0.paper.loweredBy != nil }.map(\.paper.id)).count <= tzCandidates.count / 5 + 1, "avoid: only a few of the closest are lowered, so a hide cannot flatten a field")
+// Candidates with the same score may swap places between two runs (a dictionary is read in a different
+// order each time), so what is compared is each paper's own score.
+func scoresById(_ r: [RankedPaper]) -> [String: Double] { Dictionary(r.map { ($0.paper.id, $0.score) }, uniquingKeysWith: { a, _ in a }) }
+func sameScores(_ a: [RankedPaper], _ b: [RankedPaper]) -> Bool {
+    let (x, y) = (scoresById(a), scoresById(b))
+    return x.count == y.count && x.allSatisfy { abs($0.value - (y[$0.key] ?? .infinity)) < 1e-9 }
+}
+check(tzAvoid.count == tzPlain.count && sameScores(Ranker.rank(tzCandidates, profile: tzProfile, avoid: [], today: now), tzPlain), "avoid: with nothing hidden the ranking is what it was")
+var tzOff = FeedSettings(); tzOff.hideStrength = 0
+check(sameScores(Ranker.rank(tzCandidates, profile: tzProfile, avoid: tzHidden, settings: tzOff, today: now), tzPlain), "avoid: strength off leaves the ranking alone")
+var tzStrong = FeedSettings(); tzStrong.hideStrength = 1
+let tzMoved: (Double) -> Double = { strength in
+    var s = FeedSettings(); s.hideStrength = strength
+    let r = Ranker.rank(tzCandidates, profile: tzProfile, avoid: tzHidden, settings: s, today: now)
+    let base = Ranker.rank(tzCandidates, profile: tzProfile, today: now)
+    guard let first = r.first(where: { $0.paper.loweredBy != nil }), let before = base.first(where: { $0.paper.id == first.paper.id }) else { return 0 }
+    return before.score - first.score
+}
+check(tzMoved(1) > tzMoved(0.5) && tzMoved(0.5) > 0, "avoid: a stronger setting lowers by more")
+var tzFollowed = tzCandidates; for i in tzFollowed.indices where tzFollowed[i].id.hasPrefix("fish") { tzFollowed[i].followed = true }
+check(Ranker.rank(tzFollowed, profile: tzProfile, avoid: tzHidden, today: now).allSatisfy { $0.paper.loweredBy == nil }, "avoid: what the user follows is never lowered")
+var tzCites = tzCandidates; for i in tzCites.indices where tzCites[i].id.hasPrefix("fish") { tzCites[i].citesYou = true }
+check(Ranker.rank(tzCites, profile: tzProfile, avoid: tzHidden, today: now).allSatisfy { $0.paper.loweredBy == nil }, "avoid: what cites the user is never lowered")
+let tzWanted = tzProfile + [ProfileEntry(text: "Zebrafish fin regeneration blastema study measured in cohort", weight: 1, title: "I came to want this")]
+check(Ranker.rank(tzCandidates, profile: tzWanted, avoid: tzHidden, today: now).allSatisfy { $0.paper.loweredBy == nil }, "avoid: a field the user has since come to want is not lowered, however much of it was hidden once")
+let tzFewHide = Ranker.rank(Array(tzCandidates.prefix(8)), profile: tzProfile, avoid: tzHidden, today: now)
+check(tzFewHide.allSatisfy { $0.paper.loweredBy == nil }, "avoid: a feed too small to judge by is left alone")
+let tzOlder: (Double) -> Double = { weight in
+    let r = Ranker.rank(tzCandidates, profile: tzProfile, avoid: tzHidden.map { var e = $0; e.weight = weight; return e }, today: now)
+    let base = Ranker.rank(tzCandidates, profile: tzProfile, today: now)
+    return base.map(\.score).reduce(0, +) - r.map(\.score).reduce(0, +)
+}
+check(tzOlder(1) > tzOlder(0.25) && tzOlder(0.25) > 0 && tzOlder(0) == 0, "avoid: an older hide lowers by less, and one that counts for nothing lowers nothing")
+var tzStale = tzCandidates; tzStale[0].loweredBy = "an earlier ranking"
+check(Ranker.rank(tzStale, profile: tzProfile, today: now).allSatisfy { $0.paper.loweredBy == nil }, "avoid: a mark from an earlier ranking is not carried over")
+var tzFed = FeedSettings(); tzFed.useMyPublications = false
+tzFed.feedback.save(paper("pos", "Cortical responses to painful heat stimuli in volunteers"), at: now)
+tzFed.feedback.hide(paper("neg", zebra), at: now)
+let tzP = FeedBuilder.profile(tzFed, own: [], now: now), tzA = FeedBuilder.avoid(tzFed, now: now)
+let tzInfluence = Ranker.influence(tzCandidates, profile: tzP, avoid: tzA, embedder: nil)
+check(tzInfluence.pulled.first?.because == "Cortical responses to painful heat stimuli in volunteers" && tzInfluence.pulled.allSatisfy { $0.paper.id.hasPrefix("pain") }, "influence: the papers pulled up are those like what was liked, each naming the liked paper")
+check(!tzInfluence.pushed.isEmpty && tzInfluence.pushed.allSatisfy { $0.paper.id.hasPrefix("fish") && $0.because == zebra }, "influence: the papers pushed down are those like what was hidden, each naming the hidden paper")
+
+// Syncing it.
+var tsync = FeedSettings(); tsync.feedback.hide(paper("x", "Synced hidden paper"), at: now); tsync.hideStrength = 0.8; tsync.likeMemory = 60
+let tsyncBack = device(tsync, stamp: at(1)).apply(to: FeedSettings())
+check(tsyncBack.feedback.hiddenPapers.map(\.title) == ["Synced hidden paper"] && tsyncBack.hideStrength == 0.8 && tsyncBack.likeMemory == 60, "sync: what a hidden paper said, and how the thumbs count, reach the other device")
+var tsyncIgnored = tsync; tsyncIgnored.feedback.setIgnored(true, id: tsync.feedback.hiddenPapers[0].id, in: .hidden)
+check(device(tsyncIgnored, stamp: at(2)).apply(to: tsyncBack).feedback.hiddenPapers.first?.ignored == true, "sync: setting a paper to be ignored reaches the other device")
+var tsyncGone = tsync; tsyncGone.feedback.unhide(id: tsync.feedback.hiddenPapers[0].id)
+var tsyncDoc = device(tsync, stamp: at(1)); tsyncDoc.reconcile(tsyncGone, at: at(3))
+check(tsyncDoc.apply(to: tsync).feedback.hiddenPapers.isEmpty && tsyncDoc.apply(to: tsync).feedback.hidden.isEmpty, "sync: taking a hide back removes it, and what it taught, everywhere")
 
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)
