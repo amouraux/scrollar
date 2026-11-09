@@ -45,9 +45,22 @@ final class AppModel {
     var apiKey: String {
         didSet {
             guard apiKey != oldValue else { return }
-            Keychain.save(apiKey)
+            // Said on the Sources screen: a key the device would not keep is gone at the next launch.
+            keyProblem = Keychain.save(apiKey) ? nil : "This device would not keep the key, so it will be gone the next time the app opens. It is used until then."
             if oldValue.isEmpty { needsRefresh = true }
         }
+    }
+    /// Why the OpenAlex key was not kept, if it was not.
+    private(set) var keyProblem: String?
+
+    /// Where the key in use comes from, for the screen that shows it.
+    enum KeySource { case stored, environment, none }
+    var keySource: KeySource {
+        if !apiKey.isEmpty { return .stored }
+        #if DEBUG
+        if !(ProcessInfo.processInfo.environment["SCROLLAR_OPENALEX_KEY"] ?? "").isEmpty { return .environment }
+        #endif
+        return .none
     }
 
     private(set) var layout = Layout()
@@ -453,7 +466,9 @@ final class AppModel {
             throw RemoteSummaryError.unreadable
         }
         guard let data = try? JSONEncoder().encode(config) else { return }
-        Keychain.save(String(decoding: data, as: UTF8.self), service: Keychain.summaries)
+        if !Keychain.save(String(decoding: data, as: UTF8.self), service: Keychain.summaries) {
+            show("Set up, but this device would not keep the key: you will need to enter it again after the app is closed.", seconds: 15)
+        }
         remoteSummary = config
         summaryProblem = nil
         summaryFailures = []
@@ -732,7 +747,8 @@ final class AppModel {
     func connectZotero(key: String) async throws {
         let account = try await ZoteroClient.connect(key: key.trimmingCharacters(in: .whitespacesAndNewlines))
         guard let data = try? JSONEncoder().encode(account) else { return }
-        Keychain.save(String(decoding: data, as: UTF8.self), service: Keychain.zotero)
+        let kept = Keychain.save(String(decoding: data, as: UTF8.self), service: Keychain.zotero)
+        if !kept { show("Connected to Zotero, but this device would not keep the key: you will need to connect again after the app is closed.", seconds: 15) }
         zotero = account
         zoteroStatus = nil
         // Pasting a key is asking to use the library.

@@ -311,10 +311,7 @@ struct SourcesScreen: View {
                 Toggle("Europe PMC and PubMed", isOn: $model.settings.useEuropePMC)
                 Toggle("OpenAlex", isOn: $model.settings.useOpenAlex)
                 if model.settings.useOpenAlex {
-                    SecureField("OpenAlex key (free, optional)", text: $model.apiKey)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Link("Get a free key", destination: URL(string: "https://openalex.org/settings/api")!)
+                    OpenAlexKeyRows()
                 }
             } header: {
                 Text("Sources")
@@ -437,5 +434,57 @@ struct SyncBackupScreen: View {
         case .notABackup:
             restoreError = "That is not a Scrollar settings backup. The sync file and other files cannot be restored this way."
         }
+    }
+}
+
+/// The OpenAlex key, shown as what it is: stored or not, in use or not, and why not if it was refused.
+/// The key itself is never shown whole; its last four characters let the user tell which one it is.
+struct OpenAlexKeyRows: View {
+    @Environment(AppModel.self) private var model
+    @State private var draft = ""
+    @State private var replacing = false
+
+    private var masked: String {
+        String(repeating: "•", count: 8) + model.apiKey.suffix(4)
+    }
+
+    var body: some View {
+        switch model.keySource {
+        case .stored:
+            LabeledContent("Key", value: masked)
+            if replacing { entry } else {
+                Button("Replace key…") { replacing = true }
+                Button("Remove key", role: .destructive) { model.apiKey = "" }
+            }
+            status("Saved on this device and in use.", systemImage: "checkmark.circle.fill", color: .green)
+        case .environment:
+            status("A key from the development environment is in use. It is not saved.", systemImage: "info.circle", color: .secondary)
+            entry
+        case .none:
+            entry
+            status("No key: OpenAlex is skipped, and only the other sources answer.", systemImage: "exclamationmark.triangle.fill", color: .orange)
+        }
+        if let problem = model.keyProblem {
+            status(problem, systemImage: "xmark.octagon.fill", color: .red)
+        }
+    }
+
+    private var entry: some View {
+        Group {
+            SecureField("Paste your OpenAlex key", text: $draft)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Save key") {
+                model.apiKey = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                draft = ""
+                replacing = false
+            }
+            .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+            Link("Get a free key", destination: URL(string: "https://openalex.org/settings/api")!)
+        }
+    }
+
+    private func status(_ text: String, systemImage: String, color: Color) -> some View {
+        Label(text, systemImage: systemImage).font(.footnote).foregroundStyle(color)
     }
 }

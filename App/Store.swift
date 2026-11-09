@@ -24,13 +24,18 @@ enum Keychain {
         return String(decoding: data, as: UTF8.self)
     }
 
-    static func save(_ value: String, service: String = openAlex) {
+    /// Keep a value, and say whether it was kept: it is read back, because a device (a Mac build with
+    /// no provisioning profile, say) can refuse an item without anything else going wrong. Saving an
+    /// empty value removes the item and counts as kept.
+    @discardableResult
+    static func save(_ value: String, service: String = openAlex) -> Bool {
         SecItemDelete(query(service) as CFDictionary)
-        guard !value.isEmpty else { return }
+        guard !value.isEmpty else { return true }
         var q = query(service)
         q[kSecValueData as String] = Data(value.utf8)
         q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(q as CFDictionary, nil)
+        let status = SecItemAdd(q as CFDictionary, nil)
+        return status == errSecSuccess && load(service: service) == value
     }
 }
 

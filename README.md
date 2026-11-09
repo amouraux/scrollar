@@ -406,6 +406,18 @@ then Distribute App → App Store Connect → Upload in the Organizer (it needs 
 certificate). Use the same command with `-destination 'platform=macOS,variant=Mac Catalyst'` for the Mac.
 I archived both here to check the plist, the manifest and the entitlements; I did not upload.
 
+### The OpenAlex key, as the screen shows it
+
+Tune, Sources says what the key is doing instead of leaving a masked field to be read. With a key stored it shows the key's last
+four characters, Replace and Remove, and "Saved on this device and in use". With none, a field and Save key (the key is
+saved when Save key is pressed, not on every keystroke), and "No key: OpenAlex is skipped, and only the other sources answer",
+which is what happens when the OpenAlex switch is on and there is no key; the top screen then says "OpenAlex (no key)".
+Every save to the Keychain is read back, and a device that would not keep an item (a Mac build with no provisioning profile has
+no keychain access group) is told so, in red, for the OpenAlex key, and in a message for the Zotero and the Claude or ChatGPT keys,
+instead of the key being lost at the next launch without a word. A debug build in the simulator may use a key from the
+`SCROLLAR_OPENALEX_KEY` environment variable, and the screen says so. Tried on the iPhone simulator: no key, a key stored and shown
+masked, and removed. The refused-save message has not been seen, because no device here refused.
+
 ### Crossref and arXiv
 
 - **Crossref** (no key, `Core/Crossref.swift`): every DOI from every publisher. Asked **only when OpenAlex is off**, as
