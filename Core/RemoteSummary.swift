@@ -10,6 +10,9 @@ enum SummaryProvider: String, Codable, CaseIterable {
 
     var name: String { self == .anthropic ? "Claude" : "ChatGPT" }
 
+    /// Who runs it, which is who receives what is sent.
+    var company: String { self == .anthropic ? "Anthropic" : "OpenAI" }
+
     /// Anthropic's most capable current model is the default; the model is the user's to change
     /// (a smaller one costs far less per summary, and a summary is a small task).
     var defaultModel: String { self == .anthropic ? "claude-opus-5-5" : "gpt-4o-mini" }
@@ -63,8 +66,13 @@ enum RemoteSummary {
     }
 
     static func request(_ config: RemoteSummaryConfig, title: String, abstract: String) -> URLRequest {
+        request(config, system: instructions, user: prompt(title: title, abstract: abstract))
+    }
+
+    /// Any one question to the service the user set up: a brief and a message. The only two things
+    /// that leave the device are in it, so what is sent is what a test can read.
+    static func request(_ config: RemoteSummaryConfig, system: String, user: String) -> URLRequest {
         let model = config.modelOrDefault
-        let user = prompt(title: title, abstract: abstract)
         var r: URLRequest
         var body: [String: Any]
         switch config.provider {
@@ -75,14 +83,14 @@ enum RemoteSummary {
             // No temperature or top_p: current models reject them. The room is generous because a
             // model that thinks counts its thinking against it; the effort is low because this is a
             // summary of a paragraph.
-            body = ["model": model, "max_tokens": 4000, "system": instructions,
+            body = ["model": model, "max_tokens": 4000, "system": system,
                     "messages": [["role": "user", "content": user]]]
             if supportsEffort(model) { body["output_config"] = ["effort": "low"] }
         case .openai:
             r = URLRequest(url: URL(string: "https://api.openai.com/v1/chat/completions")!)
             r.setValue("Bearer " + config.key, forHTTPHeaderField: "Authorization")
             body = ["model": model, "max_completion_tokens": 2000,
-                    "messages": [["role": "system", "content": instructions], ["role": "user", "content": user]]]
+                    "messages": [["role": "system", "content": system], ["role": "user", "content": user]]]
         }
         r.httpMethod = "POST"
         r.timeoutInterval = 60
@@ -108,11 +116,11 @@ enum RemoteSummary {
         }
     }
 
-    /// One takeaway, cleaned and held to two sentences like the on-device one. nil when the model
-    /// declined; throws when the call failed, so the user can be told why nothing arrives.
-    static func takeaway(_ config: RemoteSummaryConfig, title: String, abstract: String,
-                         session: URLSession = .shared) async throws -> String? {
-        let (data, response) = try await session.data(for: request(config, title: title, abstract: abstract))
+    /// The text of the service's answer to one question, nil when it declined; throws when the call
+    /// failed, so the user can be told why.
+    static func answer(_ config: RemoteSummaryConfig, system: String, user: String,
+                       session: URLSession = .shared) async throws -> String? {
+        let (data, response) = try await session.data(for: request(config, system: system, user: user))
         guard let http = response as? HTTPURLResponse else { throw RemoteSummaryError.unreadable }
         switch http.statusCode {
         case 200..<300: break
@@ -120,8 +128,15 @@ enum RemoteSummary {
         case 429, 529: throw RemoteSummaryError.slowDown
         default: throw RemoteSummaryError.server(http.statusCode)
         }
-        guard let text = text(from: data, provider: config.provider) else { return nil }
-        return clean(text)
+        return text(from: data, provider: config.provider)
+    }
+
+    /// One takeaway, cleaned and held to two sentences like the on-device one. nil when the model
+    /// declined; throws when the call failed, so the user can be told why nothing arrives.
+    static func takeaway(_ config: RemoteSummaryConfig, title: String, abstract: String,
+                         session: URLSession = .shared) async throws -> String? {
+        try await answer(config, system: instructions, user: prompt(title: title, abstract: abstract), session: session)
+            .flatMap(clean)
     }
 
     static func clean(_ text: String) -> String? {

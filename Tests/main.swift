@@ -1535,5 +1535,38 @@ check((try? JSONDecoder().decode(ProjectFile.self, from: JSONEncoder().encode(pr
 let projSettings = FeedSettings()
 check(FeedBuilder.profileTexts(projSettings, own: [], project: ["a passage"]).contains("a passage") && !FeedBuilder.profileTexts(projSettings, own: []).contains("a passage"), "project: its passages join the profile as soon as one is pasted, with no switch")
 
+// Asking a model about the project: what is sent, and how its answer is read.
+let briefSmall = ProjectBrief.excerpt(proposal, limit: 5_000)
+check(!briefSmall.contains("Budget") || briefSmall.contains("Chronic pain affects"), "project model: the excerpt is passages of the text")
+check(!briefSmall.contains("https://") && !briefSmall.contains("1. Background") && !briefSmall.contains("References") && !briefSmall.contains("Smith J"), "project model: headings, links and the reference list are not sent")
+let briefBig = (1...200).map { "Paragraph \($0) is about how sleep spindles consolidate declarative memory in older adults with mild cognitive impairment." }.joined(separator: "\n\n")
+let briefCut = ProjectBrief.excerpt(briefBig, limit: 3_000)
+check(briefCut.count <= 3_000 && briefCut.contains("Paragraph 1 ") && !briefCut.isEmpty && briefCut.contains("Paragraph 1") && briefCut.range(of: "Paragraph 1[0-9]{2} ", options: .regularExpression) != nil, "project model: a long text is thinned evenly to the limit, from beginning to end, not cut off")
+check(ProjectBrief.excerpt("too short", limit: 3_000).isEmpty && ProjectBrief.prompt("X").hasSuffix("X"), "project model: nothing is sent for a text with no passages")
+let briefAnswer = """
+Here are the search phrases:
+1. Transcranial magnetic stimulation
+- "chronic pain"
+* EEG
+• alpha oscillations.
+descending pain modulation system
+The project looks at how stimulation relieves pain in many patients over three years.
+chronic pain
+neuropathic pain
+"""
+let briefWords = ProjectBrief.keywords(from: briefAnswer, in: proposal)
+check(briefWords.map(\.phrase) == ["transcranial magnetic stimulation", "chronic pain", "EEG", "alpha oscillations", "descending pain modulation system", "neuropathic pain"], "project model: a list is read through its bullets, numbers and quotes; an introduction, a sentence and a repeat are left out")
+check(briefWords.first { $0.phrase == "chronic pain" }?.count == 4 && briefWords.first { $0.phrase == "neuropathic pain" }?.count == 1 && ProjectBrief.keywords(from: "heschl gyrus", in: proposal).first?.count == 0, "project model: each phrase says how often the text uses it, and zero for one the model supplied")
+check(briefWords.filter(\.selected).allSatisfy { $0.words > 1 } && !(briefWords.first { $0.phrase == "EEG" }?.selected ?? true) && briefWords.filter(\.selected).count <= 8, "project model: phrases of several words are ticked, a single word is not")
+check(ProjectBrief.keywords(from: "EEG recordings\nfMRI\nNeural Networks", in: "").map(\.phrase) == ["EEG recordings", "fMRI", "neural networks"], "project model: an acronym keeps its capitals, alone or in a phrase, and other words are lowercased")
+check(ProjectBrief.keywords(from: "", in: proposal).isEmpty && ProjectBrief.keywords(from: (1...30).map { "phrase number \($0)" }.joined(separator: "\n"), in: "").count == 12, "project model: an empty answer gives nothing, and a long one is held to twelve")
+let pbConfig = RemoteSummaryConfig(provider: .anthropic, key: "SECRET", model: "")
+let pbReq = RemoteSummary.request(pbConfig, system: ProjectBrief.instructions, user: ProjectBrief.prompt("The excerpt."))
+let pbBody = (try! JSONSerialization.jsonObject(with: pbReq.httpBody!)) as! [String: Any]
+check(pbReq.url?.host == "api.anthropic.com" && pbBody["system"] as? String == ProjectBrief.instructions && String(decoding: pbReq.httpBody!, as: UTF8.self).contains("The excerpt.") && !String(decoding: pbReq.httpBody!, as: UTF8.self).contains("SECRET"), "project model: the brief and the excerpt are all that is sent to Claude, and the key is only in a header")
+check(RemoteSummary.request(pbConfig, title: "t", abstract: "a").httpBody == RemoteSummary.request(pbConfig, system: RemoteSummary.instructions, user: RemoteSummary.prompt(title: "t", abstract: "a")).httpBody, "project model: the takeaway request is the same as before the general one was made")
+ZoteroStub.answer = { _ in (200, [:], Data(#"{"content":[{"type":"text","text":"chronic pain\nEEG"}],"stop_reason":"end_turn"}"#.utf8)) }
+check((try? await RemoteSummary.answer(pbConfig, system: "s", user: "u", session: zSession)) == .some("chronic pain\nEEG"), "project model: the service's answer is read as text")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

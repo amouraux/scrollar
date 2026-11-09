@@ -487,6 +487,33 @@ file, because a proposal may be confidential. Replacing or removing it re-ranks 
 Not tried: a proposal in another language than English (the stop words and the sentence model are English),
 and the real proposals of anyone but the sample in the tests.
 
+### Asking a language model
+
+Counting cannot tell a topic from a frequent phrase, so **Suggested keywords** can also ask a language model
+(`Core/ProjectBrief.swift`, tested; the calls are in `App/ProjectAI.swift`). It is only ever on request, and
+nothing is asked or sent when the sheet opens.
+
+- **Apple's on-device model**, where the device has one: it reads an excerpt of about 5,000 characters on the
+  device, nothing is sent anywhere (it is the on-device model, never Private Cloud Compute), and the answer is
+  read as a list of phrases. Tried on the iPhone simulator, where it answered with sensible phrases.
+- **Claude or ChatGPT**, if the user set up their own key under Summaries: the same brief, with an excerpt of up
+  to 14,000 characters. Before anything is sent, a screen says that it leaves the device, who receives it
+  (Anthropic or OpenAI, under the terms of the user's own account), that the developer receives nothing, and
+  that names in the passages are not removed; it shows the exact text and the Send button names the company.
+  It is asked every time and nothing is remembered. Not tried against the real services: the request and the
+  reading of the answer are tested against a stub.
+
+What goes is the excerpt: passages of the text, evenly spread, without headings, tables, links or reference
+lists, plus the instructions that ask for keywords and, for a service, the key in a header. A phrase from a model
+is shown with how often the user's own text uses it, and "not in your text" when it supplied the term, so a
+suggestion is never taken for a quotation. Phrases of several words are ticked; the user chooses.
+
+Why it is built this way for the App Store: Apple's guideline 5.1.2(i) asks an app to say where personal data
+goes when it is shared with a third-party AI and to get permission first, so the consent is per use and shows the
+data, not a setting that is on once. The privacy policy names the case, and the optional key and the screen mean
+the feature is absent until the user sets it up. Whether this changes the App Privacy answers is for the account
+holder to decide: the developer receives nothing, the user's own account does the sending.
+
 ## Zotero
 
 Tune, Zotero library connects an account with an API key made at zotero.org/settings/keys. The

@@ -928,7 +928,7 @@ struct SummariesSection: View {
         } header: {
             Text("Summaries and matching")
         } footer: {
-            Text("Matching uses a text model on this device: Apple's sentence model where it has one, otherwise its contextual model, which is fetched once and does not need Apple Intelligence; with neither, words alone. A key is not a chat subscription: it is a separate, pay-per-use account of your own (Claude or OpenAI). When it is set up, the title and abstract of a paper that stays on screen are sent to that service, and nothing else. Each takeaway costs a fraction of a cent to a cent or two, depending on the model: a smaller one costs far less, and Claude Haiku (claude-haiku-5-5) is the cheapest Claude. At most \(Summarizer.remoteLimit) are written per launch, and each is kept, so a paper is never asked for twice. The key stays in this device's Keychain and is sent only to that service. A device that has Apple's model uses it instead and sends nothing.")
+            Text("Matching uses a text model on this device: Apple's sentence model where it has one, otherwise its contextual model, which is fetched once and does not need Apple Intelligence; with neither, words alone. A key is not a chat subscription: it is a separate, pay-per-use account of your own (Claude or OpenAI). When it is set up, the title and abstract of a paper that stays on screen are sent to that service, and nothing else, except that you can also ask it to suggest keywords from a project you pasted (under Your project): then an excerpt of the project is sent, after a warning that shows exactly what goes, each time you ask. Each takeaway costs a fraction of a cent to a cent or two, depending on the model: a smaller one costs far less, and Claude Haiku (claude-haiku-5-5) is the cheapest Claude. At most \(Summarizer.remoteLimit) are written per launch, and each is kept, so a paper is never asked for twice. The key stays in this device's Keychain and is sent only to that service. A device that has Apple's model uses it instead and sends nothing.")
         }
     }
 
@@ -1037,7 +1037,7 @@ struct ProjectSection: View {
         Section {
             if let project = appModel.project {
                 LabeledContent("Using", value: project.name)
-                Text("\(ProjectText.wordCount(project.text)) words, \(ProjectText.passages(project.text).count) passages read, pasted \(pasted(project.addedAt)).")
+                Text("\(ProjectText.wordCount(project.text)) words, \(passageCount(project.text)) read, pasted \(pasted(project.addedAt)).")
                     .font(.footnote).foregroundStyle(.secondary)
                 Button("Suggest keywords from it…") { suggesting = true }
                 Button("Replace it…") { pasting = true }
@@ -1049,7 +1049,7 @@ struct ProjectSection: View {
         } header: {
             Text("Your project")
         } footer: {
-            Text("Paste a grant proposal, a thesis plan or an abstract: what you are about to work on, before there are papers to show it. Papers close to it rank higher, and it can suggest keywords to follow, which you choose from a list. It is read on this device and kept only here: it is not synced, not sent to any service, and not in the settings file you can export. Only a keyword you choose to follow is searched, like any other.")
+            Text("Paste a grant proposal, a thesis plan or an abstract: what you are about to work on, before there are papers to show it. Papers close to it rank higher, and it can suggest keywords to follow, which you choose from a list. It is read on this device and kept only here: it is not synced and not in the settings file you can export. It is sent to no service unless you ask Claude or ChatGPT, with your own key, to suggest keywords, and then only after a warning that shows exactly what goes. Apple's on-device model, where the device has one, reads it without sending anything. Only a keyword you choose to follow is searched, like any other.")
         }
         .sheet(isPresented: $pasting) {
             PasteProjectSheet { text in
@@ -1064,6 +1064,11 @@ struct ProjectSection: View {
             }
         }
         .sheet(isPresented: $suggesting) { ProjectKeywordsSheet() }
+    }
+
+    private func passageCount(_ text: String) -> String {
+        let n = ProjectText.passages(text).count
+        return n == 1 ? "1 passage" : "\(n) passages"
     }
 
     private func pasted(_ iso: String) -> String {
@@ -1128,36 +1133,61 @@ struct PasteProjectSheet: View {
     }
 }
 
-/// What the project keeps returning to, to choose from. Nothing is searched until it is added; the
-/// phrases come from the text on this device, and are not sent anywhere before the choice.
+/// What the project is about, as phrases to follow, to choose from: counted in the text on this
+/// device, or suggested by a language model when the user asks. Nothing is searched until it is added.
 struct ProjectKeywordsSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @State private var found: [ProjectKeyword] = []
+    @State private var counted: [ProjectKeyword] = []
+    @State private var asked: [ProjectKeyword] = []
+    @State private var askedBy: String?
+    @State private var working = false
+    @State private var problem: String?
     @State private var chosen: Set<String> = []
+    @State private var confirming = false
     @State private var loaded = false
+
+    private var text: String { model.project?.text ?? "" }
+
+    private func fresh(_ words: [ProjectKeyword]) -> [ProjectKeyword] {
+        words.filter { k in !model.settings.followedKeywords.contains { $0.phrase.lowercased() == k.id } }
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                if loaded && found.isEmpty {
+                askSection
+                if !asked.isEmpty {
+                    Section {
+                        ForEach(asked) { row($0, suggested: true) }
+                    } header: {
+                        Text("Suggested by \(askedBy ?? "the model")")
+                    } footer: {
+                        Text("A language model can be wrong, and can suggest what the text never says: the count is how often your text uses it.")
+                    }
+                }
+                if loaded && counted.isEmpty && asked.isEmpty {
                     ContentUnavailableView("No repeated phrases", systemImage: "text.magnifyingglass",
                                            description: Text("The project does not return to any phrase often enough to suggest it. Add keywords by hand under Follow."))
-                } else {
+                }
+                let phrases = counted.filter { $0.words > 1 }
+                if !phrases.isEmpty {
                     Section {
-                        Text("Phrases the project returns to, most often first. A keyword is searched in titles and abstracts and listed in full, so a broad one lists a great deal: leave out what is too general. You can narrow one afterwards, under Follow, Keywords.")
-                            .font(.footnote).foregroundStyle(.secondary)
+                        ForEach(phrases) { row($0, suggested: false) }
+                    } header: {
+                        Text("Counted in your text")
+                    } footer: {
+                        Text("A keyword is searched in titles and abstracts and listed in full, so a broad one lists a great deal: leave out what is too general. You can narrow one afterwards, under Follow, Keywords.")
                     }
-                    Section("Phrases") { ForEach(found.filter { $0.words > 1 }) { row($0) } }
-                    let singles = found.filter { $0.words == 1 }
-                    if !singles.isEmpty {
-                        Section {
-                            ForEach(singles) { row($0) }
-                        } header: {
-                            Text("Single words")
-                        } footer: {
-                            Text("A word on its own is searched everywhere it appears, so none is ticked.")
-                        }
+                }
+                let singles = counted.filter { $0.words == 1 }
+                if !singles.isEmpty {
+                    Section {
+                        ForEach(singles) { row($0, suggested: false) }
+                    } header: {
+                        Text("Single words")
+                    } footer: {
+                        Text("A word on its own is searched everywhere it appears, so none is ticked.")
                     }
                 }
             }
@@ -1167,24 +1197,77 @@ struct ProjectKeywordsSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add \(chosen.count)") {
-                        model.followKeywords(found.filter { chosen.contains($0.id) }.map(\.phrase))
+                        let all = asked + counted
+                        var seen: Set<String> = []
+                        model.followKeywords(all.filter { chosen.contains($0.id) && seen.insert($0.id).inserted }.map(\.phrase))
                         dismiss()
                     }
                     .disabled(chosen.isEmpty)
                 }
             }
             .task {
-                let text = model.project?.text ?? ""
-                found = ProjectText.keywords(text).filter { k in
-                    !model.settings.followedKeywords.contains { $0.phrase.lowercased() == k.id }
-                }
-                chosen = Set(found.filter(\.selected).map(\.id))
+                counted = fresh(ProjectText.keywords(text))
+                chosen = Set(counted.filter(\.selected).map(\.id))
                 loaded = true
+            }
+            .sheet(isPresented: $confirming) {
+                if let config = model.remoteSummary {
+                    SendProjectSheet(config: config, excerpt: ProjectAI.excerpt(for: .service(config), text: text)) { excerpt in
+                        ask(.service(config), excerpt: excerpt)
+                    }
+                }
             }
         }
     }
 
-    private func row(_ k: ProjectKeyword) -> some View {
+    @ViewBuilder private var askSection: some View {
+        Section {
+            if ProjectAI.onDeviceAvailable {
+                Button { ask(.onDevice, excerpt: "") } label: { Label("Ask Apple's on-device model", systemImage: "sparkles") }
+                    .disabled(working)
+            }
+            if let config = model.remoteSummary {
+                Button { confirming = true } label: { Label("Ask \(config.provider.name)…", systemImage: "arrow.up.forward.app") }
+                    .disabled(working)
+            }
+            if !ProjectAI.onDeviceAvailable && model.remoteSummary == nil {
+                Text("A language model can suggest better phrases than counting. This device has no Apple on-device model: set up your own Claude or ChatGPT key under Summaries in Tune to use one of those.")
+                    .foregroundStyle(.secondary)
+            }
+            if working { HStack { ProgressView(); Text("Reading your project…").foregroundStyle(.secondary) } }
+            if let problem { Text(problem).font(.footnote).foregroundStyle(.red) }
+        } header: {
+            Text("Ask a language model")
+        } footer: {
+            VStack(alignment: .leading, spacing: 6) {
+                if ProjectAI.onDeviceAvailable {
+                    Text("Apple's model runs on this device. It reads about \(ProjectText.wordCount(ProjectAI.excerpt(for: .onDevice, text: text))) words of your project and nothing is sent anywhere, not even to Apple.")
+                }
+                if let config = model.remoteSummary {
+                    Text("\(config.provider.name) is run by \(config.provider.company). Asking sends part of your project to them, with your key, after showing you exactly what. Nothing is sent unless you ask, and you are asked each time.")
+                }
+            }
+        }
+    }
+
+    private func ask(_ route: ProjectAI.Route, excerpt: String) {
+        working = true
+        problem = nil
+        let source = text
+        Task {
+            do {
+                let found = try await ProjectAI.ask(route, excerpt: excerpt, text: source)
+                asked = fresh(found)
+                askedBy = route.name
+                chosen.formUnion(asked.filter(\.selected).map(\.id))
+            } catch {
+                problem = error.localizedDescription
+            }
+            working = false
+        }
+    }
+
+    private func row(_ k: ProjectKeyword, suggested: Bool) -> some View {
         Button {
             if chosen.contains(k.id) { chosen.remove(k.id) } else { chosen.insert(k.id) }
         } label: {
@@ -1193,11 +1276,51 @@ struct ProjectKeywordsSheet: View {
                     .foregroundStyle(chosen.contains(k.id) ? Color.accentColor : Color.secondary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(k.phrase).foregroundStyle(.primary)
-                    Text("\(k.count) times").font(.caption).foregroundStyle(.secondary)
+                    Text(k.count == 0 ? "not in your text" : k.count == 1 ? "1 time in your text" : "\(k.count) times in your text")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// The screen between "Ask Claude" and the request: what leaves the device, who gets it, and the
+/// text itself. Asked every time; nothing is remembered.
+struct SendProjectSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let config: RemoteSummaryConfig
+    let excerpt: String
+    let send: (String) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Label("This leaves your device", systemImage: "exclamationmark.triangle.fill")
+                        .font(.headline).foregroundStyle(.orange)
+                    Text("Part of your project description will be sent over the internet to \(config.provider.company) (\(config.provider.name)), using your own key. \(config.provider.company) processes it under the terms of your account with them; check them if the text is confidential.")
+                    Text("The developer of Scrollar receives nothing. Only the text below is sent, with the instructions that ask for keywords, and your key. Headings, tables, links and reference lists are left out, but names and anything else in these passages are not. Do not send text you may not share with a service like this, such as a confidential proposal or someone else's data.")
+                        .foregroundStyle(.secondary)
+                }
+                Section {
+                    DisclosureGroup("Show exactly what will be sent (\(ProjectText.wordCount(excerpt)) words)") {
+                        Text(excerpt).font(.footnote).textSelection(.enabled)
+                    }
+                }
+                Section {
+                    Button("Send to \(config.provider.company)") { send(excerpt); dismiss() }
+                        .fontWeight(.semibold)
+                        .disabled(excerpt.isEmpty)
+                    Button("Cancel", role: .cancel) { dismiss() }
+                } footer: {
+                    Text("You are asked each time. Counting phrases in the text, or asking Apple's on-device model, sends nothing.")
+                }
+            }
+            .navigationTitle("Send to \(config.provider.name)?")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.large])
     }
 }
 
