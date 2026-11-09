@@ -212,6 +212,21 @@ struct Feedback: Codable, Equatable {
         hiddenPapers.removeAll { $0.id == id }
     }
 
+    /// Give the papers kept before dates were recorded today's date, so that they begin to fade from now.
+    /// Only those with no date are touched. True if any was.
+    @discardableResult
+    mutating func stampUndated(_ at: Date) -> Bool {
+        var changed = false
+        func stamp(_ list: inout [SavedPaper]) {
+            for i in list.indices where list[i].keptAt == nil {
+                list[i].keptAt = at.timeIntervalSince1970
+                changed = true
+            }
+        }
+        stamp(&saved); stamp(&liked); stamp(&hiddenPapers)
+        return changed
+    }
+
     /// Stop counting a paper, or count it again, without deleting it.
     enum Kind { case saved, liked, hidden }
 
@@ -256,12 +271,12 @@ struct FeedSettings: Codable, Equatable {
 
     // MARK: What the thumbs count for
     /// How many of the newest hides count (the newest counts fully, the oldest of them a quarter), and
-    /// how old one may be, in months (0 for no limit). A hide teaches the feed to lower similar papers.
+    /// in how many months a hide's weight halves (0 for never). A hide teaches the feed to lower similar papers.
     var hideMemory = 100
-    var hideMaxAgeMonths = 6
+    var hideHalfLifeMonths = 6
     /// The same for what the user added to the reading list or marked For me.
     var likeMemory = 200
-    var likeMaxAgeMonths = 0
+    var likeHalfLifeMonths = 0
     /// How hard a hide pushes (0 is off, 1 about as hard as closeness to your work pulls), and how much
     /// the reading list and For me count beside the user's papers and library (1 is as counted so far).
     var hideStrength = 0.5
@@ -389,9 +404,9 @@ struct FeedSettings: Codable, Equatable {
         s.dwellSeconds = d.dwellSeconds
         s.profileFilled = d.profileFilled
         s.hideMemory = d.hideMemory
-        s.hideMaxAgeMonths = d.hideMaxAgeMonths
+        s.hideHalfLifeMonths = d.hideHalfLifeMonths
         s.likeMemory = d.likeMemory
-        s.likeMaxAgeMonths = d.likeMaxAgeMonths
+        s.likeHalfLifeMonths = d.likeHalfLifeMonths
         s.hideStrength = d.hideStrength
         s.likeStrength = d.likeStrength
         // The library only changes how what is held is ranked, like a slider.
@@ -460,7 +475,7 @@ extension Feedback {
 extension FeedSettings {
     enum CodingKeys: String, CodingKey {
         case formatVersion, orcid, profileOrcids, profileFilled, useMyPublications, useOpenAlex, useEuropePMC
-        case hideMemory, hideMaxAgeMonths, likeMemory, likeMaxAgeMonths, hideStrength, likeStrength
+        case hideMemory, hideHalfLifeMonths, likeMemory, likeHalfLifeMonths, hideStrength, likeStrength
         case useCrossref, useArXiv
         case useZotero, useLibraryFile, zoteroRecent
         case followedTopics, followedJournals, followedAuthors, followedInstitutions
@@ -486,9 +501,9 @@ extension FeedSettings {
         useCrossref = get(.useCrossref, useCrossref)
         useArXiv = get(.useArXiv, useArXiv)
         hideMemory = min(max(get(.hideMemory, hideMemory), 10), 500)
-        hideMaxAgeMonths = min(max(get(.hideMaxAgeMonths, hideMaxAgeMonths), 0), 36)
+        hideHalfLifeMonths = min(max(get(.hideHalfLifeMonths, hideHalfLifeMonths), 0), 36)
         likeMemory = min(max(get(.likeMemory, likeMemory), 20), 1000)
-        likeMaxAgeMonths = min(max(get(.likeMaxAgeMonths, likeMaxAgeMonths), 0), 36)
+        likeHalfLifeMonths = min(max(get(.likeHalfLifeMonths, likeHalfLifeMonths), 0), 36)
         hideStrength = min(max(get(.hideStrength, hideStrength), 0), 1)
         likeStrength = min(max(get(.likeStrength, likeStrength), 0), 1)
         useZotero = get(.useZotero, useZotero)

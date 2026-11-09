@@ -187,8 +187,8 @@ enum SyncProjection {
         scalar("highlightCloseness", \.highlightCloseness), scalar("highlightImpact", \.highlightImpact),
         scalar("highlightAuthorH", \.highlightAuthorH), scalar("profileFilled", \.profileFilled),
         scalar("dwellSeconds", \.dwellSeconds), scalar("useZotero", \.useZotero), scalar("useLibraryFile", \.useLibraryFile), scalar("zoteroRecent", \.zoteroRecent),
-        scalar("hideMemory", \.hideMemory), scalar("hideMaxAgeMonths", \.hideMaxAgeMonths),
-        scalar("likeMemory", \.likeMemory), scalar("likeMaxAgeMonths", \.likeMaxAgeMonths),
+        scalar("hideMemory", \.hideMemory), scalar("hideHalfLifeMonths", \.hideHalfLifeMonths),
+        scalar("likeMemory", \.likeMemory), scalar("likeHalfLifeMonths", \.likeHalfLifeMonths),
         scalar("hideStrength", \.hideStrength), scalar("likeStrength", \.likeStrength),
     ]
 

@@ -612,13 +612,14 @@ is like the hidden paper. The rules are in `Core/FeedbackMemory.swift` (tested),
 
 - **Pull.** The title and abstract of each paper on the reading list or marked For me join the profile, as before. They are
   counted as one pool, newest first. Only the newest 200 count (the newest in full, the oldest of those a quarter as much,
-  by position, so no date is needed), a paper older than an age limit (off by default) drops out, and a strength setting
-  scales them against the user's own papers and library.
+  by position), a paper can also lose half its weight every 3, 6, 12 or 24 months (never, by default), and drops out when it
+  has faded to a few percent; a strength setting scales them against the user's own papers and library. A paper kept before
+  dates were recorded is dated the first time the app opens, so it begins to fade from that day.
 - **Push.** A hidden paper keeps its title and abstract with the date (`feedback.hiddenPapers`; the ids in `feedback.hidden`
   are unchanged, so an older app still hides). Each candidate is compared with them by the same two measures as everything
   else, but on one raw scale, so that "closer to what was hidden than to anything the user wants" can be told. Only a paper
   that is, and is also among the closest tenth of the feed to what was hidden, is lowered, by up to 1.0 at the default
-  strength (the whole range of closeness is 4), less for an older hide. A hide counts for the newest 100, within 6 months.
+  strength (the whole range of closeness is 4), less for an older hide. A hide counts for the newest 100, and halves in weight every 6 months by default.
   What the user follows, and what cites their work, is never lowered. A paper hidden before this existed is only an id and
   teaches nothing. The post says "Lowered: like “…”, which you hid".
 - **Seeing it.** Your feedback lists every paper with when it was kept and how much it still counts ("Counts fully", "Counts

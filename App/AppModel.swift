@@ -208,6 +208,9 @@ final class AppModel {
         syncStatus = syncFile == nil ? .off : .idle(nil)
         rearrange()
         if let remote = remoteSummary { Task { await Summarizer.shared.configure(remote: remote) } }
+        // Papers kept before dates were recorded begin to fade from today, as any that were kept now would.
+        // Saved at once: no observer runs inside init, and dating again at each launch would never let them age.
+        if settings.feedback.stampUndated(Date()) { store.saveSettings(settings) }
         PDFCache.savedKeys = { [weak self] in
             guard let f = self?.settings.feedback else { return [] }
             return f.saved.map(\.id) + f.liked.map(\.id)

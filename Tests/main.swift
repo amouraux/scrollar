@@ -1572,19 +1572,29 @@ check((try? await RemoteSummary.answer(pbConfig, system: "s", user: "u", session
 func kept(_ title: String, at date: Date? = nil, ignored: Bool = false) -> SavedPaper {
     var s = SavedPaper(paper(title, title), at: date); s.ignored = ignored ? true : nil; return s
 }
-let fmWeights = FeedbackMemory.weights((1...5).map { kept("p\($0)") }, memory: 5, maxAgeMonths: 0, now: now)
+let fmWeights = FeedbackMemory.weights((1...5).map { kept("p\($0)") }, memory: 5, halfLifeMonths: 0, now: now)
 check(fmWeights.last == 1 && fmWeights.first! > 0.25 && fmWeights.first! < 0.5 && zip(fmWeights, fmWeights.dropFirst()).allSatisfy { $0 < $1 }, "memory: the newest counts fully, and each older one a little less, the oldest in the window about a quarter")
-let fmCut = FeedbackMemory.weights((1...8).map { kept("p\($0)") }, memory: 3, maxAgeMonths: 0, now: now)
+let fmCut = FeedbackMemory.weights((1...8).map { kept("p\($0)") }, memory: 3, halfLifeMonths: 0, now: now)
 check(fmCut.prefix(5).allSatisfy { $0 == 0 } && fmCut.suffix(3).allSatisfy { $0 > 0 }, "memory: only the newest few count; the rest are out of the window")
 let fmDay = 86_400.0
-let fmDated = [kept("old", at: now.addingTimeInterval(-300 * fmDay)), kept("mid", at: now.addingTimeInterval(-100 * fmDay)),
-               kept("new", at: now.addingTimeInterval(-5 * fmDay)), kept("undated")]
-let fmAge = FeedbackMemory.weights(fmDated, memory: 10, maxAgeMonths: 6, now: now)
-check(fmAge[0] == 0 && fmAge[1] > 0 && fmAge[2] > 0 && fmAge[3] > 0, "memory: an age limit drops what is older, and a paper with no date is never dropped by it")
-check(FeedbackMemory.weights(fmDated, memory: 10, maxAgeMonths: 0, now: now).allSatisfy { $0 > 0 }, "memory: with no age limit none is dropped for age")
-let fmIgnore = FeedbackMemory.weights([kept("a"), kept("b", ignored: true), kept("c")], memory: 2, maxAgeMonths: 0, now: now)
+let fmHalf = 6 * 30.4375 * fmDay
+let fmDated = [kept("old", at: now.addingTimeInterval(-5 * fmHalf)), kept("mid", at: now.addingTimeInterval(-fmHalf)),
+               kept("new", at: now), kept("undated")]
+let fmAge = FeedbackMemory.weights(fmDated, memory: 10, halfLifeMonths: 6, now: now)
+check(fmAge[0] == 0 && fmAge[1] > 0 && fmAge[2] > fmAge[1], "memory: a paper faded to a few percent counts for nothing, and an older one counts less than a newer one")
+let fmOne = FeedbackMemory.weights([kept("a", at: now.addingTimeInterval(-fmHalf)), kept("b", at: now.addingTimeInterval(-fmHalf))], memory: 10, halfLifeMonths: 6, now: now)
+let fmNone = FeedbackMemory.weights([kept("a", at: now.addingTimeInterval(-fmHalf)), kept("b", at: now.addingTimeInterval(-fmHalf))], memory: 10, halfLifeMonths: 0, now: now)
+check(abs(fmOne[1] / fmNone[1] - 0.5) < 1e-9 && abs(fmOne[0] / fmNone[0] - 0.5) < 1e-9, "memory: a paper one half-life old counts half as much as the same paper without a fade")
+check(fmAge[3] == FeedbackMemory.weights(fmDated, memory: 10, halfLifeMonths: 0, now: now)[3], "memory: a paper with no date does not fade")
+check(FeedbackMemory.weights(fmDated, memory: 10, halfLifeMonths: 0, now: now).allSatisfy { $0 > 0 }, "memory: with no fade none is dropped for age")
+var fmFaded = (1...4).map { kept("old\($0)", at: now.addingTimeInterval(-6 * fmHalf)) } + [kept("fresh", at: now)]
+check(FeedbackMemory.weights(fmFaded, memory: 1, halfLifeMonths: 6, now: now) == [0, 0, 0, 0, 1], "memory: a faded paper takes no place in the window")
+var fmUndatedFeedback = Feedback(); fmUndatedFeedback.saved = [kept("u1"), kept("d1", at: now)]; fmUndatedFeedback.hiddenPapers = [kept("u2")]
+check(fmUndatedFeedback.stampUndated(now.addingTimeInterval(60)) && fmUndatedFeedback.saved[0].keptAt == now.addingTimeInterval(60).timeIntervalSince1970 && fmUndatedFeedback.saved[1].keptAt == now.timeIntervalSince1970 && fmUndatedFeedback.hiddenPapers[0].keptAt != nil, "memory: what was kept before dates were recorded is given a date, and what had one keeps it")
+check(!fmUndatedFeedback.stampUndated(now.addingTimeInterval(120)) && fmUndatedFeedback.saved[0].keptAt == now.addingTimeInterval(60).timeIntervalSince1970, "memory: dating is done once")
+let fmIgnore = FeedbackMemory.weights([kept("a"), kept("b", ignored: true), kept("c")], memory: 2, halfLifeMonths: 0, now: now)
 check(fmIgnore[1] == 0 && fmIgnore[0] > 0 && fmIgnore[2] == 1, "memory: an ignored paper counts for nothing and takes no place in the window")
-check(FeedbackMemory.weights([kept("a")], memory: 0, maxAgeMonths: 0, now: now) == [0], "memory: a window of nothing counts nothing")
+check(FeedbackMemory.weights([kept("a")], memory: 0, halfLifeMonths: 0, now: now) == [0], "memory: a window of nothing counts nothing")
 check(FeedbackMemory.standing(weight: 1, ignored: false) == "Counts fully" && FeedbackMemory.standing(weight: 0.3, ignored: false) == "Fading" && FeedbackMemory.standing(weight: 0, ignored: false) == "No longer counted" && FeedbackMemory.standing(weight: 1, ignored: true) == "Ignored", "memory: a paper's standing is said in words")
 
 var tfb = Feedback()
@@ -1603,10 +1613,10 @@ check((try? JSONDecoder().decode(Feedback.self, from: Data(#"{"saved":[],"hidden
 var tfbOld = Feedback(); tfbOld.save(paper("s", "Saved title"), at: now)
 check(tfbOld.saved.first?.keptAt != nil && (try? JSONDecoder().decode(SavedPaper.self, from: Data(#"{"id":"doi:1","title":"T","date":"2026-01-01"}"#.utf8)))?.keptAt == nil, "feedback: what is kept is dated from now on, and an entry from before still loads without a date")
 
-check(FeedSettings().hideMemory == 100 && FeedSettings().hideMaxAgeMonths == 6 && FeedSettings().likeMemory == 200 && FeedSettings().likeMaxAgeMonths == 0 && FeedSettings().hideStrength == 0.5 && FeedSettings().likeStrength == 1, "feedback settings: the defaults")
-let tfsDecoded = try! FeedSettings.decode(Data(#"{"hideMemory":99999,"likeMemory":1,"hideStrength":7,"likeStrength":-3,"hideMaxAgeMonths":500}"#.utf8))
-check(tfsDecoded.hideMemory == 500 && tfsDecoded.likeMemory == 20 && tfsDecoded.hideStrength == 1 && tfsDecoded.likeStrength == 0 && tfsDecoded.hideMaxAgeMonths == 36, "feedback settings: out-of-range values are brought back into range")
-var tfsMoved = FeedSettings(); tfsMoved.hideStrength = 1; tfsMoved.likeMemory = 50; tfsMoved.hideMaxAgeMonths = 12
+check(FeedSettings().hideMemory == 100 && FeedSettings().hideHalfLifeMonths == 6 && FeedSettings().likeMemory == 200 && FeedSettings().likeHalfLifeMonths == 0 && FeedSettings().hideStrength == 0.5 && FeedSettings().likeStrength == 1, "feedback settings: the defaults")
+let tfsDecoded = try! FeedSettings.decode(Data(#"{"hideMemory":99999,"likeMemory":1,"hideStrength":7,"likeStrength":-3,"hideHalfLifeMonths":500}"#.utf8))
+check(tfsDecoded.hideMemory == 500 && tfsDecoded.likeMemory == 20 && tfsDecoded.hideStrength == 1 && tfsDecoded.likeStrength == 0 && tfsDecoded.hideHalfLifeMonths == 36, "feedback settings: out-of-range values are brought back into range")
+var tfsMoved = FeedSettings(); tfsMoved.hideStrength = 1; tfsMoved.likeMemory = 50; tfsMoved.hideHalfLifeMonths = 12
 check(tfsMoved.forFetching == FeedSettings().forFetching && tfsMoved.forRanking != FeedSettings().forRanking, "feedback settings: moving them re-ranks and does not fetch again")
 
 // The profile with its weights, and what is avoided.
@@ -1622,8 +1632,8 @@ tpsWeak.likeStrength = 0
 check(FeedBuilder.profile(tpsWeak, own: [], now: now).isEmpty, "profile: with the strength off the thumbs add nothing")
 var tpsLib = tps; tpsLib.useLibraryFile = true
 check(FeedBuilder.profile(tpsLib, own: [], library: ["from a library"], project: ["a project"], now: now).suffix(2).map(\.text) == ["from a library", "a project"] && FeedBuilder.profile(tpsLib, own: [], library: ["from a library"], project: ["a project"], now: now).suffix(2).allSatisfy { $0.weight == 1 && $0.title == nil }, "profile: a library and a project count fully and are not named as thumbs")
-var tpa = FeedSettings(); tpa.feedback.hide(paper("h1", "Hidden one"), at: now); tpa.feedback.hide(paper("h2", "Hidden two"), at: now.addingTimeInterval(-400 * fmDay))
-check(FeedBuilder.avoid(tpa, now: now).map(\.title) == ["Hidden one"], "avoid: a hide older than the age limit no longer counts")
+var tpa = FeedSettings(); tpa.feedback.hide(paper("h1", "Hidden one"), at: now); tpa.feedback.hide(paper("h2", "Hidden two"), at: now.addingTimeInterval(-1500 * fmDay))
+check(FeedBuilder.avoid(tpa, now: now).map(\.title) == ["Hidden one"], "avoid: a hide that has faded to almost nothing no longer counts")
 tpa.hideStrength = 0
 check(FeedBuilder.avoid(tpa, now: now).isEmpty, "avoid: with the strength off nothing is avoided")
 

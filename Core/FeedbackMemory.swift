@@ -20,21 +20,29 @@ enum FeedbackMemory {
     /// What the oldest paper inside the window counts for, against 1 for the newest.
     static let floor = 0.25
 
-    /// How much each paper counts, from the weakest-ordered list (oldest first, as they are kept).
-    /// A paper the user said to ignore, or older than the age limit, or beyond the newest `memory`,
-    /// counts for nothing and takes no place in the window. A paper with no date counts as inside any age limit.
-    static func weights(_ items: [SavedPaper], memory: Int, maxAgeMonths: Int, now: Date) -> [Double] {
+    /// Below this share of its first weight a paper counts for nothing, and takes no place in the window.
+    static let faded = 0.05
+
+    /// How much each paper counts, from a list kept oldest first. Two things lower it. Its place in the
+    /// window: only the newest `memory` count, the newest in full and the oldest of them `floor` as much.
+    /// And its age: it halves every `halfLifeMonths` (0 for no fade). A paper the user said to ignore,
+    /// one beyond the window and one faded to almost nothing count for nothing and take no place in the
+    /// window. A paper with no date does not fade: only the order says how recent it is.
+    static func weights(_ items: [SavedPaper], memory: Int, halfLifeMonths: Int, now: Date) -> [Double] {
         var out = [Double](repeating: 0, count: items.count)
         guard memory > 0 else { return out }
-        let limit: Double? = maxAgeMonths > 0
-            ? now.timeIntervalSince1970 - Double(maxAgeMonths) * 30.4375 * 86_400 : nil
+        let halfLife: Double? = halfLifeMonths > 0 ? Double(halfLifeMonths) * 30.4375 * 86_400 : nil
         var rank = 0
         for i in items.indices.reversed() {
             let item = items[i]
             if item.ignored == true { continue }
-            if let limit, let kept = item.keptAt, kept < limit { continue }
+            var age = 1.0
+            if let halfLife, let kept = item.keptAt {
+                age = pow(0.5, max(now.timeIntervalSince1970 - kept, 0) / halfLife)
+                if age < faded { continue }
+            }
             if rank >= memory { break }
-            out[i] = floor + (1 - floor) * (1 - Double(rank) / Double(memory))
+            out[i] = (floor + (1 - floor) * (1 - Double(rank) / Double(memory))) * age
             rank += 1
         }
         return out
@@ -45,7 +53,7 @@ enum FeedbackMemory {
         if ignored { return "Ignored" }
         if weight <= 0 { return "No longer counted" }
         if weight >= 0.8 { return "Counts fully" }
-        if weight >= 0.5 { return "Counts partly" }
+        if weight >= 0.4 { return "Counts partly" }
         return "Fading"
     }
 }
@@ -59,7 +67,7 @@ extension FeedBuilder {
         func text(_ title: String, _ abstract: String?) -> String { title + ". " + (abstract ?? "") }
         var entries: [ProfileEntry] = s.useMyPublications ? own.map { ProfileEntry(text: text($0.title, $0.abstract)) } : []
         let pool = FeedbackMemory.likedPool(s)
-        let weights = FeedbackMemory.weights(pool, memory: s.likeMemory, maxAgeMonths: s.likeMaxAgeMonths, now: now)
+        let weights = FeedbackMemory.weights(pool, memory: s.likeMemory, halfLifeMonths: s.likeHalfLifeMonths, now: now)
         if s.likeStrength > 0 {
             for (paper, w) in zip(pool, weights) where w > 0 {
                 entries.append(ProfileEntry(text: text(paper.title, paper.abstract), weight: w * s.likeStrength, title: paper.title))
@@ -75,7 +83,7 @@ extension FeedBuilder {
     static func avoid(_ s: FeedSettings, now: Date = Date()) -> [ProfileEntry] {
         guard s.hideStrength > 0 else { return [] }
         let weights = FeedbackMemory.weights(s.feedback.hiddenPapers, memory: s.hideMemory,
-                                             maxAgeMonths: s.hideMaxAgeMonths, now: now)
+                                             halfLifeMonths: s.hideHalfLifeMonths, now: now)
         return zip(s.feedback.hiddenPapers, weights).filter { $0.1 > 0 }.map { paper, w in
             ProfileEntry(text: paper.title + ". " + (paper.abstract ?? ""), weight: w, title: paper.title)
         }
@@ -95,13 +103,13 @@ extension FeedbackMemory {
     /// paper is on both), before the strength setting.
     static func likeWeights(_ s: FeedSettings, now: Date = Date()) -> [String: Double] {
         let pool = FeedbackMemory.likedPool(s)
-        let weights = Self.weights(pool, memory: s.likeMemory, maxAgeMonths: s.likeMaxAgeMonths, now: now)
+        let weights = Self.weights(pool, memory: s.likeMemory, halfLifeMonths: s.likeHalfLifeMonths, now: now)
         return Dictionary(zip(pool.map(\.id), weights), uniquingKeysWith: max)
     }
 
     /// How much each hidden paper counts, by id.
     static func hideWeights(_ s: FeedSettings, now: Date = Date()) -> [String: Double] {
-        let weights = Self.weights(s.feedback.hiddenPapers, memory: s.hideMemory, maxAgeMonths: s.hideMaxAgeMonths, now: now)
+        let weights = Self.weights(s.feedback.hiddenPapers, memory: s.hideMemory, halfLifeMonths: s.hideHalfLifeMonths, now: now)
         return Dictionary(zip(s.feedback.hiddenPapers.map(\.id), weights), uniquingKeysWith: max)
     }
 }

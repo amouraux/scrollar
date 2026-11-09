@@ -7,8 +7,8 @@ import SwiftUI
 struct FeedbackScreen: View {
     @Environment(AppModel.self) private var appModel
 
-    private static let ages: [(label: String, months: Int)] = [
-        ("No limit", 0), ("3 months", 3), ("6 months", 6), ("12 months", 12), ("24 months", 24),
+    private static let halfLives: [(label: String, months: Int)] = [
+        ("Never", 0), ("3 months", 3), ("6 months", 6), ("12 months", 12), ("24 months", 24),
     ]
 
     var body: some View {
@@ -44,13 +44,13 @@ struct FeedbackScreen: View {
                 }
                 Stepper("Only the newest \(model.settings.likeMemory) count",
                         value: $model.settings.likeMemory, in: 20...1000, step: 20)
-                Picker("Ignore those older than", selection: $model.settings.likeMaxAgeMonths) {
-                    ForEach(Self.ages, id: \.months) { Text($0.label).tag($0.months) }
+                Picker("Halve their weight every", selection: $model.settings.likeHalfLifeMonths) {
+                    ForEach(Self.halfLives, id: \.months) { Text($0.label).tag($0.months) }
                 }
             } header: {
                 Text("Pull toward what I like")
             } footer: {
-                Text("The reading list and For me are counted together. The newest counts fully, the oldest of those that count a quarter as much, so the feed follows where you are now. A paper kept before dates were recorded is never dropped for its age.")
+                Text("The reading list and For me are counted together. The newest counts fully, the oldest of those that count a quarter as much. With a fade, a paper also loses half its weight every period, and counts for nothing once it has faded to a few percent, so the feed follows where you are now. A paper kept before dates were recorded began to fade the day this was added.")
             }
 
             Section {
@@ -65,8 +65,8 @@ struct FeedbackScreen: View {
                 }
                 Stepper("Only the newest \(model.settings.hideMemory) count",
                         value: $model.settings.hideMemory, in: 10...500, step: 10)
-                Picker("Ignore those older than", selection: $model.settings.hideMaxAgeMonths) {
-                    ForEach(Self.ages, id: \.months) { Text($0.label).tag($0.months) }
+                Picker("Halve their weight every", selection: $model.settings.hideHalfLifeMonths) {
+                    ForEach(Self.halfLives, id: \.months) { Text($0.label).tag($0.months) }
                 }
             } header: {
                 Text("Push away from what I hid")
