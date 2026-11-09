@@ -1401,7 +1401,7 @@ check(FeedBuilder.profileTexts(fmSettings, own: []).contains { $0.hasPrefix("A p
 check(device(fmSettings, stamp: at(1)).apply(to: FeedSettings()).feedback.liked.map(\.id) == [fmPaper.dedupeKey], "for me: it syncs")
 fmFeedback.unlike(fmPaper.dedupeKey)
 check(!fmFeedback.isLiked(fmPaper) && (try? JSONDecoder().decode(Feedback.self, from: Data(#"{"saved":[],"hidden":[]}"#.utf8)))?.liked.isEmpty == true, "for me: it can be taken back, and a settings file from before it still loads")
-check(SyncDocument.currentFormat == 3, "sync: the format is raised, so an app that does not know the newer entries leaves the file alone instead of erasing them")
+check(SyncDocument.currentFormat == 4, "sync: the format is raised, so an app that does not know the newer entries leaves the file alone instead of erasing them")
 
 func keptPaper(_ id: String, _ reasons: [String], followed: Bool = true, age: Int = 3) -> SavedPaper {
     var p = paper(id, "Paper \(id)", age: age); p.reasons = reasons; p.followed = followed

@@ -681,8 +681,8 @@ is like the hidden paper. The rules are in `Core/FeedbackMemory.swift` (tested),
 - **Seeing it.** Your feedback lists every paper with when it was kept and how much it still counts ("Counts fully", "Counts
   partly", "Fading", "No longer counted"). A paper can be set to be ignored without deleting it, a hidden paper shown again,
   and the screen lists what is pushed down (exact, from the last ranking) and what is pulled up (worked out on the device).
-- **Sync.** Hidden snapshots and the settings sync, and the sync format is 3, so an older app leaves the file alone rather
-  than erase the snapshots it does not know. Ranking is made repeatable: scores that differ only by rounding noise are ties.
+- **Sync.** Hidden snapshots and the settings sync, and the sync format is now 4 (3 added the snapshots; 4 added more settings: the age fade, OSF, the reference managers), so an older app leaves
+  the file alone rather than erase what it does not know. Ranking is made repeatable: scores that differ only by rounding noise are ties.
 - **Not tried:** the strength and the tenth are first guesses, set from tests on made-up papers and not from a real feed, and
   the effect on the on-screen feed after a hide is only seen at the next refresh.
 

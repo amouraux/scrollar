@@ -30,7 +30,7 @@ struct SyncEntry: Codable, Equatable {
 struct SyncDocument: Codable, Equatable {
     /// Raise for any change an older app would misread, and never remove the guard
     /// in the storage: an app writes only a format it knows.
-    static let currentFormat = 3
+    static let currentFormat = 4
 
     var format = SyncDocument.currentFormat
     var entries: [String: SyncEntry] = [:]
