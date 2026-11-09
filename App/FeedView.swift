@@ -8,22 +8,35 @@ struct FeedView: View {
     /// Where the column was when a drag began, so the drag moves it relative to that.
     @State private var dragStart: Double?
 
+    private static let panelWidth: Double = 250
+
     var body: some View {
-        // Wide enough, and the feed becomes a column with the reader beside it. The column stays
-        // in the same place in the view tree either way, so resizing a window keeps the scroll position.
+        @Bindable var model = model
+        // Wide enough, and the feed becomes a column with the reader beside it; with room to spare, a
+        // panel of reasons goes before it. The column stays in the same place in the view tree either way,
+        // so resizing a window keeps the scroll position.
         GeometryReader { geo in
             let total = geo.size.width
-            let wide = Reader.isWide(width: total)
-            let feedWidth = Reader.feedColumnWidth(total: total, fraction: storedFraction)
+            let panelInline = model.feedPanelShown && Reader.isWide(width: total - Self.panelWidth - 1)
+            let inner = panelInline ? total - Self.panelWidth : total
+            let wide = Reader.isWide(width: inner)
+            let feedWidth = Reader.feedColumnWidth(total: inner, fraction: storedFraction)
             HStack(spacing: 0) {
+                if panelInline {
+                    FeedFacetPanel()
+                        .frame(width: Self.panelWidth)
+                        .background(Color.accentColor.opacity(0.06))
+                    Divider()
+                }
                 feedColumn
                     .frame(width: wide ? feedWidth : nil)
                 if wide {
-                    handle(feedWidth: feedWidth, total: total)
+                    handle(feedWidth: feedWidth, total: inner)
                     ReaderPane()
                 }
             }
             .onChange(of: wide, initial: true) { _, now in model.readerShown = now }
+            .onChange(of: total, initial: true) { _, now in model.feedPanelFits = Reader.isWide(width: now - Self.panelWidth - 1) }
             // The answer to Add to Zotero and the like: a post far down the list cannot show it.
             .overlay(alignment: .bottom) {
                 if let toast = model.toast {
@@ -39,6 +52,16 @@ struct FeedView: View {
                 }
             }
             .animation(.default, value: model.toast)
+        }
+        // A window wide enough for the reader but not for the panel as well: the panel opens as a sheet.
+        .sheet(isPresented: $model.feedPanelSheet) {
+            NavigationStack {
+                FeedFacetPanel()
+                    .navigationTitle("Why it is here")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { model.feedPanelSheet = false } } }
+            }
+            .presentationDetents([.medium, .large])
         }
     }
 
@@ -117,14 +140,25 @@ struct FeedView: View {
     @ViewBuilder private var content: some View {
         let layout = model.shownLayout
 
-        // New only, and everything has been looked at: said, instead of an empty list.
-        if model.feedNewOnly, layout.isEmpty, !model.layout.isEmpty {
-            ContentUnavailableView {
-                Label("Nothing new", systemImage: "checkmark.seal")
-            } description: {
-                Text("You have looked at everything in your feed. Switch to All to see it again.")
-            } actions: {
-                Button("Show all") { model.feedNewOnly = false }
+        // Narrowed to a reason or to the new, and nothing is left: said, instead of an empty list.
+        if layout.isEmpty, !model.layout.isEmpty {
+            if model.feedFilter.isActive {
+                ContentUnavailableView {
+                    Label("Nothing under this reason", systemImage: "line.3.horizontal.decrease.circle")
+                } description: {
+                    Text(model.feedNewOnly ? "Nothing new here. Switch to All, or choose another reason."
+                                           : "Choose another reason, or show everything.")
+                } actions: {
+                    Button("Show everything") { model.feedFilter = FeedFilter(); model.feedNewOnly = false }
+                }
+            } else if model.feedNewOnly {
+                ContentUnavailableView {
+                    Label("Nothing new", systemImage: "checkmark.seal")
+                } description: {
+                    Text("You have looked at everything in your feed. Switch to All to see it again.")
+                } actions: {
+                    Button("Show all") { model.feedNewOnly = false }
+                }
             }
         }
 
@@ -240,7 +274,8 @@ private struct SectionTitle: View {
     }
 }
 
-/// All, or only what has not been looked at yet, with how many that is. Hidden while there is no feed.
+/// All, or only what has not been looked at yet, with how many that is; the button for the panel of reasons on
+/// a window wide enough for the reader; and what the feed is narrowed to. Hidden while there is no feed.
 private struct NewSwitch: View {
     @Environment(AppModel.self) private var model
 
@@ -248,14 +283,86 @@ private struct NewSwitch: View {
         @Bindable var model = model
         if !model.layout.isEmpty {
             let count = model.layout.newCount
-            Picker("Show", selection: $model.feedNewOnly) {
-                Text("All").tag(false)
-                Text(count > 0 ? "New \(count)" : "New").tag(true)
+            HStack(spacing: 8) {
+                if model.readerShown {
+                    Button {
+                        if model.feedPanelFits { model.feedPanelShown.toggle() } else { model.feedPanelSheet = true }
+                    } label: {
+                        Image(systemName: model.feedFilter.isActive ? "line.3.horizontal.decrease.circle.fill" : "sidebar.left")
+                            .font(.title3)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Why papers are in the feed: filter by reason")
+                }
+                Picker("Show", selection: $model.feedNewOnly) {
+                    Text("All").tag(false)
+                    Text(count > 0 ? "New \(count)" : "New").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityLabel("Show all papers, or only the new ones")
             }
-            .pickerStyle(.segmented)
-            .accessibilityLabel("Show all papers, or only the new ones")
             .padding(.bottom, 4)
+            if model.feedFilter.isActive, let kind = model.feedFilter.kind {
+                HStack {
+                    Label(model.feedFilter.detail ?? FeedFilter.heading(kind), systemImage: kind.symbol)
+                        .font(.subheadline.weight(.medium)).lineLimit(1)
+                    Spacer()
+                    Button("Clear") { model.feedFilter = FeedFilter() }.font(.subheadline)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            }
         }
+    }
+}
+
+/// The reasons papers are in the feed, with how many carry each and how many are new. Choosing one narrows the
+/// feed to it, to catch up on that subject; choosing it again, or Everything, shows all.
+struct FeedFacetPanel: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let facets = model.feedFacets
+        let all = model.layout.entries(includeRead: model.settings.showReadPapers)
+        List {
+            Section {
+                row("Everything", symbol: "tray.full", count: all.count, new: all.filter(\.1).count,
+                    selected: !model.feedFilter.isActive, indent: false) { model.feedFilter = FeedFilter() }
+                ForEach(facets, id: \.self) { facet in
+                    let selected = model.feedFilter == FeedFilter(kind: facet.kind, detail: facet.detail)
+                    row(facet.detail ?? FeedFilter.heading(facet.kind), symbol: facet.detail == nil ? facet.kind.symbol : nil,
+                        count: facet.count, new: facet.new, selected: selected, indent: facet.detail != nil) {
+                        model.feedFilter = selected ? FeedFilter() : FeedFilter(kind: facet.kind, detail: facet.detail)
+                        model.feedPanelSheet = false
+                    }
+                }
+            } header: {
+                Text("Why it is here")
+            } footer: {
+                Text("Choose one to see only the papers that are in your feed for that reason, and catch up on it.")
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+    }
+
+    private func row(_ title: String, symbol: String?, count: Int, new: Int, selected: Bool, indent: Bool,
+                     action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                if let symbol { Image(systemName: symbol).frame(width: 20) }
+                Text(title).lineLimit(1)
+                Spacer(minLength: 4)
+                if new > 0 { Text("\(new) new").font(.caption2).foregroundStyle(Color.accentColor) }
+                Text("\(count)").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            }
+            .padding(.leading, indent ? 28 : 0)
+            .fontWeight(selected ? .semibold : .regular)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(selected ? Color.accentColor.opacity(0.18) : nil)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

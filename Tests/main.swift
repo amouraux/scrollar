@@ -1885,5 +1885,31 @@ check(rmEndnote.forFetching == FeedSettings().forFetching && rmEndnote.forRankin
 check(FolderPlace.describe(path: "/Users/a/Library/Mobile Documents/com~apple~CloudDocs/Scrollar PDFs") == ("iCloud Drive › Scrollar PDFs", true) && FolderPlace.describe(path: "/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/Work/Papers/") == ("iCloud Drive › Work › Papers", true) && FolderPlace.describe(path: "/Users/a/Library/Mobile Documents/com~apple~CloudDocs") == ("iCloud Drive", true), "folder place: a folder in iCloud Drive is said to be, with where")
 check(FolderPlace.describe(path: "/Users/a/Documents/PDFs") == ("On this device › Documents › PDFs", false) && FolderPlace.describe(path: "/").iCloud == false && FolderPlace.describe(path: "/Users/a/Library/Mobile Documents/iCloud~com~example~app/Documents/x").iCloud, "folder place: a folder elsewhere is said to be on this device only, and another app's iCloud container is still iCloud")
 
+// Catching up on one topic.
+func why(_ id: String, _ reasons: [String], followed: Bool = true) -> RankedPaper {
+    var p = paper(id, "Paper \(id)"); p.reasons = reasons; p.followed = followed
+    return RankedPaper(paper: p, score: 1, similarity: 0.5)
+}
+var ffLayout = FeedLayout()
+ffLayout.feed.fresh = [why("a", ["Keyword: tms", "Journal: Pain"]), why("b", ["Keyword: tms"]), why("c", ["Author: Ada L"])]
+ffLayout.feed.earlier = [why("d", ["Keyword: tms"]), why("e", [], followed: false)]
+ffLayout.feed.read = [why("f", ["Keyword: ml"])]
+ffLayout.older = [why("g", ["Journal: Pain", "Keyword: eeg"])]
+ffLayout.highlights = [Highlight(ranked: why("h", ["Author: Ada L", "Keyword: tms"]), reason: "close")]
+let ffFacets = FeedFilter.facets(ffLayout, includeRead: false)
+let ffKeyword = ffFacets.first { $0.kind == .keyword && $0.detail == nil }
+let ffTms = ffFacets.first { $0.kind == .keyword && $0.detail == "tms" }
+check(ffKeyword?.count == 5 && ffKeyword?.new == 4 && ffTms?.count == 4 && ffTms?.new == 3, "feed filter: a reason is counted once per paper, with how many of them are new")
+check(ffFacets.first { $0.kind == .journal && $0.detail == nil }?.count == 2 && ffFacets.first { $0.kind == .author && $0.detail == nil }?.count == 2 && ffFacets.first { $0.kind == .other }?.count == 1 && !ffFacets.contains { $0.kind == .journal && $0.detail != nil }, "feed filter: journals and authors are counted, a lone name is not listed twice, and a paper with no reason falls under Other")
+check(!ffFacets.contains { $0.kind == .keyword && $0.detail == "ml" } && FeedFilter.facets(ffLayout, includeRead: true).contains { $0.kind == .keyword && $0.detail == "ml" }, "feed filter: read papers are counted only when they are shown")
+check(ffFacets.firstIndex { $0.kind == .author } ?? 99 < ffFacets.firstIndex { $0.kind == .keyword } ?? 0 && ffFacets.first?.kind == .author, "feed filter: the most specific kind comes first")
+let ffByKeyword = ffLayout.filtered(by: FeedFilter(kind: .keyword, detail: "tms"))
+check(ffByKeyword.feed.fresh.map(\.paper.id) == ["a", "b"] && ffByKeyword.feed.earlier.map(\.paper.id) == ["d"] && ffByKeyword.feed.read.isEmpty && ffByKeyword.older.isEmpty && ffByKeyword.highlights.map(\.ranked.paper.id) == ["h"], "feed filter: only the papers there for that reason stay, in every part of the feed")
+check(ffLayout.filtered(by: FeedFilter(kind: .journal, detail: nil)).feed.fresh.map(\.paper.id) == ["a"] && ffLayout.filtered(by: FeedFilter(kind: .other, detail: nil)).feed.earlier.map(\.paper.id) == ["e"] && ffLayout.filtered(by: FeedFilter()).feed.fresh.count == 3, "feed filter: a whole kind, the papers with no reason, and no filter at all")
+check(ffByKeyword.newCount == 3 && ffByKeyword.newOnly.displayOrder(settings: FeedSettings()) == ["oa:h", "oa:a", "oa:b"], "feed filter: it combines with New only, and with the reading order")
+check(FeedFilter(kind: .keyword, detail: "tms").matches(ffLayout.feed.fresh[0].paper) && !FeedFilter(kind: .keyword, detail: "tms").matches(ffLayout.feed.fresh[2].paper) && !FeedFilter(kind: .other, detail: "x").matches(ffLayout.feed.earlier[1].paper), "feed filter: a paper matches its own reasons and no others")
+
+check(Why.Kind.allCases.allSatisfy { !FeedFilter.heading($0).isEmpty && FeedFilter.heading($0).count <= 24 } && FeedFilter.heading(.keyword) == "Keywords" && FeedFilter.heading(.citesYou) == "Cites your work", "feed filter: every kind has a short heading for the panel")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

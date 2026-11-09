@@ -68,8 +68,19 @@ final class AppModel {
     var feedNewOnly: Bool = UserDefaults.standard.bool(forKey: "feedNewOnly") {
         didSet { UserDefaults.standard.set(feedNewOnly, forKey: "feedNewOnly") }
     }
-    /// What the feed draws: all of it, or only the new.
-    var shownLayout: FeedLayout { feedNewOnly ? layout.newOnly : layout }
+    /// Only what is there for one reason (an author, a keyword, a topic): for catching up on a subject.
+    var feedFilter = FeedFilter()
+    /// The panel of reasons beside the feed, on a window with room for it.
+    var feedPanelShown: Bool = UserDefaults.standard.object(forKey: "feedPanelShown") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(feedPanelShown, forKey: "feedPanelShown") }
+    }
+    /// Whether the window has room for it beside the feed (set by the feed), and the sheet that stands in when it has not.
+    var feedPanelFits = false
+    var feedPanelSheet = false
+    /// What the feed draws: all of it or only the new, and only what is there for the reason chosen.
+    var shownLayout: FeedLayout { (feedNewOnly ? layout.newOnly : layout).filtered(by: feedFilter) }
+    /// The reasons the feed is there for, with how many papers carry each and how many are new.
+    var feedFacets: [FeedFilter.Facet] { FeedFilter.facets(layout, includeRead: settings.showReadPapers) }
     /// The connected Zotero account, with its key: from the Keychain, never from a file.
     private(set) var zotero: ZoteroAccount?
     /// The RIS or BibTeX export last imported, for managers that have no API to read.

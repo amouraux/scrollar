@@ -649,6 +649,18 @@ panel leaves those out. The order is not changed. The segments are Reading list,
 cannot write shows "Add to Zotero (the key is read-only)" greyed out, not hidden, and failures are shown for fifteen
 seconds and put away by a tap. Older notes in this file may still say "Saved" or "Save to Zotero": they mean these.
 
+## Catching up on one topic
+
+On a window wide enough for the reader (the iPad and the Mac), a panel before the feed lists **why papers are in it**: Cites your work, then
+Authors, Keywords, Journals, Topics, each with its names, how many papers carry each and how many of them are new (`Core/FeedFilter.swift`,
+tested). Choosing one narrows the feed to the papers that are there for that reason, so a subject can be caught up on; choosing it again, or
+Everything, shows all, and a bar at the top of the feed says what it is narrowed to, with Clear. It combines with **New only** ("what is new on
+this topic") and with the reading order of the arrow keys. A paper counts once per reason however many of its reasons match; a lone name under a
+kind is not listed twice; a paper that no follow found (it came by similarity) is under Other. The button beside All | New collapses the panel
+(kept); in a window with room for the reader but not for the panel as well, the same button opens the panel as a sheet. The panel is 250 points,
+so a 13-inch iPad in portrait just has room. The phone has neither. Tried on the iPad simulator, seeded with a copy of the iPhone simulator's data:
+the panel, and narrowing to Keywords. Not tried: on the Mac window, in dark mode, or collapsed.
+
 ## New only
 
 At the top of the feed, **All | New** (with a count). **New** shows only what has not been looked at yet: a paper that has
