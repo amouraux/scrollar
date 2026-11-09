@@ -30,7 +30,7 @@ struct OpenAlexClient {
 
     private static let workFields = [
         "id", "doi", "title", "publication_date", "primary_location", "authorships",
-        "cited_by_count", "abstract_inverted_index", "ids", "topics", "type",
+        "cited_by_count", "abstract_inverted_index", "ids", "topics", "keywords", "type",
         "open_access", "best_oa_location", "language",
     ].joined(separator: ",")
 
@@ -339,6 +339,7 @@ private struct WorkDTO: Decodable {
     let abstract_inverted_index: [String: [Int]]?
     let ids: IDs?
     let topics: [Topic]?
+    let keywords: [Keyword]?
     let type: String?
     let open_access: OpenAccess?
     let best_oa_location: Location?
@@ -351,6 +352,7 @@ private struct WorkDTO: Decodable {
     struct Author: Decodable { let id: String?; let display_name: String? }
     struct IDs: Decodable { let pmid: String? }
     struct Topic: Decodable { let id: String?; let display_name: String? }
+    struct Keyword: Decodable { let display_name: String?; let score: Double? }
     struct OpenAccess: Decodable { let is_oa: Bool? }
 
     /// A record with no title or date cannot be shown on a card.
@@ -374,6 +376,7 @@ private struct WorkDTO: Decodable {
             lastInstitution: authorships?.last?.institutions?.first?.display_name,
             citedBy: cited_by_count ?? 0,
             topics: (topics ?? []).compactMap(\.display_name),
+            keywords: Keywords.clean((keywords ?? []).sorted { ($0.score ?? 0) > ($1.score ?? 0) }.compactMap(\.display_name)),
             topicIDs: (topics ?? []).compactMap(\.id).map(Identifiers.openAlexID),
             journalID: source?.id.map(Identifiers.openAlexID),
             isOpenAccess: open_access?.is_oa ?? false,

@@ -170,6 +170,7 @@ enum EuropePMCParser {
             lastInstitution: institution(authorList.last),
             citedBy: (r["citedByCount"] as? Int) ?? 0,
             topics: Array(mesh.compactMap { $0["descriptorName"] as? String }.filter { !MeSH.isGeneric($0) }.prefix(6)),
+            keywords: Keywords.clean((((r["keywordList"] as? [String: Any])?["keyword"]) as? [String]) ?? []),
             isOpenAccess: (r["isOpenAccess"] as? String) == "Y",
             pdfURL: PDFLink.europePMC(r),
             language: Languages.iso1(r["language"] as? String),

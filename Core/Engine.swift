@@ -126,7 +126,7 @@ struct FeedEngine {
                     log("Also learning from \(source.label.isEmpty ? person.name : source.label): \(papers.count) papers")
                 } catch {
                     complete = false
-                    log("  could not read \(source.orcid): \(error)")
+                    log("  could not read \(source.orcid): \(ErrorText.brief(error))")
                 }
             }
         }
@@ -185,7 +185,7 @@ struct FeedEngine {
                     found += list
                 } catch {
                     complete = false
-                    log("  skipped \(step.seed.reason) in \(target.rawValue): \(error)")
+                    log("  skipped \(step.seed.reason) in \(target.rawValue): \(ErrorText.brief(error))")
                 }
             }
         }
@@ -368,7 +368,7 @@ struct FeedEngine {
                 return (author, papers)
             } catch {
                 if europePMC == nil { throw error }
-                log("OpenAlex could not give the profile (\(error)); using Europe PMC")
+                log("OpenAlex could not give the profile (\(ErrorText.brief(error))); using Europe PMC")
             }
         }
         guard let europePMC else { throw EngineError.noSource }
@@ -386,7 +386,7 @@ struct FeedEngine {
         let wanted = Set(papers.filter { !$0.isRepository }.compactMap(\.journalID)).subtracting(known.keys).sorted()
         if !wanted.isEmpty {
             do { known.merge(try await openAlex.journalImpact(ids: wanted)) { _, new in new } }
-            catch { log("  journal figures unavailable (\(error)); continuing without them") }
+            catch { log("  journal figures unavailable (\(ErrorText.brief(error))); continuing without them") }
         }
         return papers.map { paper in
             guard !paper.isRepository, let id = paper.journalID, let impact = known[id] else { return paper }
@@ -415,7 +415,7 @@ struct FeedEngine {
         if !missing.isEmpty {
             log("  authors: asking for \(missing.count) h-indexes")
             do { known.merge(try await openAlex.authorHIndex(ids: missing)) { _, new in new } }
-            catch { log("  author figures unavailable (\(error)); continuing with what is known") }
+            catch { log("  author figures unavailable (\(ErrorText.brief(error))); continuing with what is known") }
         }
         return papers.map { paper in
             guard let lead = paper.leadAuthorIDs else { return paper }
@@ -436,7 +436,7 @@ struct FeedEngine {
         do {
             return Enrich.apply(try await pubmed.records(pmids: pmids), to: papers)
         } catch {
-            log("  PubMed unavailable (\(error)); continuing without it")
+            log("  PubMed unavailable (\(ErrorText.brief(error))); continuing without it")
             return papers
         }
     }

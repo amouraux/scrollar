@@ -208,7 +208,7 @@ struct SuggestionsView: View {
             chosen = Set(SuggestionKind.allCases.flatMap { found.byKind[$0] ?? [] }.filter { $0.selected && !model.isFollowed($0) }.map(\.id))
             phase = .loaded(found)
         } catch {
-            phase = .failed((error as? LocalizedError)?.errorDescription ?? "\(error)")
+            phase = .failed((error as? LocalizedError)?.errorDescription ?? ErrorText.brief(error))
         }
     }
 }

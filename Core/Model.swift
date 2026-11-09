@@ -102,6 +102,10 @@ struct Paper: Hashable, Codable {
     var lastAuthorH: Int? = nil
     var citedBy = 0
     var topics: [String] = []
+    /// The paper's own keywords as a source gives them (OpenAlex's, or the authors' in Europe PMC), most
+    /// relevant first. Offered as reasons for a thumb. Optional so a cache written before this existed still
+    /// loads; such papers get them at the next build.
+    var keywords: [String]? = nil
     /// Short OpenAlex ids. Names can be spelled two ways; muting needs the id.
     var topicIDs: [String] = []
     var journalID: String? = nil
@@ -292,6 +296,7 @@ enum Merge {
             if kept.pubmedTypes.isEmpty { kept.pubmedTypes = p.pubmedTypes }
             if kept.openAlexType == nil { kept.openAlexType = p.openAlexType }
             if kept.notInPubMed == nil { kept.notInPubMed = p.notInPubMed }
+            if (kept.keywords ?? []).isEmpty { kept.keywords = p.keywords }
             // OpenAlex's authors and topics carry ids, which muting and the h-index need;
             // take them together with their names so the two lists stay in step.
             if kept.authorIDs.isEmpty, !p.authorIDs.isEmpty { kept.authors = p.authors; kept.authorIDs = p.authorIDs }

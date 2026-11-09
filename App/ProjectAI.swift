@@ -55,7 +55,7 @@ enum ProjectAI {
             } catch let failure as Failure {
                 throw failure
             } catch {
-                throw Failure.failed("\(error)")
+                throw Failure.failed("\(ErrorText.brief(error))")
             }
         }
     }

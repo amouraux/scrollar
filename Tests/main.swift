@@ -2067,5 +2067,25 @@ check(Typos.alternatives("migrane prophylaxis", vocabulary: [:], guesses: { $0 =
 check(Typos.alternatives("nociceptve", vocabulary: ["nociceptive": 9, "nociceptor": 9], guesses: { _ in ["x"] }) == ["nociceptive", "nociceptor"] && Typos.alternatives("fine words", vocabulary: tyVocab).isEmpty, "typos: only what is within a slip or two is offered, and nothing when nothing looks wrong")
 check(FeedSettings().asksAboutSearches && !(try! FeedSettings.decode(Data(#"{"asksAboutSearches":false}"#.utf8))).asksAboutSearches, "search: it asks before a search counts unless the user says not to")
 
+// A paper's keywords as thumb reasons.
+check(Keywords.clean([" Migraine ", "migraine", "", "x", "Prophylaxis", String(repeating: "y", count: 80), "Pain"], limit: 3) == ["Migraine", "Prophylaxis", "Pain"] && Keywords.clean(["", " "]) == nil, "keywords: trimmed, none empty, twice or very long, and at most the limit")
+var kwPaper = lvPaper("kw1", title: "A study", journal: "Pain", journalID: "S1", authors: ["Ann Able", "Bo Baker"], authorIDs: ["A1", "A2"], topics: ["Neural dynamics"], topicIDs: ["T1"])
+kwPaper.keywords = ["Migraine", "Prophylaxis", "Botulinum toxin", "Headache"]
+let kwCands = ThumbBasis.candidates(for: kwPaper, settings: FeedSettings())
+check(kwCands.filter { $0.ref.kind == .keyword }.map(\.ref.name) == ["Migraine", "Prophylaxis", "Botulinum toxin"], "thumb basis: the paper's own keywords are offered, three of them")
+check(kwCands.firstIndex { $0.ref.kind == .keyword }! > kwCands.firstIndex { $0.ref.kind == .author }! && kwCands.firstIndex { $0.ref.kind == .keyword }! < kwCands.firstIndex { $0.ref.kind == .topic }!, "thumb basis: keywords come after the journal and authors and before the topics")
+var kwFollow = FeedSettings(); kwFollow.followedKeywords = [KeywordRule(phrase: "migraine")]
+kwPaper.reasons = ["Keyword: migraine"]
+check(ThumbBasis.candidates(for: kwPaper, settings: kwFollow).filter { $0.ref.kind == .keyword && $0.ref.name.lowercased() == "migraine" }.count == 1, "thumb basis: a keyword that is also the reason the paper is here is offered once")
+check((try! JSONDecoder().decode(Paper.self, from: JSONEncoder().encode(kwPaper))).keywords == kwPaper.keywords && (try? JSONDecoder().decode(Paper.self, from: Data(#"{"id":"a","title":"T","date":"2026-01-01","isRepository":false,"pubmedTypes":[],"abstractFromPubMed":false,"authors":[],"authorIDs":[],"citedBy":0,"topics":[],"topicIDs":[],"isOpenAccess":false,"reasons":[],"citesYou":false,"followed":false}"#.utf8))) != nil, "keywords: a paper saved before keywords existed still loads")
+
+// What an error looks like on screen.
+struct EtPage: Error, CustomStringConvertible { var description: String }
+let etLong = URLError(.timedOut, userInfo: ["NSErrorFailingURLStringKey": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=" + String(repeating: "(TITLE%3A%22pain%22%20OR%20ABSTRACT%3A%22pain%22)%20AND%20", count: 40), NSLocalizedDescriptionKey: "The request timed out."])
+check(ErrorText.brief(etLong) == "The request timed out." && ErrorText.brief(etLong).count < 60, "error text: a network error is its short description, not the address and the internals")
+check(ErrorText.brief(EtPage(description: "OpenAlex answered HTTP 500: <html><body><h1>Server   error</h1>" + String(repeating: "blah ", count: 200) + "</body></html>")).count <= ErrorText.limit + 1 && !ErrorText.brief(EtPage(description: "<html><b>oops</b></html>")).contains("<"), "error text: a web page in an answer is cut to plain words and a few lines")
+check(ErrorText.clip("one   two\n three") == "one two three" && ErrorText.clip(String(repeating: "word ", count: 100), limit: 20) == "word word word word…" && ErrorText.clip("A thing failed. UserInfo={key=value}") == "A thing failed.", "error text: white space is tidied, a cut falls between words, and Cocoa's internals are dropped")
+check(ErrorText.brief(DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: String(repeating: "x", count: 5000)))) == "A source sent something the app could not read.", "error text: a decoding error is one plain sentence")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

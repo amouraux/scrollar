@@ -679,6 +679,20 @@ by the paper's own words, topic, journal or author, as a mute does; a mute set t
 above for each paper that carries the thing, the total held between −1.5 and +2) and nothing else. They sync (sync format 5). Tried on the iPhone
 simulator: the screen and the starting levels. Not tried: setting a level and seeing the feed change, nor on a real feed.
 
+## Long messages, and keywords as reasons
+
+A failed or slow source once put more than a page of text in the "Building your feed" banner: a network error printed whole carries the full
+request address (a Europe PMC query is hundreds of characters) and Cocoa's internals. `ErrorText.brief` (`Core/ErrorText.swift`, tested) now
+turns any error into one short sentence (a network error is just its description; a decoding error is one plain sentence; tags and
+runs of white space are removed; a cut falls between words and ends in "…"), and `ErrorText.clip` caps the progress line the banner
+shows; the banner itself never shows more than four lines. The full text still goes to the log. Used wherever an error reaches the screen.
+
+The thumb question also offers the paper's **own keywords** (`Paper.keywords`: OpenAlex's, most relevant first, and the authors' in Europe PMC;
+up to three, after the journal and authors and before the topics; ten reasons at most). A keyword raised or lowered this way becomes a keyword
+level like any other. Papers already in a cached feed have none until the next build. Found and fixed while checking it: a thumb on a search
+result closed the search and lost its results, because the question opened at the app's root; it now opens over the search.
+Tried on the iPhone simulator with real results. The banner's old failure was not reproduced (only the text it would show is tested).
+
 ## Folding the panel away
 
 On the Mac and the iPad the panel of reasons folds away from three places: the button at the head of the panel itself, the **Hide / Show Reasons

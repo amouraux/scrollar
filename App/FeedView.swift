@@ -489,7 +489,8 @@ private struct StatusBanner: View {
                                       @ViewBuilder action: () -> Action) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: icon).foregroundStyle(tint)
-            Text(text).font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
+            // Never more than a few lines, whatever was put in it.
+            Text(text).font(.footnote).lineLimit(4).frame(maxWidth: .infinity, alignment: .leading)
             action().font(.footnote.weight(.semibold))
         }
         .padding(12)

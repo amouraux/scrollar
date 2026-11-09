@@ -298,7 +298,7 @@ struct EntitySearchSheet: View {
                     failure = nil
                 } catch is CancellationError {
                 } catch {
-                    failure = model.hasKey ? "Search failed: \(error)" : "Add your OpenAlex key first."
+                    failure = model.hasKey ? "Search failed: \(ErrorText.brief(error))" : "Add your OpenAlex key first."
                 }
             }
         }
@@ -514,7 +514,7 @@ struct SeedPreviewView: View {
         load = .loading
         do { load = .loaded(try await model.preview(seed, rule: rule)) }
         catch is CancellationError {}
-        catch { load = .failed("\(error)") }
+        catch { load = .failed("\(ErrorText.brief(error))") }
     }
 }
 
@@ -549,7 +549,7 @@ struct ZoteroSection: View {
     private func loadCollections() async {
         guard let account = appModel.zotero, account.canWrite else { return }
         do { collections = try await ZoteroClient(account: account).collections(); collectionNote = nil }
-        catch { collectionNote = "The collections could not be listed: \(error)" }
+        catch { collectionNote = "The collections could not be listed: \(ErrorText.brief(error))" }
     }
 
     private func createCollection() async {
@@ -558,7 +558,7 @@ struct ZoteroSection: View {
             let made = try await ZoteroClient(account: account).createCollection(named: "Scrollar")
             collections = (collections + [made]).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             appModel.zoteroCollection = made
-        } catch { collectionNote = "\(error)" }
+        } catch { collectionNote = "\(ErrorText.brief(error))" }
     }
 
     var body: some View {
@@ -633,7 +633,7 @@ struct ZoteroSection: View {
                 try await appModel.connectZotero(key: key)
                 key = ""
             } catch {
-                problem = "\(error)"
+                problem = "\(ErrorText.brief(error))"
             }
             connecting = false
         }
@@ -719,7 +719,7 @@ struct SummariesSection: View {
                 try await model.setUpRemoteSummary(config)
                 key = ""
             } catch {
-                problem = "\(error)"
+                problem = "\(ErrorText.brief(error))"
             }
             testing = false
         }

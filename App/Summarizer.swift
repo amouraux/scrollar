@@ -83,7 +83,7 @@ actor Summarizer {
         do {
             return try await RemoteSummary.takeaway(remote, title: title, abstract: abstract).map(SummaryOutcome.text) ?? .declined
         } catch {
-            return .failed("\(error)")
+            return .failed("\(ErrorText.brief(error))")
         }
     }
 

@@ -60,8 +60,12 @@ struct SearchScreen: View {
             .safeAreaInset(edge: .top, spacing: 0) { field }
         }
         .environment(\.inSearch, true)
-        .onAppear { focused = true }
-        .onDisappear { task?.cancel() }
+        // The thumb question opens over the search, so the results stay where they were.
+        .sheet(item: Binding(get: { model.thumbRequest }, set: { model.thumbRequest = $0 })) {
+            ThumbSheet(request: $0).environment(model)
+        }
+        .onAppear { focused = true; model.searchOpen = true }
+        .onDisappear { task?.cancel(); model.searchOpen = false }
     }
 
     private var field: some View {
@@ -101,7 +105,7 @@ struct SearchScreen: View {
                 let found = try await model.search(phrase)
                 if !Task.isCancelled { state = .found(found) }
             } catch {
-                if !Task.isCancelled { state = .failed("\(error)") }
+                if !Task.isCancelled { state = .failed("\(ErrorText.brief(error))") }
             }
         }
     }
@@ -181,7 +185,7 @@ struct SearchScreen: View {
                         .buttonStyle(.plain)
                     }
                     countQuestion(query)
-                    Text("\(outcome.papers.count) papers from the last twelve months, ranked by your search first, then by what you keep, your library and projects, and the levels you set.")
+                    Text("\(outcome.papers.count) \(outcome.papers.count == 1 ? "paper" : "papers") from the last twelve months, ranked by your search first, then by what you keep, your library and projects, and the levels you set.")
                         .font(.footnote).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.bottom, 4)

@@ -351,7 +351,7 @@ final class AppModel {
             // Keep showing the last feed; only say what went wrong.
             log.error("refresh failed: \(String(describing: error), privacy: .public)")
             if older { olderFailed = true }
-            phase = .failed("\(error)")
+            phase = .failed("\(ErrorText.brief(error))")
         }
     }
 
@@ -435,7 +435,8 @@ final class AppModel {
 
     private func progress(_ message: String) {
         log.info("\(message, privacy: .public)")
-        if case .loading = phase { phase = .loading(message) }
+        // However long the line, the banner gets a short one.
+        if case .loading = phase { phase = .loading(ErrorText.clip(message)) }
     }
 
     // MARK: Takeaways
@@ -919,7 +920,7 @@ final class AppModel {
             }
             zoteroCheck = ("Checked at \(time): Zotero accepts the key, and it can \(fresh.canWrite ? "read and write" : "only read").", true)
         } catch {
-            zoteroCheck = ("Checked at \(time): \(error)", false)
+            zoteroCheck = ("Checked at \(time): \(ErrorText.brief(error))", false)
         }
     }
 
@@ -945,8 +946,8 @@ final class AppModel {
                 zoteroStatus = "Read \(min(fresh.items.count, settings.zoteroRecent)) items at \(Date().formatted(date: .omitted, time: .shortened))."
             } catch {
                 log.error("zotero read failed: \(String(describing: error), privacy: .public)")
-                zoteroStatus = "\(error)" + (cache == nil ? "" : " The last copy is in use.")
-                if cache == nil { notice = "Your Zotero library could not be read, so the feed was ranked without it. \(error)" }
+                zoteroStatus = "\(ErrorText.brief(error))" + (cache == nil ? "" : " The last copy is in use.")
+                if cache == nil { notice = "Your Zotero library could not be read, so the feed was ranked without it. \(ErrorText.brief(error))" }
             }
         }
         return Zotero.profileTexts(cache?.items ?? [], recent: settings.zoteroRecent)
@@ -1144,7 +1145,7 @@ final class AppModel {
             }
             show(text, seconds: 8)
         } catch {
-            show("\(error)", seconds: 15)
+            show("\(ErrorText.brief(error))", seconds: 15)
         }
     }
 
@@ -1212,6 +1213,9 @@ final class AppModel {
         let candidates: [ThumbBasis.Candidate]
     }
     var thumbRequest: ThumbRequest?
+    /// True while the search sheet is up: the thumb question then opens over it, not over the feed behind, which
+    /// would close the search and lose its results.
+    var searchOpen = false
 
     /// A thumb on a paper. It asks what it is about (a keyword, the journal, an author, a topic), so that the effect
     /// on the feed is the one the user chose and can see; or, if the user said not to ask, takes the first reason

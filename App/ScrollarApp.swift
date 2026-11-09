@@ -27,7 +27,9 @@ struct ScrollarApp: App {
             .task { await model.resume() }
             // A thumb asks what it is about, wherever it was given.
             // (The model is handed to it: a sheet attached out here does not see what was set on the tabs.)
-            .sheet(item: $model.thumbRequest) { ThumbSheet(request: $0).environment(model) }
+            .sheet(item: Binding(get: { model.searchOpen ? nil : model.thumbRequest }, set: { model.thumbRequest = $0 })) {
+                ThumbSheet(request: $0).environment(model)
+            }
             #if targetEnvironment(macCatalyst)
             // A window that is too small to hold a post is no use; keep it readable.
             .onAppear {
