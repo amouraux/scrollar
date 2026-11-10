@@ -755,6 +755,26 @@ rebuilt from what was kept. Papers kept before this have no PDF address until th
 switch for them. Tried on the iPad simulator (a wide window, the pane and the abstract) and on the iPhone simulator. Not tried: the Mac window, the
 PDF switch on a kept paper, Read and For me lists, long press.
 
+## Starting again
+
+Tune, Sync and backup, **Start again…** (`App/ResetScreen.swift`, `Core/Reset.swift`, tested) clears everything, or only the parts ticked. The
+backup is how to go back to what was; this is how to begin from nothing, or from nothing for some of it. The parts, each with what it clears
+and how much there is to clear: **You** (ORCID iD, the people also learned from, whether own papers count), **What you follow and mute**
+(every follow, mute, tracked paper and level set by hand; the follow lists are filled from the publications again the next time the feed is
+built, as on a first launch, because `profileFilled` is reset too), **What your thumbs taught** (the events, how they fade and pull, how much kept
+and hidden papers count), **Reading list, For me and hidden papers**, **Ranking and what the feed shows** (sliders, kinds of paper, look-back,
+filters, order, highlights), **Sources** (which are on, not the OpenAlex key), **Reference managers** (not the Zotero key), **Recent searches**,
+**Your projects** and **What you have read**. The OpenAlex, Zotero and summary keys, and the link to the sync file, are never touched.
+
+A confirmation names what will go. What was there is kept in memory until the app closes, so **Undo the reset** (shown on the same screen) puts
+it back: the settings, the projects, the searches and the reading history. A backup is the only way back after that, and "Save a backup first…"
+is on the screen. With syncing on, a reset of settings is a set of removals like any other, so the other devices follow it; recent searches
+and projects are on each device only, and what has been read is merged between devices and can come back from one that still has it. Settings
+that are not part of any part (the formatVersion) are not touched; a test resets every part of a deliberately non-default settings value
+and expects the settings of a first launch, and another counts the settings so that a new one is not forgotten. Tried on the iPhone
+simulator: the screen, ticking, the confirmation, clearing the thumbs, and the undo. Not tried: clearing everything, the other parts, the
+Mac, with syncing on.
+
 ## Search
 
 The magnifier beside All | New on the feed (⌘F on the Mac) opens a search (`App/SearchScreen.swift`, `Core/Search.swift`, tested). The phrase is

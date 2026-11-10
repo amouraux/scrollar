@@ -2138,6 +2138,40 @@ check(spSaved.paper(known: [spFeed]).topics == ["From the feed"], "kept paper: w
 let spOld = try! JSONDecoder().decode(SavedPaper.self, from: Data(#"{"id":"doi:10.1/y","title":"Old","date":"2026-01-01"}"#.utf8))
 check(spOld.paper(known: []).dedupeKey == "doi:10.1/y" && spOld.pdfURL == nil && spOld.topics == nil, "kept paper: one kept before these were stored still loads, and shows what it has")
 
+// Starting again, by parts.
+var rsLoud = FeedSettings()
+rsLoud.orcid = "0000-0002-1825-0097"; rsLoud.profileOrcids = [ProfileSource(orcid: "0000-0001-2345-6789", label: "Supervisor")]; rsLoud.profileFilled = true; rsLoud.useMyPublications = false
+rsLoud.followedTopics = [Entity(id: "T1", name: "Topic")]; rsLoud.followedJournals = [Entity(id: "S1", name: "Journal")]; rsLoud.followedAuthors = [Entity(id: "A1", name: "Author")]
+rsLoud.followedInstitutions = [Entity(id: "I1", name: "Inst")]; rsLoud.followedFunders = [Entity(id: "F1", name: "Funder")]; rsLoud.followedKeywords = [KeywordRule(phrase: "tms")]
+rsLoud.trackedPapers = [Entity(id: "W1", name: "Paper")]; rsLoud.mutedJournals = [Entity(id: "S2", name: "Muted")]; rsLoud.mutedAuthors = [Entity(id: "A2", name: "Muted")]
+rsLoud.mutedTopics = [Entity(id: "T2", name: "Muted")]; rsLoud.mutedKeywords = ["horoscope"]; rsLoud.levels = [LevelEntry(kind: .keyword, id: "tms", name: "tms", level: .lower)]
+rsLoud.thumbEvents = [ev(evTarget, true, 0)]; rsLoud.evidence.strength = 0.2; rsLoud.asksThumbBasis = false; rsLoud.hideMemory = 7; rsLoud.hideHalfLifeMonths = 1; rsLoud.likeMemory = 9; rsLoud.likeHalfLifeMonths = 2; rsLoud.hideStrength = 0.1; rsLoud.likeStrength = 0.2
+rsLoud.feedback.saved = [SavedPaper(lvPaper("rs1"))]; rsLoud.feedback.liked = [SavedPaper(lvPaper("rs2"))]; rsLoud.feedback.hidden = ["doi:x"]; rsLoud.feedback.hiddenPapers = [SavedPaper(lvPaper("rs3"))]
+rsLoud.kindWeights = [:]; rsLoud.daysBack = 3; rsLoud.recency = 0.9; rsLoud.closeness = 0.1; rsLoud.impactWeight = 0.7; rsLoud.authorWeight = 0.6; rsLoud.byline = .first
+rsLoud.feedOrder = .sections; rsLoud.highlightCount = 9; rsLoud.highlightCloseness = 0.5; rsLoud.highlightImpact = 1; rsLoud.highlightAuthorH = 3
+rsLoud.requireAbstract = true; rsLoud.openAccessOnly = true; rsLoud.seenExpiryDays = 1; rsLoud.showReadPapers = true; rsLoud.languages = ["fr"]; rsLoud.dwellSeconds = 9
+rsLoud.countsSearches = false; rsLoud.asksAboutSearches = false
+rsLoud.useOpenAlex = false; rsLoud.useEuropePMC = false; rsLoud.useCrossref = false; rsLoud.useArXiv = true; rsLoud.useOSF = true
+rsLoud.referenceManagers = [.zotero]; rsLoud.useZotero = true; rsLoud.useLibraryFile = true; rsLoud.zoteroRecent = 5
+let rsSettingsParts = Set(ResetPart.allCases.filter(\.inSettings))
+var rsAll = rsLoud; rsAll.reset(rsSettingsParts)
+check(rsAll == FeedSettings(), "reset: every part together gives back the settings of a first launch, so no setting is left out of a part")
+check(Mirror(reflecting: FeedSettings()).children.count == 56, "reset: a setting was added or removed: give it a part in Reset.swift, set it in this test, then change this number")
+var rsFollows = rsLoud; rsFollows.reset([.follows])
+check(rsFollows.followedTopics.isEmpty && rsFollows.mutedKeywords.isEmpty && rsFollows.levels.isEmpty && rsFollows.trackedPapers.isEmpty && !rsFollows.profileFilled && rsFollows.orcid == rsLoud.orcid && rsFollows.thumbEvents == rsLoud.thumbEvents && rsFollows.feedback == rsLoud.feedback && rsFollows.daysBack == 3 && rsFollows.useArXiv, "reset: follows go, and everything else stays, the ORCID, the thumbs, the lists and the sliders included; the lists are filled from the publications again")
+var rsThumbs = rsLoud; rsThumbs.reset([.thumbs])
+check(rsThumbs.thumbEvents.isEmpty && rsThumbs.evidence == EvidenceSettings() && rsThumbs.asksThumbBasis && rsThumbs.likeMemory == 200 && rsThumbs.followedTopics == rsLoud.followedTopics && rsThumbs.feedback == rsLoud.feedback, "reset: the thumbs and how they are read go, the reading list and follows stay")
+var rsLists = rsLoud; rsLists.reset([.lists])
+check(rsLists.feedback == Feedback() && rsLists.thumbEvents == rsLoud.thumbEvents && rsLists.followedTopics == rsLoud.followedTopics, "reset: the reading list, For me and hidden papers go, the thumbs stay")
+var rsRank = rsLoud; rsRank.reset([.ranking])
+check(rsRank.daysBack == 30 && rsRank.feedOrder == FeedSettings().feedOrder && rsRank.languages.isEmpty && !rsRank.requireAbstract && rsRank.kindWeights == FeedSettings().kindWeights && rsRank.useArXiv && rsRank.orcid == rsLoud.orcid && rsRank.followedKeywords == rsLoud.followedKeywords, "reset: the sliders and filters go, what is followed and the sources stay")
+var rsSrc = rsLoud; rsSrc.reset([.sources, .references, .you])
+check(rsSrc.useOpenAlex && rsSrc.useEuropePMC && !rsSrc.useArXiv && !rsSrc.useOSF && rsSrc.referenceManagers.isEmpty && !rsSrc.useZotero && rsSrc.orcid == nil && rsSrc.useMyPublications && rsSrc.daysBack == 3, "reset: parts can be combined, and the rest is left alone")
+var rsNone = rsLoud; rsNone.reset([])
+check(rsNone == rsLoud && { var s = rsLoud; s.reset([.searches, .projects, .history]); return s == rsLoud }(), "reset: nothing chosen changes nothing, and what only the device holds is not in the settings")
+check(ResetPart.follows.detail(in: rsLoud) == "12 follows, mutes and levels" && ResetPart.follows.detail(in: FeedSettings()) == "Nothing to clear" && ResetPart.thumbs.detail(in: rsLoud) == "1 thumb" && ResetPart.lists.detail(in: rsLoud) == "3 papers" && ResetPart.you.detail(in: rsLoud) == "ORCID iD set", "reset: each part says how much there is to clear")
+check(ResetPart.allCases.allSatisfy { !$0.title.isEmpty && !$0.clears.isEmpty } && ResetPart.searches.onThisDeviceOnly && !ResetPart.history.inSettings && ResetPart.follows.inSettings, "reset: every part has a name and says what it clears")
+
 // More reasons for a thumb: title phrases, more researchers, institutions, groups.
 check(TitleTerms.phrases(from: "Transdiagnostic efficacy, durability, and optimal parameters of rTMS for cognitive rehabilitation: A comprehensive meta-analysis", limit: 4) == ["rTMS", "Transdiagnostic efficacy", "optimal parameters", "cognitive rehabilitation"], "title terms: a title is cut at the little words and the punctuation, acronyms and longer phrases first")
 check(TitleTerms.phrases(from: "A study of the effects of a novel approach") == [] && TitleTerms.phrases(from: "Letter to the Editor: Cannabis Use and Clinical Outcomes of rTMS among adults with Major Depressive Disorder", limit: 5) == ["Major Depressive Disorder", "rTMS", "Cannabis Use"], "title terms: words any title could carry say nothing, alone or at the edge of a phrase")

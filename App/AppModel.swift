@@ -544,6 +544,49 @@ final class AppModel {
     /// saved, recorded for sync and fetched for.
     func restore(_ restored: FeedSettings) { settings = restored }
 
+    // MARK: Starting again
+
+    /// What was there before the last reset, kept until the app closes so that it can be taken back.
+    struct ResetSnapshot {
+        let settings: FeedSettings
+        let projects: [ProjectFile]
+        let searches: [Search]
+        let history: History
+        let at: Date
+        let parts: Set<ResetPart>
+    }
+    private(set) var resetSnapshot: ResetSnapshot?
+
+    /// Start again for `parts` (see Reset.swift). The settings go through the same path as any edit, so they are saved
+    /// and, with syncing on, the other devices follow; recent searches, projects and the reading history are the
+    /// device's own. What was there is kept in memory for `undoReset`.
+    func reset(_ parts: Set<ResetPart>) {
+        guard !parts.isEmpty else { return }
+        resetSnapshot = ResetSnapshot(settings: settings, projects: projects, searches: searches, history: history,
+                                      at: Date(), parts: parts)
+        var s = settings
+        s.reset(parts)
+        if parts.contains(.searches) { searches = []; store.saveSearches([]) }
+        if parts.contains(.projects) { projects = []; projectsChanged() }
+        if parts.contains(.history) { history = History(); saveHistoryNow(); syncHistorySoon(after: 2) }
+        settings = s
+        closeReader()
+        needsRefresh = true
+        show("Started again: " + ResetPart.allCases.filter(parts.contains).map { $0.title.lowercased() }.joined(separator: ", "), seconds: 8)
+    }
+
+    /// Put back what the last reset cleared.
+    func undoReset() {
+        guard let snap = resetSnapshot else { return }
+        settings = snap.settings
+        projects = snap.projects; store.saveProjects(projects)
+        searches = snap.searches; store.saveSearches(searches)
+        history = snap.history; saveHistoryNow(); syncHistorySoon(after: 2)
+        resetSnapshot = nil
+        needsRefresh = true
+        show("The reset is undone")
+    }
+
     /// What following `seed` would find, without following it.
     func preview(_ seed: Seed, rule: KeywordRule? = nil) async throws -> SeedPreview {
         let engine = FeedEngine(openAlex: usesOpenAlex ? openAlex : nil,

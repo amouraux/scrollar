@@ -428,6 +428,14 @@ struct SyncBackupScreen: View {
             }
 
             Section {
+                NavigationLink { ResetScreen() } label: { Label("Start again…", systemImage: "arrow.counterclockwise") }
+            } header: {
+                Text("Start again")
+            } footer: {
+                Text("Clear everything, or only some of it: what you follow, what your thumbs taught, the reading list, the sliders. Save a backup first if you may want it back.")
+            }
+
+            Section {
                 Button("Save a backup of my settings…") { creatingBackup = true }
                 Button("Restore settings from a backup…") { restoringBackup = true }
             } header: {
