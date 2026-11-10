@@ -1329,6 +1329,9 @@ final class AppModel {
         markOpened(p)
     }
 
+    /// Leave the pane empty, as when another list takes it over.
+    func closeReader() { readerPaper = nil }
+
     /// Next or previous paper in the order on screen (the menu commands). Does nothing while the
     /// pane is not on screen, so a paper is never marked read where nobody could see it.
     func stepReader(_ offset: Int) {

@@ -49,7 +49,13 @@ struct FeedFilter: Equatable {
         var new: Int
     }
 
-    /// Every kind present, each followed by its names (the commonest first), most specific kind first. A
+    /// The order the panel lists the kinds in: what a person catches up on first (the subjects), then who and where,
+    /// then the rest. Kept apart from `Why.Kind`'s own order, which the posts and the reasons use.
+    static let panelOrder: [Why.Kind] = [
+        .followedTopic, .ownTopic, .keyword, .author, .journal, .citesYou, .citesTracked, .institution, .funder, .other,
+    ]
+
+    /// Every kind present, each followed by its names (the commonest first), in `panelOrder`. A
     /// paper counts once per facet however many of its reasons match. Read papers count only if they are shown.
     static func facets(_ layout: FeedLayout, includeRead: Bool) -> [Facet] {
         var kinds: [Why.Kind: (count: Int, new: Int)] = [:]
@@ -66,7 +72,7 @@ struct FeedFilter: Equatable {
             }
         }
         var out: [Facet] = []
-        for kind in Why.Kind.allCases {
+        for kind in panelOrder {
             guard let total = kinds[kind] else { continue }
             out.append(Facet(kind: kind, detail: nil, count: total.count, new: total.new))
             let names = (details[kind] ?? [:]).sorted { $0.value.count != $1.value.count ? $0.value.count > $1.value.count : $0.key < $1.key }

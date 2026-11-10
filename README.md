@@ -738,6 +738,23 @@ button to open it again (it shows a filled filter icon while a filter is on, so 
 On a window too narrow for the panel beside the feed, the same button and command open it as a sheet (`AppModel.toggleFeedPanel`). The Mac
 window and the menu command were built, not tried: the Mac app is never launched from here.
 
+## The reading list looks like the feed
+
+The three lists (Reading list, Read, For me) used to be plain rows. They now show the same posts as the feed (`PaperCard`): the journal in its
+colours, the title, the authors with their institution, why the paper was kept, and the same buttons (Read later, For me, Not for me, Abstract,
+Open, Share). On a window wide enough for the reader (the iPad, the Mac), tapping a post opens it in a **pane on the right**, as on the feed:
+the authors, why it is in the feed, the abstract in full, and a **Details | PDF** switch where a free PDF is known; the list column and the pane
+share one drag handle and the same remembered width as the feed. Where the filter panel (310 points) would leave no room for the pane, the
+pane wins and the panel opens as a sheet from the filter button, as on the feed. Long press (or right click) a post for Add to Zotero, and to
+remove it from the list or take back a For me. The swipe actions of the old rows are gone, since the post's own buttons do the same.
+
+To show a kept paper this way the list needs more than a slim record, so a kept paper now also stores (all optional; older entries still
+load and show what they have) its PDF address, its kind, topics, keywords, the institutions of the first and last author, whether it is open
+access and its journal id (`SavedPaper`). Where the feed still holds the paper its own copy is used (`SavedPaper.paper(known:)`, tested), else one is
+rebuilt from what was kept. Papers kept before this have no PDF address until they are kept again, and the reader pane then has no PDF
+switch for them. Tried on the iPad simulator (a wide window, the pane and the abstract) and on the iPhone simulator. Not tried: the Mac window, the
+PDF switch on a kept paper, Read and For me lists, long press.
+
 ## Search
 
 The magnifier beside All | New on the feed (⌘F on the Mac) opens a search (`App/SearchScreen.swift`, `Core/Search.swift`, tested). The phrase is
@@ -777,8 +794,9 @@ no source that can answer it, whether the feed changes after several searches ov
 
 ## Catching up on one topic
 
-On a window wide enough for the reader (the iPad and the Mac), a panel before the feed lists **why papers are in it**: Cites your work, then
-Authors, Keywords, Journals, Topics, each with its names, how many papers carry each and how many of them are new (`Core/FeedFilter.swift`,
+On a window wide enough for the reader (the iPad and the Mac), a panel before the feed lists **why papers are in it**: Topics (you follow, then from your papers), Keywords,
+Authors, Journals, then Cites your work, Institutions, Funders and Other (`FeedFilter.panelOrder`: the subjects first, then who and where; it
+was Cites your work, Authors, Keywords, Journals, Topics), each with its names, how many papers carry each and how many of them are new (`Core/FeedFilter.swift`,
 tested). Choosing one narrows the feed to the papers that are there for that reason, so a subject can be caught up on; choosing it again, or
 Everything, shows all, and a bar at the top of the feed says what it is narrowed to, with Clear. It combines with **New only** ("what is new on
 this topic") and with the reading order of the arrow keys. A paper counts once per reason however many of its reasons match; a lone name under a

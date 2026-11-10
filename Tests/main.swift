@@ -1900,9 +1900,12 @@ let ffFacets = FeedFilter.facets(ffLayout, includeRead: false)
 let ffKeyword = ffFacets.first { $0.kind == .keyword && $0.detail == nil }
 let ffTms = ffFacets.first { $0.kind == .keyword && $0.detail == "tms" }
 check(ffKeyword?.count == 5 && ffKeyword?.new == 4 && ffTms?.count == 4 && ffTms?.new == 3, "feed filter: a reason is counted once per paper, with how many of them are new")
+check(Set(FeedFilter.panelOrder) == Set(Why.Kind.allCases) && FeedFilter.panelOrder.count == Why.Kind.allCases.count, "feed filter: every kind has a place in the panel's order")
+let ffOrder = ffFacets.filter { $0.detail == nil }.map(\.kind)
+check(ffOrder == FeedFilter.panelOrder.filter { ffOrder.contains($0) } && ffOrder.firstIndex(of: .keyword)! < ffOrder.firstIndex(of: .author)! && ffOrder.firstIndex(of: .author)! < ffOrder.firstIndex(of: .journal)!, "feed filter: the panel lists topics, then keywords, authors and journals, then the rest")
 check(ffFacets.first { $0.kind == .journal && $0.detail == nil }?.count == 2 && ffFacets.first { $0.kind == .author && $0.detail == nil }?.count == 2 && ffFacets.first { $0.kind == .other }?.count == 1 && !ffFacets.contains { $0.kind == .journal && $0.detail != nil }, "feed filter: journals and authors are counted, a lone name is not listed twice, and a paper with no reason falls under Other")
 check(!ffFacets.contains { $0.kind == .keyword && $0.detail == "ml" } && FeedFilter.facets(ffLayout, includeRead: true).contains { $0.kind == .keyword && $0.detail == "ml" }, "feed filter: read papers are counted only when they are shown")
-check(ffFacets.firstIndex { $0.kind == .author } ?? 99 < ffFacets.firstIndex { $0.kind == .keyword } ?? 0 && ffFacets.first?.kind == .author, "feed filter: the most specific kind comes first")
+check(ffFacets.firstIndex { $0.kind == .keyword } ?? 99 < ffFacets.firstIndex { $0.kind == .author } ?? 0 && ffFacets.first?.kind == .keyword, "feed filter: keywords come before authors")
 let ffByKeyword = ffLayout.filtered(by: FeedFilter(kind: .keyword, detail: "tms"))
 check(ffByKeyword.feed.fresh.map(\.paper.id) == ["a", "b"] && ffByKeyword.feed.earlier.map(\.paper.id) == ["d"] && ffByKeyword.feed.read.isEmpty && ffByKeyword.older.isEmpty && ffByKeyword.highlights.map(\.ranked.paper.id) == ["h"], "feed filter: only the papers there for that reason stay, in every part of the feed")
 check(ffLayout.filtered(by: FeedFilter(kind: .journal, detail: nil)).feed.fresh.map(\.paper.id) == ["a"] && ffLayout.filtered(by: FeedFilter(kind: .other, detail: nil)).feed.earlier.map(\.paper.id) == ["e"] && ffLayout.filtered(by: FeedFilter()).feed.fresh.count == 3, "feed filter: a whole kind, the papers with no reason, and no filter at all")
@@ -2119,6 +2122,21 @@ evDoc.reconcile(evGone, at: evNow.addingTimeInterval(60))
 check(evDoc.apply(to: evBack).thumbEvents.isEmpty, "sync: events that were let go are let go everywhere")
 check((try! FeedSettings.decode(Data(#"{"evidence":{"strength":0.5}}"#.utf8))).evidence.strength == 0.5 && (try! FeedSettings.decode(Data(#"{"evidence":{"strength":0.5}}"#.utf8))).evidence.halfLifeUpDays == 90 && (try! FeedSettings.decode(Data("{}".utf8))).thumbEvents.isEmpty, "settings: the thumb events and their rules read from a file that lacks them, or has only some")
 check(Evidence.summary(evTarget, before: 0.24, after: 0.6, pinned: nil) == "“migraine” +0.2 → +0.6" && Evidence.summary(evTarget, before: 0, after: 0, pinned: .higher).contains("pinned at Higher"), "evidence: the toast says what a thumb did, or that a pin kept it from doing anything")
+
+// A kept paper shown as the feed shows one.
+var spFull = lvPaper("sp1", title: "Botulinum toxin for migraine", journal: "Headache", journalID: "S9", authors: ["A One", "B Two"], topics: ["Migraine"], reasons: ["Keyword: migraine"])
+spFull.doi = "10.1/x"; spFull.pdfURL = "https://example.org/x.pdf"; spFull.openAlexType = "review"; spFull.keywords = ["Botulinum toxin"]; spFull.firstInstitution = "University of Alpha"; spFull.isOpenAccess = true; spFull.followed = true
+let spSaved = SavedPaper(spFull, at: evNow)
+let spBack = spSaved.paper(known: [])
+check(spBack.dedupeKey == spFull.dedupeKey && spBack.title == spFull.title && spBack.journal == "Headache" && spBack.authors == ["A One", "B Two"] && spBack.reasons == ["Keyword: migraine"] && spBack.followed && spBack.pdfURL == spFull.pdfURL && spBack.openAlexType == "review" && spBack.topics == ["Migraine"] && spBack.keywords == ["Botulinum toxin"] && spBack.firstInstitution == "University of Alpha" && spBack.isOpenAccess && spBack.journalID == "S9" && spBack.link == spFull.link, "kept paper: it comes back as a paper the feed's post and the reader can show, with the same key and link")
+var spOA = lvPaper("W123", title: "No doi, no pmid"); spOA.doi = nil; spOA.pmid = nil
+check(SavedPaper(spOA).paper(known: []).dedupeKey == "oa:W123" && SavedPaper(spOA).paper(known: []).link == spOA.link, "kept paper: one known only by its OpenAlex id keeps its key")
+var spPm = lvPaper("p9", title: "Pubmed only"); spPm.doi = nil; spPm.pmid = "555"
+check(SavedPaper(spPm).paper(known: []).dedupeKey == "pmid:555", "kept paper: one known only by its PMID keeps its key")
+var spFeed = spFull; spFeed.topics = ["From the feed"]
+check(spSaved.paper(known: [spFeed]).topics == ["From the feed"], "kept paper: where the feed still holds the paper, its own copy is used")
+let spOld = try! JSONDecoder().decode(SavedPaper.self, from: Data(#"{"id":"doi:10.1/y","title":"Old","date":"2026-01-01"}"#.utf8))
+check(spOld.paper(known: []).dedupeKey == "doi:10.1/y" && spOld.pdfURL == nil && spOld.topics == nil, "kept paper: one kept before these were stored still loads, and shows what it has")
 
 // More reasons for a thumb: title phrases, more researchers, institutions, groups.
 check(TitleTerms.phrases(from: "Transdiagnostic efficacy, durability, and optimal parameters of rTMS for cognitive rehabilitation: A comprehensive meta-analysis", limit: 4) == ["rTMS", "Transdiagnostic efficacy", "optimal parameters", "cognitive rehabilitation"], "title terms: a title is cut at the little words and the punctuation, acronyms and longer phrases first")

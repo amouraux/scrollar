@@ -146,6 +146,17 @@ struct SavedPaper: Codable, Hashable {
     var keptAt: Double?
     /// The user said not to count it, without deleting it.
     var ignored: Bool?
+    /// What the reading list needs to show the paper as the feed does (its journal's colours, its kind, its
+    /// topics, its PDF), and the reader beside it. All optional, so what was kept before still loads; an older app
+    /// that reads one ignores them.
+    var pdfURL: String?
+    var kind: String?
+    var topics: [String]?
+    var keywords: [String]?
+    var firstInstitution: String?
+    var lastInstitution: String?
+    var openAccess: Bool?
+    var journalID: String?
 
     init(_ p: Paper, at: Date? = nil) {
         keptAt = at?.timeIntervalSince1970
@@ -157,6 +168,42 @@ struct SavedPaper: Codable, Hashable {
         journal = p.journal
         reasons = p.reasons.isEmpty ? nil : p.reasons
         followed = p.reasons.isEmpty ? nil : p.followed
+        pdfURL = p.pdfURL
+        kind = p.openAlexType
+        topics = p.topics.isEmpty ? nil : p.topics
+        keywords = (p.keywords ?? []).isEmpty ? nil : p.keywords
+        firstInstitution = p.firstInstitution
+        lastInstitution = p.lastInstitution
+        openAccess = p.isOpenAccess ? true : nil
+        journalID = p.journalID
+    }
+}
+
+extension SavedPaper {
+    /// The paper as a post and the reader pane can show it: the feed's own copy where the feed still holds it
+    /// (it knows everything), else one rebuilt from what was kept. `id` is the dedupe key, so the rebuilt paper
+    /// has the same one.
+    func paper(known feed: [Paper]) -> Paper {
+        if let held = feed.first(where: { $0.dedupeKey == id }) { return held }
+        var p = Paper(id: id, title: title, date: date)
+        if id.hasPrefix("doi:") { p.doi = String(id.dropFirst(4)); p.id = "saved:" + id }
+        else if id.hasPrefix("pmid:") { p.pmid = String(id.dropFirst(5)); p.id = "saved:" + id }
+        else if id.hasPrefix("oa:") { p.id = String(id.dropFirst(3)) }
+        p.abstract = abstract
+        p.journal = journal
+        p.authors = authors ?? []
+        p.reasons = reasons ?? []
+        p.followed = followed ?? false
+        p.pdfURL = pdfURL
+        p.openAlexType = kind
+        p.topics = topics ?? []
+        p.keywords = keywords
+        p.firstInstitution = firstInstitution
+        p.lastInstitution = lastInstitution
+        p.isOpenAccess = openAccess ?? false
+        p.journalID = journalID
+        p.isRepository = false
+        return p
     }
 }
 

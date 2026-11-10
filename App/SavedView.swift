@@ -9,6 +9,10 @@ struct SavedView: View {
     /// Wide windows keep the panel beside the list; a narrow one opens it as a sheet.
     @State private var panelShown = true
     @State private var panelSheet = false
+    /// The same width of the list as on the feed, so the two tabs sit alike.
+    @AppStorage("feedColumnFraction") private var storedFraction = 0.0
+
+    private static let panelWidth: Double = 310
 
     /// What the user adds to read later; what they have read; what they marked as being for them.
     enum Tab: String, CaseIterable { case saved = "Reading list", read = "Read", liked = "For me" }
@@ -42,12 +46,19 @@ struct SavedView: View {
     var body: some View {
         NavigationStack {
             GeometryReader { geo in
-                let wide = geo.size.width >= 700
+                let total = geo.size.width
                 let all = entries
+                // The panel sits beside the list when the window has room for it; where it would leave no room for
+                // the reader pane, the pane wins and the panel opens as a sheet (as on the feed).
+                let panelFits = total >= 700 && (Reader.isWide(width: total - Self.panelWidth - 1) || !Reader.isWide(width: total))
+                let panelInline = panelFits && panelShown
+                let inner = panelInline ? total - Self.panelWidth - 1 : total
+                let readerWide = Reader.isWide(width: inner)
+                let listWidth = Reader.feedColumnWidth(total: inner, fraction: storedFraction)
                 HStack(spacing: 0) {
-                    if wide && panelShown {
+                    if panelInline {
                         SavedFilterPanel(items: all.map(\.paper), filter: $filter, unreadOnly: list == .saved ? $unreadOnly : nil)
-                            .frame(width: 310)
+                            .frame(width: Self.panelWidth)
                             // Its own tint, so the panel reads as a side bar and not as more list.
                             .background(Color.accentColor.opacity(0.08))
                         Divider()
@@ -61,14 +72,20 @@ struct SavedView: View {
 
                         content(all)
                     }
-                    // Room between the panel and the list's own rounded card.
-                    .padding(.leading, wide && panelShown ? 12 : 0)
+                    .frame(width: readerWide ? listWidth : nil)
+                    if readerWide {
+                        ColumnHandle(feedWidth: listWidth, total: inner, fraction: $storedFraction)
+                        ReaderPane()
+                    }
                 }
+                // Tapping a post shows it in the pane (as on the feed) rather than unfolding it.
+                .onChange(of: readerWide, initial: true) { _, now in model.readerShown = now }
+                .onAppear { model.readerShown = readerWide; model.closeReader() }
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) { exportButton }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
-                            if wide { withAnimation { panelShown.toggle() } } else { panelSheet = true }
+                            if panelFits { withAnimation { panelShown.toggle() } } else { panelSheet = true }
                         } label: {
                             Label("Filter", systemImage: filtering
                                   ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
@@ -88,7 +105,7 @@ struct SavedView: View {
             .navigationTitle(list.rawValue)
         }
         // A kind that exists in one list may not in another.
-        .onChange(of: list) { filter.kind = nil; filter.detail = nil }
+        .onChange(of: list) { filter.kind = nil; filter.detail = nil; model.closeReader() }
     }
 
     @ViewBuilder private func content(_ all: [(paper: SavedPaper, subtitle: String)]) -> some View {
@@ -96,7 +113,6 @@ struct SavedView: View {
             emptyState
         } else {
             let shown = visible(all.map(\.paper))
-            let subtitles = Dictionary(all.map { ($0.paper.id, $0.subtitle) }, uniquingKeysWith: { a, _ in a })
             if shown.isEmpty {
                 ContentUnavailableView {
                     Label("Nothing matches", systemImage: "line.3.horizontal.decrease.circle")
@@ -106,22 +122,34 @@ struct SavedView: View {
                     Button("Clear filter") { filter.kind = nil; filter.detail = nil; filter.query = ""; unreadOnly = false }
                 }
             } else {
-                List {
-                    ForEach(shown, id: \.id) { paper in
-                        row(paper, subtitle: subtitles[paper.id] ?? paper.date)
-                            .swipeActions { swipe(paper) }
-                            // Separate from the list: it puts the paper in the reference manager, whichever list this is.
-                            .swipeActions(edge: .leading) { zoteroButton(paper).tint(.blue) }
-                            .contextMenu {
-                                zoteroButton(paper)
-                                if list == .saved {
-                                    Button("Remove from reading list", systemImage: "minus.circle", role: .destructive) {
-                                        model.settings.feedback.saved.removeAll { $0.id == paper.id }
+                // The same posts as the feed: the journal in its colours, the authors, why it was kept, the buttons.
+                let known = model.layout.all.map(\.paper)
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(shown, id: \.id) { saved in
+                            PaperCard(ranked: RankedPaper(paper: saved.paper(known: known), score: 0, similarity: 0))
+                                .contextMenu {
+                                    // Separate from the list: it puts the paper in the reference manager, whichever list this is.
+                                    zoteroButton(saved)
+                                    if list == .saved {
+                                        Button("Remove from reading list", systemImage: "minus.circle", role: .destructive) {
+                                            model.settings.feedback.saved.removeAll { $0.id == saved.id }
+                                        }
+                                    }
+                                    if list == .liked {
+                                        Button("Take back", systemImage: "arrow.uturn.backward", role: .destructive) {
+                                            model.settings.feedback.unlike(saved.id)
+                                        }
                                     }
                                 }
-                            }
+                        }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: 700)
+                    .frame(maxWidth: .infinity)
                 }
+                .background(Color(.systemGroupedBackground))
             }
         }
     }
@@ -130,17 +158,6 @@ struct SavedView: View {
     @ViewBuilder private func zoteroButton(_ paper: SavedPaper) -> some View {
         if model.zotero?.canWrite == true {
             Button("Add to Zotero", systemImage: "tray.and.arrow.down") { Task { await model.addToZotero(paper) } }
-        }
-    }
-
-    @ViewBuilder private func swipe(_ paper: SavedPaper) -> some View {
-        switch list {
-        case .saved:
-            Button("Remove", role: .destructive) { model.settings.feedback.saved.removeAll { $0.id == paper.id } }
-        case .liked:
-            Button("Take back", role: .destructive) { model.settings.feedback.unlike(paper.id) }
-        case .read:
-            EmptyView()
         }
     }
 
@@ -170,32 +187,6 @@ struct SavedView: View {
             ShareLink(item: ReferenceFile(name: name, make: { RIS.references(items, known: layout.all.map(\.paper)) }),
                       preview: SharePreview(name, image: Image(systemName: "books.vertical"))) {
                 Label("Export for a reference manager", systemImage: "square.and.arrow.up")
-            }
-        }
-    }
-
-    private func row(_ paper: SavedPaper, subtitle: String) -> some View {
-        let title = Html.plain(paper.title)
-        let tags = SavedFilter.tags(of: paper)
-        return VStack(alignment: .leading, spacing: 4) {
-            // A paper already opened is dimmed on the reading list, so what is left to read stands out.
-            let dimmed = list == .saved && isRead(paper)
-            if let url = paper.link {
-                Link(destination: url) {
-                    Text(title).font(.headline).multilineTextAlignment(.leading)
-                        .foregroundStyle(dimmed ? Color.secondary : Color.primary)
-                }
-            } else {
-                Text(title).font(.headline).foregroundStyle(dimmed ? Color.secondary : Color.primary)
-            }
-            Text(subtitle).font(.caption).foregroundStyle(.secondary)
-            if let first = tags.first {
-                Label(Why.text(for: first) + (tags.count > 1 ? " · +\(tags.count - 1)" : ""),
-                      systemImage: first.kind.symbol)
-                    .font(.caption).foregroundStyle(.tint).lineLimit(1)
-            }
-            if let abstract = paper.abstract {
-                Text(abstract).font(.footnote).foregroundStyle(.secondary).lineLimit(3)
             }
         }
     }

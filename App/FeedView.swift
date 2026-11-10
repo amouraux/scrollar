@@ -5,8 +5,6 @@ struct FeedView: View {
 
     /// The proportion of the window the feed column takes, as last dragged; 0 is the default.
     @AppStorage("feedColumnFraction") private var storedFraction = 0.0
-    /// Where the column was when a drag began, so the drag moves it relative to that.
-    @State private var dragStart: Double?
 
     private static let panelWidth: Double = 250
 
@@ -35,12 +33,14 @@ struct FeedView: View {
                 feedColumn
                     .frame(width: wide ? feedWidth : nil)
                 if wide {
-                    handle(feedWidth: feedWidth, total: inner)
+                    ColumnHandle(feedWidth: feedWidth, total: inner, fraction: $storedFraction)
                     ReaderPane()
                 }
             }
             .animation(.default, value: model.feedPanelShown)
             .onChange(of: wide, initial: true) { _, now in model.readerShown = now }
+            // The reading list has its own idea of whether the pane is on screen: this one takes it back.
+            .onAppear { model.readerShown = wide }
             .onChange(of: total, initial: true) { _, now in model.feedPanelFits = Reader.isWide(width: now - Self.panelWidth - 1) }
             // The answer to Add to Zotero and the like: a post far down the list cannot show it.
             .overlay(alignment: .bottom) {
@@ -68,31 +68,6 @@ struct FeedView: View {
             }
             .presentationDetents([.medium, .large])
         }
-    }
-
-    /// The line between the columns, with a wider strip to grab. Dragging resizes; a double tap
-    /// goes back to the default. The width is remembered as a fraction of the window.
-    private func handle(feedWidth: Double, total: Double) -> some View {
-        Color.clear
-            .frame(width: Reader.handleWidth)
-            .overlay { Rectangle().fill(Color(.separator)).frame(width: 1) }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { value in
-                        let start = dragStart ?? feedWidth
-                        dragStart = start
-                        storedFraction = Reader.fraction(forFeedWidth: start + value.translation.width, total: total)
-                    }
-                    .onEnded { _ in dragStart = nil }
-            )
-            .onTapGesture(count: 2) { storedFraction = 0 }
-            .accessibilityElement()
-            .accessibilityLabel("Width of the feed and the reader")
-            .accessibilityAdjustableAction { direction in
-                let step = direction == .increment ? 40.0 : -40.0
-                storedFraction = Reader.fraction(forFeedWidth: feedWidth + step, total: total)
-            }
     }
 
     private var feedColumn: some View {
@@ -939,5 +914,39 @@ func ageLabel(_ date: String) -> String {
     case 2..<14: return "\(Int(days))d ago"
     case 14..<60: return "\(Int(days) / 7)w ago"
     default: return date
+    }
+}
+
+
+/// The line between the list and the reader pane, with a wider strip to grab. Dragging resizes; a double tap goes back to
+/// the default. The width is remembered as a fraction of the window, which the feed and the reading list share.
+struct ColumnHandle: View {
+    let feedWidth: Double
+    let total: Double
+    @Binding var fraction: Double
+    /// Where the column was when a drag began, so the drag moves it relative to that.
+    @State private var dragStart: Double?
+
+    var body: some View {
+        Color.clear
+            .frame(width: Reader.handleWidth)
+            .overlay { Rectangle().fill(Color(.separator)).frame(width: 1) }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        let start = dragStart ?? feedWidth
+                        dragStart = start
+                        fraction = Reader.fraction(forFeedWidth: start + value.translation.width, total: total)
+                    }
+                    .onEnded { _ in dragStart = nil }
+            )
+            .onTapGesture(count: 2) { fraction = 0 }
+            .accessibilityElement()
+            .accessibilityLabel("Width of the list and the reader")
+            .accessibilityAdjustableAction { direction in
+                let step = direction == .increment ? 40.0 : -40.0
+                fraction = Reader.fraction(forFeedWidth: feedWidth + step, total: total)
+            }
     }
 }
