@@ -42,6 +42,9 @@
   .tagline { margin: 16px auto 0; max-width: 26ch; font-size: clamp(21px, 3.6vw, 27px); line-height: 1.3; letter-spacing: -.012em; }
   .sub { margin: 16px auto 0; max-width: 56ch; color: var(--ink-soft); }
   .badges { margin-top: 22px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .join { display: inline-block; margin-top: 26px; padding: 13px 26px; border-radius: 999px; background: var(--accent); color: #fff; font-weight: 600; font-size: 18px; text-decoration: none; box-shadow: var(--shadow); }
+  .join:hover, .join:focus-visible { filter: brightness(1.1); }
+  .join-note { margin: 10px 0 0; color: var(--ink-soft); font-size: 15px; }
   .badge { font-size: 14px; padding: 5px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 
   section.wrap { padding-top: 38px; padding-bottom: 6px; }
@@ -89,6 +92,8 @@
     <span class="badge">iPhone</span><span class="badge">iPad</span><span class="badge">Mac</span>
     <span class="badge">No account</span><span class="badge">No tracking</span>
   </div>
+  <a class="join" href="https://testflight.apple.com/join/87XHYHuj">Join the beta on TestFlight</a>
+  <p class="join-note">Free. Needs the TestFlight app on an iPhone, iPad or Mac.</p>
 </header>
 
 <section class="wrap">
@@ -137,7 +142,7 @@
 <section class="wrap">
   <h2>Status</h2>
   <div class="note">
-    <p>Scrollar is in active development and used daily by its author, and is being prepared for a public beta. It is one app for iPhone, iPad and Mac, with no third-party code. The source is published to read and to check what the app does with your data; it is not open source (see the <a href="https://github.com/amouraux/scrollar/blob/main/LICENSE">licence</a>).</p>
+    <p>Scrollar is in active development and used daily by its author, and is in public beta: <a href="https://testflight.apple.com/join/87XHYHuj">join on TestFlight</a>. It is one app for iPhone, iPad and Mac, with no third-party code. The source is published to read and to check what the app does with your data; it is not open source (see the <a href="https://github.com/amouraux/scrollar/blob/main/LICENSE">licence</a>).</p>
   </div>
 </section>
 
