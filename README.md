@@ -651,19 +651,48 @@ seconds and put away by a tap. Older notes in this file may still say "Saved" or
 
 ## What a thumb is about
 
-A thumb used to teach the feed by a similarity score no one could read. **For me** and **Not for me** now ask what the thumb is about
-(`Core/Thumbs.swift`, `App/ThumbSheet.swift`, tested): a sheet lists what the paper has that could be why (the keyword or journal or
-author or topic that put it in the feed first, then its journal, first and last author and topics, at most eight, each with its level
-now and where one step would take it), with the first reason chosen. **One choice only** (a single selection, plus "None of these, just this paper"): with several, people
-ended up with the first reason and whatever else they touched on the way, so the user names the best reason. That one thing moves **one level** up for a thumb up and down for a
-thumb down (Levels, below), in one change that shows in Follow and mute, Levels, and a line says what moved ("“TMS” Maximum → Higher").
-Choose none, and the thumb is about the paper alone, as before. (The first version allowed several at once; changed on the user's advice.) "Next time, use the first reason without asking" turns the question off (Tune,
-Ranking, Your feedback: "Ask what a thumb is about"). Taking back a For me asks nothing, and leaves the levels as they are. A topic with no
-OpenAlex id, an institution and a funder are not offered, since they cannot be raised from a paper. A journal that is a repository is not
-offered either. The reading list's weaker background signal, and the pull toward and push away from what was liked and hid (above), are
-unchanged: a thumb now does both. A first version of the sheet crashed because the sheet was attached outside the place the model is
-injected; it is handed the model explicitly. Tried on the iPhone simulator: asking, choosing a researcher, promoting, and the saved level.
-Not tried: a thumb down, the sheet on the iPad or the Mac, turning the question off.
+**For me** and **Not for me** ask what the thumb is about, in a menu on the button (`App/ThumbMenu.swift`, `Core/Thumbs.swift`): one tap on
+the thumb, one tap on a reason, and it is counted. The menu lists what the paper has that could be why: the keyword or journal or author or
+topic that put it in the feed first, then its journal, first and last author, its own keywords (up to three) and its topics, ten at most,
+each with what the thumbs have made of it so far ("now +0.3") or its pin; "Just this paper" is the last line. **One reason only**: with
+several selectable, people ended up with the first one preselected plus whatever else they touched, so the user names the best reason.
+(It was a sheet with radio buttons first; the menu replaced it so that it takes one tap after the thumb, not a sheet to confirm.)
+"Ask what a thumb is about" off (Tune, Ranking) makes a thumb take the first reason without asking. Taking back a For me asks nothing. A topic
+with no OpenAlex id, an institution and a funder are not offered, nor is a journal that is a repository. The paper itself still goes on
+the For me list or is hidden, and the similarity pull toward and away from what was liked and hid (above) is unchanged.
+
+## What the thumbs teach
+
+A thumb used to move a level by one step and forget when and how often. Now each thumb is stored as an event (what it was about, up or down,
+when) and what a thing has come to is worked out from all of its events (`Core/Evidence.swift`, tested; Tune, Ranking, **Your thumbs**):
+
+- **Fading.** A click counts half as much after 90 days (For me) or 60 days (Not for me); both can be set from "never" to 12 months. Not for
+  me fades faster so that a topic that was pushed down comes back by itself. Clicks that have faded below 3% are let go; 3000 at most are kept.
+- **Read against the user.** The faded total is divided by what is typical for this user (the middle one of the things they have clicked,
+  at least 1.5 and at most 6), separately for For me and Not for me, so someone who demotes far more than they promote, or who clicks the same
+  things all the time, is not skewed. A literal z-score was not used: it needs many clicks on many things to be stable, and says "unusual among
+  your clicks", not "liked".
+- **Diminishing returns.** The result goes through tanh, so the first clicks matter and the tenth hardly adds; the pull is at most +0.8 and at
+  least -0.6 (the same as Higher and Lower), times a strength slider. Thumbs never hide a topic: Hide stays a mute or a pin.
+- **Change of heart.** A click against the thing's direction so far counts more, and forgives some of the older clicks it contradicts: a For me
+  after Not for me counts ×2 and forgives 60% of them; a Not for me after For me counts ×1.5 and forgives 30%. A thing that is shown less gets fewer
+  chances to be liked again, so liking something long pushed down is a rare, deliberate sign. All four numbers are in Tune.
+
+With the defaults (measured in the tests): one For me today +0.47; three over two weeks +0.76; ten over two months +0.80 (the cap); five Not for me three
+weeks ago -0.59, **then one For me today +0.24**, a second +0.60; five For me three weeks ago +0.79, **then one Not for me today +0.59**; five
+Not for me six months ago -0.23.
+
+Where it acts: it is added to the score of every paper that carries the thing, beside what the levels add, kept between -1.5 and +2 in all. A
+thing pulled up to +0.5 or more is also searched for (without being kept in full), as raising it to Higher used to do. A thing pinned to a level by
+hand (the pin menu on each line of Your thumbs, or Follow and mute, Levels) is left to that level: the thumb is noted, the toast says so, and
+nothing changes until the pin is removed. A muted thing is not touched. Events sync, one entry each (`th/`), with the rules as one value:
+**sync format 6**, so an app that knows format 5 leaves the file alone. The levels the old thumbs had moved were **scrapped once** on the first
+launch (they could not be told from ones set by hand); levels set by hand from now on stay.
+
+Not done: reading a paper (opening it, dwell) does not count as a promote, since it is a weaker and noisier signal; a limit on how much of
+the top of the feed one thing may fill; a suggestion to hide a thing that was demoted again and again. Tried on the iPhone simulator: the
+menu on the thumb button, one tap on a reason, the toast, the Your thumbs screen with its fading, strength and change-of-heart settings. Not
+tried: the pin menu, forgetting thumbs, the iPad and the Mac, and what the feed looks like after many thumbs.
 
 ## Levels: promoting and demoting by degrees
 
@@ -688,9 +717,10 @@ runs of white space are removed; a cut falls between words and ends in "…"), a
 shows; the banner itself never shows more than four lines. The full text still goes to the log. Used wherever an error reaches the screen.
 
 The thumb question also offers the paper's **own keywords** (`Paper.keywords`: OpenAlex's, most relevant first, and the authors' in Europe PMC;
-up to three, after the journal and authors and before the topics; ten reasons at most). A keyword raised or lowered this way becomes a keyword
-level like any other. Papers already in a cached feed have none until the next build. Found and fixed while checking it: a thumb on a search
-result closed the search and lost its results, because the question opened at the app's root; it now opens over the search.
+up to three, after the journal and authors and before the topics; ten reasons at most). A thumb on a keyword is counted like one on
+any other thing (What the thumbs teach, below). Papers already in a cached feed have none until the next build. Found while checking it: a
+thumb on a search result closed the search and lost its results, because the question was a sheet opened at the app's root; the menu on the
+button has no such problem.
 Tried on the iPhone simulator with real results. The banner's old failure was not reproduced (only the text it would show is tested).
 
 ## Folding the panel away

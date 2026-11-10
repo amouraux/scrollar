@@ -182,6 +182,9 @@ extension FeedSettings {
         if chosen != defaultLevel(f) { levels.append(LevelEntry(kind: f.kind, id: f.id, name: f.name, level: chosen)) }
     }
 
+    /// Take away the level the user pinned, so the thing goes back to what the lists and the thumbs make of it.
+    mutating func clearLevel(_ f: FacetRef) { levels.removeAll { $0.key == f.key } }
+
     /// One step up or down, within what the kind allows; the step is taken from the level it has now.
     mutating func step(_ f: FacetRef, by delta: Int) {
         let allowed = f.kind.levels

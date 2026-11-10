@@ -278,6 +278,11 @@ struct FeedSettings: Codable, Equatable {
     /// Levels the user set on keywords, journals, researchers, topics, institutions and funders, overriding what the
     /// follow and mute lists give each (see Levels.swift). Empty: the lists alone.
     var levels: [LevelEntry] = []
+    /// Every thumb on a keyword, journal, researcher or topic, each with when it was given: what the feed learns
+    /// from (see Evidence.swift). Synced, one entry each.
+    var thumbEvents: [ThumbEvent] = []
+    /// How the thumbs are read: how fast they fade, how strongly they pull. Shown in Tune.
+    var evidence = EvidenceSettings()
 
     /// Whether a thumb asks what it is about, or takes the first reason the paper is in the feed for.
     var asksThumbBasis = true
@@ -497,7 +502,7 @@ extension FeedSettings {
     enum CodingKeys: String, CodingKey {
         case formatVersion, orcid, profileOrcids, profileFilled, useMyPublications, useOpenAlex, useEuropePMC
         case hideMemory, hideHalfLifeMonths, likeMemory, likeHalfLifeMonths, hideStrength, likeStrength
-        case useCrossref, useArXiv, useOSF, referenceManagers, levels, asksThumbBasis, countsSearches, asksAboutSearches
+        case useCrossref, useArXiv, useOSF, referenceManagers, levels, thumbEvents, evidence, asksThumbBasis, countsSearches, asksAboutSearches
         case useZotero, useLibraryFile, zoteroRecent
         case followedTopics, followedJournals, followedAuthors, followedInstitutions
         case followedFunders, followedKeywords, trackedPapers, feedOrder, highlightCount, highlightCloseness, highlightImpact, highlightAuthorH, dwellSeconds
@@ -525,6 +530,8 @@ extension FeedSettings {
         // A manager an older or newer version names that this one does not know is left out, not fatal.
         referenceManagers = get(.referenceManagers, [String]()).compactMap(ReferenceManager.init(rawValue:))
         levels = get(.levels, [LevelEntry]())
+        thumbEvents = get(.thumbEvents, [ThumbEvent]())
+        evidence = get(.evidence, EvidenceSettings())
         asksThumbBasis = get(.asksThumbBasis, asksThumbBasis)
         countsSearches = get(.countsSearches, countsSearches)
         asksAboutSearches = get(.asksAboutSearches, asksAboutSearches)

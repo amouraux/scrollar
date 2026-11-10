@@ -886,15 +886,17 @@ struct PaperCard: View {
                 model.toggleSaved(paper)
             }
             let liked = model.isLiked(paper)
-            barButton("For me", liked ? "hand.thumbsup.fill" : "hand.thumbsup",
-                      hint: liked ? "Takes back that this is for you"
-                                  : "Asks what you like about it, and promotes that, without adding it to your reading list",
-                      tint: liked ? Color.accentColor : nil) {
-                model.thumb(paper, up: true)
+            ThumbControl(paper: paper, up: true,
+                         hint: liked ? "Takes back that this is for you"
+                                     : "Asks what you like most about it, and promotes that, without adding it to your reading list") {
+                barLabel("For me", liked ? "hand.thumbsup.fill" : "hand.thumbsup").foregroundStyle(liked ? Color.accentColor : .secondary)
             }
-            barButton("Not for me", "hand.thumbsdown", hint: "Asks what you do not like about it, demotes that, and hides this paper") {
-                model.thumb(paper, up: false)
+            .accessibilityLabel("For me")
+            ThumbControl(paper: paper, up: false,
+                         hint: "Asks what you like least about it, demotes that, and hides this paper") {
+                barLabel("Not for me", "hand.thumbsdown")
             }
+            .accessibilityLabel("Not for me")
             if !inReader {
                 barButton("Abstract", expanded ? "chevron.up" : "text.alignleft",
                           hint: expanded ? "Hides the abstract" : "Shows the abstract", action: toggle)

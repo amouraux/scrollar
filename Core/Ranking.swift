@@ -229,6 +229,8 @@ enum Ranker {
                      today: Date) -> [RankedPaper] {
         guard !candidates.isEmpty else { return [] }
         let similarity = similarities(candidates, profile: profile, embedder: embedder)
+        // What the thumbs have taught about each keyword, journal, researcher or topic, worked out once.
+        let learned = Evidence.active(settings, now: today)
         let lowering = avoid.isEmpty || settings.hideStrength <= 0 ? []
             : avoidance(candidates, profile: profile, avoid: avoid, embedder: embedder)
 
@@ -250,7 +252,7 @@ enum Ranker {
             if let importance = settings.keywordImportance(of: paper) { score += importance.bonus }
             score += impactBoost(paper.journalImpact, weight: settings.impactWeight)
             score += authorBoost(paper, weight: settings.authorWeight, focus: settings.byline)
-            score += levelBonus(paper, settings)
+            score += levelBonus(paper, settings, learned: learned)
             if i < lowering.count, lowering[i].factor > 0, !paper.followed, !paper.citesYou {
                 score -= avoidScale * settings.hideStrength * lowering[i].factor
                 paper.loweredBy = lowering[i].nearest.flatMap { avoid[$0].title } ?? "a paper you hid"
@@ -317,11 +319,15 @@ enum Ranker {
 
     /// What the levels the user set add to a paper that carries the thing: up for Higher and Maximum, down for Lower,
     /// kept within bounds so that no pile of them decides the feed alone. Nothing at all with no level set.
-    static func levelBonus(_ paper: Paper, _ settings: FeedSettings) -> Double {
+    /// `learned` is what the thumbs add for things the user has not pinned (see Evidence.swift).
+    static func levelBonus(_ paper: Paper, _ settings: FeedSettings,
+                           learned: [(entry: LevelEntry, bonus: Double)] = []) -> Double {
         let active = settings.levels.filter { $0.level != .hide && $0.level != .normal }
-        guard !active.isEmpty else { return 0 }
-        let text = active.contains { $0.kind == .keyword } ? (paper.title + " " + (paper.abstract ?? "")).lowercased() : nil
-        let total = active.filter { $0.matches(paper, text: text) }.reduce(0.0) { $0 + $1.level.bonus }
+        guard !active.isEmpty || !learned.isEmpty else { return 0 }
+        let wantsText = active.contains { $0.kind == .keyword } || learned.contains { $0.entry.kind == .keyword }
+        let text = wantsText ? (paper.title + " " + (paper.abstract ?? "")).lowercased() : nil
+        var total = active.filter { $0.matches(paper, text: text) }.reduce(0.0) { $0 + $1.level.bonus }
+        total += learned.filter { $0.entry.matches(paper, text: text) }.reduce(0.0) { $0 + $1.bonus }
         return min(max(total, -1.5), 2.0)
     }
 

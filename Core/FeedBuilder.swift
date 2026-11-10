@@ -14,7 +14,7 @@ enum FeedBuilder {
     /// "close to my work" means and can suggest follows (see Profile.swift), and `myWorkIDs`
     /// gives the one seed that is not a follow, "cites my work", which only counts when
     /// `useMyPublications` is on.
-    static func seeds(_ s: FeedSettings, myWorkIDs: [String]) -> [PlannedSeed] {
+    static func seeds(_ s: FeedSettings, myWorkIDs: [String], now: Date = Date()) -> [PlannedSeed] {
         var planned: [PlannedSeed] = []
         func add(_ seed: Seed, explicit: Bool) {
             // If a followed topic is also one of the user's own, the explicit one wins.
@@ -64,17 +64,22 @@ enum FeedBuilder {
             add(k.seed, explicit: explicit(l))
         }
         // What the user raised that is not in a follow list is searched for too.
-        for e in s.levels where e.level.fetches && !s.defaultLevel(e.ref).fetches {
-            let seed: Seed?
+        func seed(for e: FacetRef) -> Seed? {
             switch e.kind {
-            case .keyword: seed = .keyword(e.name)
-            case .journal: seed = .journal(id: e.id, name: e.name)
-            case .author: seed = .author(id: e.id, name: e.name)
-            case .topic: seed = Seed.forTopic(Entity(id: e.id, name: e.name))
-            case .institution: seed = .institution(id: e.id, name: e.name)
-            case .funder: seed = .funder(id: e.id, name: e.name)
+            case .keyword: return .keyword(e.name)
+            case .journal: return .journal(id: e.id, name: e.name)
+            case .author: return .author(id: e.id, name: e.name)
+            case .topic: return Seed.forTopic(Entity(id: e.id, name: e.name))
+            case .institution: return .institution(id: e.id, name: e.name)
+            case .funder: return .funder(id: e.id, name: e.name)
             }
-            if let seed { add(seed, explicit: e.level.pins) }
+        }
+        for e in s.levels where e.level.fetches && !s.defaultLevel(e.ref).fetches {
+            if let seed = seed(for: e.ref) { add(seed, explicit: e.level.pins) }
+        }
+        // And so is what the thumbs have pulled up far enough, unless the user pinned it to something else.
+        for (entry, bonus) in Evidence.active(s, now: now) where bonus >= Evidence.fetchBonus && !s.defaultLevel(entry.ref).fetches {
+            if let seed = seed(for: entry.ref) { add(seed, explicit: false) }
         }
         for p in s.trackedPapers { add(.cites(workIDs: [p.id], label: "Cites: \(p.name)"), explicit: true) }
         return planned

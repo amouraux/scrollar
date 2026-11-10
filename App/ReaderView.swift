@@ -259,13 +259,17 @@ private struct PaperReader: View {
                                      : "Adds it to your reading list, and finds more like it",
                          tint: saved ? Color.accentColor : nil) { model.toggleSaved(paper) }
             let liked = model.isLiked(paper)
-            actionButton("For me", liked ? "hand.thumbsup.fill" : "hand.thumbsup",
+            ThumbControl(paper: paper, up: true,
                          hint: liked ? "Takes back that this is for you"
-                                     : "Asks what you like about it, and promotes that, without adding it to your reading list",
-                         tint: liked ? Color.accentColor : nil) { model.thumb(paper, up: true) }
-            actionButton("Not for me", "hand.thumbsdown", hint: "Asks what you do not like about it, demotes that, and hides this paper") {
-                model.thumb(paper, up: false)
+                                     : "Asks what you like most about it, and promotes that, without adding it to your reading list") {
+                actionLabel("For me", liked ? "hand.thumbsup.fill" : "hand.thumbsup").foregroundStyle(liked ? Color.accentColor : .secondary)
             }
+            .accessibilityLabel("For me")
+            ThumbControl(paper: paper, up: false,
+                         hint: "Asks what you like least about it, demotes that, and hides this paper") {
+                actionLabel("Not for me", "hand.thumbsdown")
+            }
+            .accessibilityLabel("Not for me")
             if let url = paper.link {
                 actionButton("Open", "arrow.up.right.square", hint: "Opens the paper in your browser") {
                     model.markOpened(paper)

@@ -232,6 +232,12 @@ final class AppModel {
         // Papers kept before dates were recorded begin to fade from today, as any that were kept now would.
         // Saved at once: no observer runs inside init, and dating again at each launch would never let them age.
         if settings.feedback.stampUndated(Date()) { store.saveSettings(settings) }
+        // The levels a thumb used to move by one step cannot be told from ones set by hand, and a thumb now teaches
+        // by what it adds up to (Evidence.swift): they are scrapped once, and what is set by hand from now on stays.
+        if !UserDefaults.standard.bool(forKey: "scrappedThumbLevels") {
+            UserDefaults.standard.set(true, forKey: "scrappedThumbLevels")
+            if !settings.levels.isEmpty { settings.levels = []; store.saveSettings(settings) }
+        }
         PDFCache.savedKeys = { [weak self] in
             guard let f = self?.settings.feedback else { return [] }
             return f.saved.map(\.id) + f.liked.map(\.id)
@@ -1205,41 +1211,43 @@ final class AppModel {
 
     func isLiked(_ p: Paper) -> Bool { settings.feedback.isLiked(p) }
 
-    /// A thumb waiting to be answered: what is it about?
-    struct ThumbRequest: Identifiable {
-        let id = UUID()
-        let paper: Paper
-        let up: Bool
-        let candidates: [ThumbBasis.Candidate]
+    /// What a thumb could be about, for the menu on the thumb button: nothing when the user said not to ask (the
+    /// first reason is then used without asking), and nothing for taking back a For me.
+    func thumbReasons(for p: Paper, up: Bool) -> [ThumbBasis.Candidate] {
+        guard settings.asksThumbBasis, !(up && isLiked(p)) else { return [] }
+        return ThumbBasis.candidates(for: p, settings: settings)
     }
-    var thumbRequest: ThumbRequest?
-    /// True while the search sheet is up: the thumb question then opens over it, not over the feed behind, which
-    /// would close the search and lose its results.
-    var searchOpen = false
 
-    /// A thumb on a paper. It asks what it is about (a keyword, the journal, an author, a topic), so that the effect
-    /// on the feed is the one the user chose and can see; or, if the user said not to ask, takes the first reason
-    /// the paper is in the feed for. Taking back a thumb up asks nothing.
+    /// What a reason offered in the menu says about itself now: what the thumbs have made of it, or its pin.
+    func thumbStanding(_ ref: FacetRef) -> String {
+        if let pinned = settings.override(ref) { return "pinned at \(pinned.title)" }
+        let bonus = Evidence.bonus(ref, settings, now: Date())
+        return abs(bonus) < 0.05 ? "" : String(format: "now %+.1f", bonus)
+    }
+
+    /// A thumb on a paper with no question: the first reason the paper is in the feed for, if it has one. Taking
+    /// back a thumb up asks nothing.
     func thumb(_ p: Paper, up: Bool) {
         if up && isLiked(p) { toggleLiked(p); return }
         let candidates = ThumbBasis.candidates(for: p, settings: settings)
-        if settings.asksThumbBasis {
-            thumbRequest = ThumbRequest(paper: p, up: up, candidates: candidates)
-        } else {
-            let key = ThumbBasis.preselected(candidates, paper: p)
-            applyThumb(p, up: up, chosen: candidates.filter { $0.ref.key == key }.map(\.ref))
-        }
+        let key = ThumbBasis.preselected(candidates, paper: p)
+        applyThumb(p, up: up, chosen: candidates.filter { $0.ref.key == key }.map(\.ref))
     }
 
-    /// The thumb as answered: each thing chosen moves one level (in one change to the settings), and the paper is
-    /// marked For me, or hidden, as a thumb always did.
+    /// The thumb as answered: it is recorded on the thing chosen (the feed learns from all of them, see
+    /// Evidence.swift), and the paper is marked For me, or hidden, as a thumb always did.
     func applyThumb(_ p: Paper, up: Bool, chosen: [FacetRef]) {
         var s = settings
-        let moved = ThumbBasis.apply(chosen, up: up, to: &s)
-        if !moved.isEmpty { settings = s }
+        let now = Date()
+        var lines: [String] = []
+        for ref in chosen {
+            let before = Evidence.bonus(ref, s, now: now)
+            s.recordThumb(ref, up: up, at: now)
+            lines.append(Evidence.summary(ref, before: before, after: Evidence.bonus(ref, s, now: now), pinned: s.override(ref)))
+        }
+        if !chosen.isEmpty { settings = s }
         if up { toggleLiked(p) } else { hide(p) }
-        let line = ThumbBasis.summary(moved)
-        if !line.isEmpty { show((up ? "Noted: more like this. " : "Noted: less like this. ") + line, seconds: 8) }
+        if !lines.isEmpty { show((up ? "Noted: more like this. " : "Noted: less like this. ") + lines.joined(separator: ", "), seconds: 8) }
     }
 
     /// "For me": teaches the feed without saving. It also counts the paper as studied, so it leaves the top

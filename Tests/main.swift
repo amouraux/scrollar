@@ -1401,7 +1401,7 @@ check(FeedBuilder.profileTexts(fmSettings, own: []).contains { $0.hasPrefix("A p
 check(device(fmSettings, stamp: at(1)).apply(to: FeedSettings()).feedback.liked.map(\.id) == [fmPaper.dedupeKey], "for me: it syncs")
 fmFeedback.unlike(fmPaper.dedupeKey)
 check(!fmFeedback.isLiked(fmPaper) && (try? JSONDecoder().decode(Feedback.self, from: Data(#"{"saved":[],"hidden":[]}"#.utf8)))?.liked.isEmpty == true, "for me: it can be taken back, and a settings file from before it still loads")
-check(SyncDocument.currentFormat == 5, "sync: the format is raised, so an app that does not know the newer entries leaves the file alone instead of erasing them")
+check(SyncDocument.currentFormat == 6, "sync: the format is raised, so an app that does not know the newer entries leaves the file alone instead of erasing them")
 
 func keptPaper(_ id: String, _ reasons: [String], followed: Bool = true, age: Int = 3) -> SavedPaper {
     var p = paper(id, "Paper \(id)", age: age); p.reasons = reasons; p.followed = followed
@@ -2006,18 +2006,7 @@ check(tbNoIDCands.map(\.ref.id) == ["name:Some Journal", "name:Zed Q"] && !tbNoI
 var tbRepo = lvPaper("t4", journal: "Zenodo"); tbRepo.isRepository = true
 check(!ThumbBasis.candidates(for: tbRepo, settings: tbs).contains { $0.ref.kind == .journal }, "thumb basis: a repository is not a journal to rank")
 var tbMany = lvPaper("t5", journal: "J", topics: (1...10).map { "Topic \($0)" }, topicIDs: (1...10).map { "T\($0)" })
-check(ThumbBasis.candidates(for: tbMany, settings: tbs).count <= 8, "thumb basis: no more than eight things are offered")
-var tbApplied = tbs
-let tbMoved = ThumbBasis.apply([FacetRef.keyword("TMS"), FacetRef(kind: .author, id: "A1", name: "Ada L")], up: false, to: &tbApplied)
-check(tbApplied.level(of: .keyword("TMS")) == .higher && tbApplied.level(of: FacetRef(kind: .author, id: "A1", name: "Ada L")) == .lower && tbMoved.map(\.from) == [.maximum, .normal], "thumb basis: a thumb down moves each chosen thing one level down, a followed thing from Maximum to Higher")
-var tbUp = tbs
-ThumbBasis.apply([FacetRef(kind: .author, id: "A1", name: "Ada L")], up: true, to: &tbUp)
-check(tbUp.level(of: FacetRef(kind: .author, id: "A1", name: "Ada L")) == .higher && FeedBuilder.seeds(tbUp, myWorkIDs: []).contains { $0.seed == .author(id: "A1", name: "Ada L") }, "thumb basis: a thumb up on something not followed raises it to Higher, and it is searched for from then on")
-let tbSummary = ThumbBasis.summary(tbMoved)
-check(tbSummary == "“TMS” Maximum → Higher, “Ada L” Normal → Lower" && ThumbBasis.summary([]) == "", "thumb basis: what moved is said in a line")
-var tbTop = tbs
-let tbTopMoved = ThumbBasis.apply([FacetRef.keyword("TMS")], up: true, to: &tbTop)
-check(ThumbBasis.summary(tbTopMoved) == "Levels unchanged: they are at the limit.", "thumb basis: at the top a thumb up changes nothing, and says so")
+check(ThumbBasis.candidates(for: tbMany, settings: tbs).count <= 10, "thumb basis: no more than ten things are offered")
 check(FeedSettings().asksThumbBasis && !(try! FeedSettings.decode(Data(#"{"asksThumbBasis":false}"#.utf8))).asksThumbBasis, "thumb basis: a thumb asks what it is about unless the user said not to")
 
 // Searching.
@@ -2066,6 +2055,70 @@ check(Typos.suggest("\"magnatic stimulation\"", vocabulary: tyVocab) == "\"magne
 check(Typos.alternatives("migrane prophylaxis", vocabulary: [:], guesses: { $0 == "migrane" ? ["migrant", "migraine", "migraines", "migrate"] : [] }) == ["migrant prophylaxis", "migraine prophylaxis", "migrate prophylaxis"], "typos: a dictionary's guesses within a slip are offered in its order, up to three, so the caller can try them")
 check(Typos.alternatives("nociceptve", vocabulary: ["nociceptive": 9, "nociceptor": 9], guesses: { _ in ["x"] }) == ["nociceptive", "nociceptor"] && Typos.alternatives("fine words", vocabulary: tyVocab).isEmpty, "typos: only what is within a slip or two is offered, and nothing when nothing looks wrong")
 check(FeedSettings().asksAboutSearches && !(try! FeedSettings.decode(Data(#"{"asksAboutSearches":false}"#.utf8))).asksAboutSearches, "search: it asks before a search counts unless the user says not to")
+
+// What the thumbs teach: decay, relative to the user, change of heart.
+let evNow = Date(timeIntervalSince1970: 1_800_000_000)
+let evTarget = FacetRef.keyword("migraine")
+func ev(_ ref: FacetRef, _ up: Bool, _ daysAgo: Double) -> ThumbEvent { ThumbEvent(ref, up: up, at: evNow.addingTimeInterval(-daysAgo * 86_400)) }
+/// The target's bonus among five other things clicked once each, so that "typical" is the floor.
+func evBonus(_ events: [ThumbEvent], _ cfg: EvidenceSettings = EvidenceSettings()) -> Double {
+    let others = (1...5).map { ev(FacetRef.keyword("other\($0)"), $0 % 2 == 0, 0) }
+    return Evidence.learn(events + others, cfg, now: evNow).first { $0.ref.key == evTarget.key }!.bonus
+}
+func evNear(_ x: Double, _ y: Double) -> Bool { abs(x - y) < 0.03 }
+func evRun(_ up: Bool, _ days: [Double]) -> [ThumbEvent] { days.map { ev(evTarget, up, $0) } }
+check(evNear(evBonus(evRun(true, [0])), 0.47) && evNear(evBonus(evRun(false, [0])), -0.35), "evidence: one click counts for something, a promote more than a demote (the scale is +0.8 and -0.6)")
+check(evNear(evBonus(evRun(true, [14, 7, 0])), 0.76) && evNear(evBonus(evRun(true, (0..<10).map { 60.0 - 6 * Double($0) })), 0.80), "evidence: clicks add up with diminishing returns, up to the cap")
+check(evNear(evBonus(evRun(false, (0..<5).map { 21.0 + Double($0) })), -0.59) && evNear(evBonus(evRun(false, (0..<5).map { 180.0 + Double($0) })), -0.23), "evidence: demotes fade, six months on they count a third as much")
+let evDemoted = evRun(false, (0..<5).map { 21.0 + Double($0) })
+check(evNear(evBonus(evDemoted + [ev(evTarget, true, 0)]), 0.24) && evNear(evBonus(evDemoted + evRun(true, [1, 0])), 0.60), "evidence: one promote after repeated demotes turns a clear dislike into mild interest, and a second builds it")
+let evPromoted = evRun(true, (0..<5).map { 21.0 + Double($0) })
+check(evNear(evBonus(evPromoted), 0.79) && evNear(evBonus(evPromoted + [ev(evTarget, false, 0)]), 0.59), "evidence: one demote after repeated promotes only dents the interest")
+check((evBonus(evDemoted + [ev(evTarget, true, 0)]) - evBonus(evDemoted)) > 3 * (evBonus(evPromoted) - evBonus(evPromoted + [ev(evTarget, false, 0)])), "evidence: a change of heart toward interest moves the ranking far more than one away from it")
+var evNever = EvidenceSettings(); evNever.halfLifeDownDays = 0
+check(evNear(evBonus(evRun(false, [400, 401, 402, 403, 404]), evNever), -0.6), "evidence: with no fade a click counts however old it is")
+var evOff = EvidenceSettings(); evOff.strength = 0
+var evHalf = EvidenceSettings(); evHalf.strength = 0.5
+check(evBonus(evRun(true, [0, 1, 2]), evOff) == 0 && evNear(evBonus(evRun(true, [14, 7, 0]), evHalf), 0.38), "evidence: strength scales the pull, and zero switches it off")
+var evLoud = EvidenceSettings(); evLoud.promoteAfterDemote = 4; evLoud.forgiveDemotes = 1
+check(evBonus(evDemoted + [ev(evTarget, true, 0)], evLoud) > evBonus(evDemoted + [ev(evTarget, true, 0)]), "evidence: the change-of-heart numbers can be turned up")
+// Relative to the user: a facet is read against what is typical of the facets they click.
+let evHeavy = (1...6).flatMap { n in (0..<6).map { ev(FacetRef.keyword("heavy\(n)"), true, Double($0)) } }
+let evAmong = Evidence.learn(evHeavy + [ev(evTarget, true, 0)], EvidenceSettings(), now: evNow)
+check(evAmong.first { $0.ref.key == evTarget.key }!.bonus < evAmong.first { $0.ref.key.hasPrefix("keyword/heavy") }!.bonus && evAmong.first { $0.ref.key == evTarget.key }!.bonus < 0.35, "evidence: against a user who clicks the same things many times, one click is worth less than it would be alone")
+check(Evidence.learn((0..<400).map { ev(FacetRef.keyword("t\($0 % 2)"), true, Double($0) / 10) }, EvidenceSettings(), now: evNow).allSatisfy { $0.bonus <= 0.8 + 1e-9 }, "evidence: nothing goes above the cap, however many clicks")
+let evStats = Evidence.learn(evDemoted + [ev(evTarget, true, 0)], EvidenceSettings(), now: evNow).first!
+check(evStats.ups == 1 && evStats.downs == 5 && abs(evStats.lastAt - evNow.timeIntervalSince1970) < 1, "evidence: the raw counts and the last click are kept for the screen")
+// Keeping the events.
+var evKept: [ThumbEvent] = []
+evKept = Evidence.adding(ev(evTarget, true, 0), to: evKept, EvidenceSettings(), now: evNow)
+evKept = Evidence.adding(ev(evTarget, true, 0), to: evKept, EvidenceSettings(), now: evNow)
+evKept = Evidence.adding(ev(evTarget, true, 800), to: evKept, EvidenceSettings(), now: evNow)
+check(evKept.count == 1, "evidence: an event is not kept twice, and one that has faded to nothing is let go")
+check(Evidence.adding(ev(evTarget, true, 0), to: (0..<3100).map { ev(FacetRef.keyword("k\($0)"), true, Double($0) / 100) }, EvidenceSettings(), now: evNow).count == Evidence.keepAtMost, "evidence: no more than the limit are kept, the newest")
+// What it does to the feed.
+var evS = FeedSettings(); evS.useMyPublications = false
+let evPaperA = lvPaper("ea", title: "Migraine prophylaxis trial"), evPaperB = lvPaper("eb", title: "Galaxy clusters")
+evS.thumbEvents = evRun(true, [14, 7, 0])
+let evRank = Ranker.rank([evPaperA, evPaperB], profileTexts: [], settings: evS, today: evNow)
+check(evRank.first?.paper.id == "ea" && evRank.first!.score - evRank.last!.score > 0.5, "evidence: a paper about what the thumbs promoted ranks above one that is not")
+var evPin = evS; evPin.setLevel(.lower, for: evTarget)
+let evPinned = Ranker.rank([evPaperA, evPaperB], profileTexts: [], settings: evPin, today: evNow)
+check(evPinned.first { $0.paper.id == "ea" }!.score < evPinned.first { $0.paper.id == "eb" }!.score, "evidence: a level pinned by hand wins over what was learned")
+var evDown = FeedSettings(); evDown.useMyPublications = false; evDown.thumbEvents = evDemoted
+check(Ranker.rank([evPaperA, evPaperB], profileTexts: [], settings: evDown, today: evNow).first?.paper.id == "eb", "evidence: a paper about what the thumbs demoted ranks lower, but is not removed")
+check(FeedBuilder.seeds(evS, myWorkIDs: [], now: evNow).contains { $0.seed == .keyword("migraine") && !$0.explicit } && !FeedBuilder.seeds(evDown, myWorkIDs: [], now: evNow).contains { $0.seed == .keyword("migraine") } && !FeedBuilder.seeds(evPin, myWorkIDs: [], now: evNow).contains { $0.seed == .keyword("migraine") }, "evidence: what the thumbs pulled up far enough is searched for, unless pinned, and what was demoted is not")
+check(Evidence.bonus(evTarget, evS, now: evNow) > 0.5 && Evidence.bonus(evTarget, evPin, now: evNow) == 0 && Evidence.bonus(FacetRef.keyword("nothing"), evS, now: evNow) == 0, "evidence: the bonus asked for is 0 where pinned or never clicked")
+// Sync and decoding.
+var evSync = FeedSettings(); evSync.thumbEvents = evDemoted + [ev(evTarget, true, 0)]; evSync.evidence.halfLifeUpDays = 30
+var evDoc = SyncDocument(); evDoc.reconcile(evSync, at: evNow)
+let evBack = evDoc.apply(to: FeedSettings())
+check(Set(evBack.thumbEvents.map(\.key)) == Set(evSync.thumbEvents.map(\.key)) && evBack.evidence.halfLifeUpDays == 30, "sync: the thumbs and how they are read reach another device")
+var evGone = evSync; evGone.thumbEvents = []
+evDoc.reconcile(evGone, at: evNow.addingTimeInterval(60))
+check(evDoc.apply(to: evBack).thumbEvents.isEmpty, "sync: events that were let go are let go everywhere")
+check((try! FeedSettings.decode(Data(#"{"evidence":{"strength":0.5}}"#.utf8))).evidence.strength == 0.5 && (try! FeedSettings.decode(Data(#"{"evidence":{"strength":0.5}}"#.utf8))).evidence.halfLifeUpDays == 90 && (try! FeedSettings.decode(Data("{}".utf8))).thumbEvents.isEmpty, "settings: the thumb events and their rules read from a file that lacks them, or has only some")
+check(Evidence.summary(evTarget, before: 0.24, after: 0.6, pinned: nil) == "“migraine” +0.2 → +0.6" && Evidence.summary(evTarget, before: 0, after: 0, pinned: .higher).contains("pinned at Higher"), "evidence: the toast says what a thumb did, or that a pin kept it from doing anything")
 
 // A paper's keywords as thumb reasons.
 check(Keywords.clean([" Migraine ", "migraine", "", "x", "Prophylaxis", String(repeating: "y", count: 80), "Pain"], limit: 3) == ["Migraine", "Prophylaxis", "Pain"] && Keywords.clean(["", " "]) == nil, "keywords: trimmed, none empty, twice or very long, and at most the limit")

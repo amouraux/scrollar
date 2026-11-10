@@ -132,6 +132,12 @@ func feedbackStatus(_ f: Feedback) -> String {
     "\(f.saved.count) on list · \(f.liked.count) for me · \(f.hidden.count) hidden"
 }
 
+func thumbsStatus(_ s: FeedSettings) -> String {
+    let things = Set(s.thumbEvents.map { $0.ref.key }).count
+    return s.thumbEvents.isEmpty ? "None yet"
+        : "\(s.thumbEvents.count) \(s.thumbEvents.count == 1 ? "thumb" : "thumbs") on \(things) \(things == 1 ? "thing" : "things")"
+}
+
 /// How the feed is ordered: highlights, the kinds of paper, the sliders, and what you have told it.
 struct RankingScreen: View {
     @Environment(AppModel.self) private var appModel
@@ -228,11 +234,16 @@ struct RankingScreen: View {
                 } label: {
                     LabeledContent("Your feedback", value: feedbackStatus(model.settings.feedback))
                 }
+                NavigationLink {
+                    ThumbsScreen()
+                } label: {
+                    LabeledContent("Your thumbs", value: thumbsStatus(model.settings))
+                }
                 Toggle("Ask what a thumb is about", isOn: $model.settings.asksThumbBasis)
             } header: {
                 Text("What you have told it")
             } footer: {
-                Text("What is on your reading list, marked For me or hidden teaches the feed. Open it to see how much each counts, for how long, and what it is doing to the feed now. A thumb asks what it is about (a keyword, a journal, an author, a topic): each thing you choose moves one level, under Follow and mute, Levels. Turned off, a thumb takes the first reason the paper is in the feed for.")
+                Text("What is on your reading list, marked For me or hidden teaches the feed. Open it to see how much each counts, for how long, and what it is doing to the feed now. A thumb asks what it is about (a keyword, a journal, an author, a topic) in a menu: one tap on a reason counts the thumb for it. Your thumbs shows what each reason has come to, how fast thumbs fade and how a change of heart counts, and lets you pin one by hand. Turned off, a thumb takes the first reason the paper is in the feed for.")
             }
         }
         .navigationTitle("Ranking")
@@ -558,7 +569,7 @@ struct InterestsScreen: View {
                 Text("Something followed starts at Maximum, or at Higher for a topic, an institution or a funder, which name too many papers to keep in full. Something muted starts at Hide. A level you set replaces that.")
             }
             if facets.isEmpty {
-                Section { Text("Nothing is followed or muted yet. Follow something, or give a paper a thumb, and it will be listed here.").foregroundStyle(.secondary) }
+                Section { Text("Nothing is followed or muted yet. Follow something and it is listed here. What your thumbs teach is under Ranking, Your thumbs.").foregroundStyle(.secondary) }
             }
             ForEach(FacetKind.allCases, id: \.self) { kind in
                 let items = facets.filter { $0.ref.kind == kind }

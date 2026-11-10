@@ -2,8 +2,8 @@ import Foundation
 
 // What a thumb is about. A paper has many things that could be why it is liked or not: a keyword that found
 // it, its journal, its authors, its topics. Asking which makes the effect of a thumb something the user chose
-// and can see: the one thing picked, the best reason, moves one level (see Levels.swift), up for a thumb up and down for a thumb
-// down. Pure and tested; the question is a sheet.
+// and can see: the one thing picked, the best reason, is recorded as a thumb on it (see Evidence.swift). Pure and
+// tested; the question is a menu on the thumb button.
 
 enum Keywords {
     /// A paper's keywords made fit to offer: trimmed, none empty or very long, none twice (in any case), at most
@@ -109,23 +109,5 @@ enum ThumbBasis {
         }
         guard let kind, let first = candidates.first(where: { $0.ref.kind == kind && $0.ref.name.lowercased() == named.detail.lowercased() }) else { return nil }
         return first.ref.key
-    }
-
-    /// The thumb applied: each chosen thing moves one level, up or down. Returns what moved, for saying so.
-    @discardableResult
-    static func apply(_ chosen: [FacetRef], up: Bool, to s: inout FeedSettings) -> [(ref: FacetRef, from: Level, to: Level)] {
-        chosen.map { ref in
-            let before = s.level(of: ref)
-            s.step(ref, by: up ? 1 : -1)
-            return (ref, before, s.level(of: ref))
-        }
-    }
-
-    /// One line that says what a thumb did to the levels.
-    static func summary(_ moved: [(ref: FacetRef, from: Level, to: Level)]) -> String {
-        let changed = moved.filter { $0.from != $0.to }
-        guard !changed.isEmpty else { return moved.isEmpty ? "" : "Levels unchanged: they are at the limit." }
-        return changed.prefix(3).map { "“\($0.ref.name)” \($0.from.title) → \($0.to.title)" }.joined(separator: ", ")
-            + (changed.count > 3 ? " and \(changed.count - 3) more" : "")
     }
 }

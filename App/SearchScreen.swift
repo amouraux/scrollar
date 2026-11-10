@@ -60,12 +60,8 @@ struct SearchScreen: View {
             .safeAreaInset(edge: .top, spacing: 0) { field }
         }
         .environment(\.inSearch, true)
-        // The thumb question opens over the search, so the results stay where they were.
-        .sheet(item: Binding(get: { model.thumbRequest }, set: { model.thumbRequest = $0 })) {
-            ThumbSheet(request: $0).environment(model)
-        }
-        .onAppear { focused = true; model.searchOpen = true }
-        .onDisappear { task?.cancel(); model.searchOpen = false }
+        .onAppear { focused = true }
+        .onDisappear { task?.cancel() }
     }
 
     private var field: some View {
