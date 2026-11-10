@@ -16,11 +16,29 @@ enum Keywords {
     }
 }
 
+/// Where a reason comes from, for grouping the menu.
+enum ThumbGroup: Int, Hashable {
+    case why, journal, author, institution, keyword, title, topic
+
+    var heading: String {
+        switch self {
+        case .why: return "Why it is in your feed"
+        case .journal: return "Journal"
+        case .author: return "Researchers"
+        case .institution: return "Institutions"
+        case .keyword: return "Keywords"
+        case .title: return "Phrases in the title"
+        case .topic: return "Topics"
+        }
+    }
+}
+
 enum ThumbBasis {
     struct Candidate: Hashable {
         var ref: FacetRef
         /// The level it has now.
         var level: Level
+        var group: ThumbGroup = .topic
     }
 
     private static func list(_ kind: FacetKind, in s: FeedSettings) -> [Entity] {
@@ -54,21 +72,24 @@ enum ThumbBasis {
                 return FacetRef(kind: kind, id: paper.topicIDs[i], name: name)
             }
             return nil
-        case .institution, .funder:
-            return nil
-        case .keyword:
+        case .institution:
+            // Named by what the paper says: enough to rank by, not to search for.
+            return FacetRef(kind: kind, id: SourceRouting.namedID(name), name: name)
+        case .funder, .keyword:
             return nil
         }
     }
 
-    /// What the thumb could be about, the reasons the paper is in the feed first (the most specific first), then
-    /// its journal, its first and last author, its own keywords and its topics. Each thing once.
-    static func candidates(for paper: Paper, settings s: FeedSettings, limit: Int = 10) -> [Candidate] {
+    /// What the thumb could be about: the reasons the paper is in the feed (the most specific first), then its journal,
+    /// its researchers (first, last and up to two others), the institutions of the first and last, its own keywords
+    /// (up to five), the phrases of its title (up to three, for the many papers whose source gives no keywords) and
+    /// its topics (up to five). Each thing once.
+    static func candidates(for paper: Paper, settings s: FeedSettings, limit: Int = 18) -> [Candidate] {
         var out: [Candidate] = []
         var seen = Set<String>()
-        func add(_ ref: FacetRef?) {
+        func add(_ ref: FacetRef?, _ group: ThumbGroup) {
             guard let ref, out.count < limit, seen.insert(ref.key).inserted else { return }
-            out.append(Candidate(ref: ref, level: s.level(of: ref)))
+            out.append(Candidate(ref: ref, level: s.level(of: ref), group: group))
         }
         for tag in Why.tags(reasons: paper.reasons, followed: paper.followed) where !tag.detail.isEmpty {
             let kind: FacetKind?
@@ -81,13 +102,21 @@ enum ThumbBasis {
             case .followedTopic, .ownTopic: kind = .topic
             case .citesYou, .citesTracked, .other: kind = nil
             }
-            if let kind { add(ref(kind, name: tag.detail, paper: paper, settings: s)) }
+            if let kind { add(ref(kind, name: tag.detail, paper: paper, settings: s), .why) }
         }
-        if let journal = paper.journal, !paper.isRepository { add(ref(.journal, name: journal, paper: paper, settings: s)) }
-        for name in [paper.authors.first, paper.authors.last].compactMap({ $0 }) { add(ref(.author, name: name, paper: paper, settings: s)) }
+        if let journal = paper.journal, !paper.isRepository { add(ref(.journal, name: journal, paper: paper, settings: s), .journal) }
+        // First, last, then the others nearest the ends: the first and last are usually who the work is by.
+        let a = paper.authors
+        var order: [String] = []
+        for i in [0, a.count - 1, 1, a.count - 2] where a.indices.contains(i) && !order.contains(a[i]) { order.append(a[i]) }
+        for name in order { add(ref(.author, name: name, paper: paper, settings: s), .author) }
+        for name in [paper.firstInstitution, paper.lastInstitution].compactMap({ $0 }) {
+            add(ref(.institution, name: name, paper: paper, settings: s), .institution)
+        }
         // The paper's own keywords, more specific than its topics.
-        for name in (paper.keywords ?? []).prefix(3) { add(ref(.keyword, name: name, paper: paper, settings: s)) }
-        for name in paper.topics.prefix(3) { add(ref(.topic, name: name, paper: paper, settings: s)) }
+        for name in (paper.keywords ?? []).prefix(5) { add(ref(.keyword, name: name, paper: paper, settings: s), .keyword) }
+        for name in TitleTerms.phrases(from: paper.title, limit: 3) { add(ref(.keyword, name: name, paper: paper, settings: s), .title) }
+        for name in paper.topics.prefix(5) { add(ref(.topic, name: name, paper: paper, settings: s), .topic) }
         return out
     }
 

@@ -19,19 +19,28 @@ struct ThumbControl<Content: View>: View {
                 .accessibilityHint(hint)
         } else {
             Menu {
-                Section(up ? "What do you like most about it?" : "What do you like least about it?") {
-                    ForEach(reasons, id: \.ref.key) { reason in
-                        Button { model.applyThumb(paper, up: up, chosen: [reason.ref]) } label: {
-                            Label(title(reason), systemImage: symbol(reason.ref.kind))
+                Text(up ? "What do you like most about it?" : "What do you like least about it?")
+                // In groups, so that a long list can still be read: why it is in the feed, the journal, the
+                // researchers, and so on.
+                ForEach(groups(reasons), id: \.group) { section in
+                    Section(section.group.heading) {
+                        ForEach(section.items, id: \.ref.key) { reason in
+                            Button { model.applyThumb(paper, up: up, chosen: [reason.ref]) } label: {
+                                Label(title(reason), systemImage: symbol(reason.ref.kind))
+                            }
                         }
                     }
-                    Button { model.applyThumb(paper, up: up, chosen: []) } label: { Text("Just this paper") }
                 }
+                Button { model.applyThumb(paper, up: up, chosen: []) } label: { Text("Just this paper") }
             } label: { label() }
             .menuStyle(.button)
             .buttonStyle(.plain)
             .accessibilityHint(hint)
         }
+    }
+
+    private func groups(_ reasons: [ThumbBasis.Candidate]) -> [(group: ThumbGroup, items: [ThumbBasis.Candidate])] {
+        Dictionary(grouping: reasons, by: \.group).map { (group: $0.key, items: $0.value) }.sorted { $0.group.rawValue < $1.group.rawValue }
     }
 
     /// "Migraine · now +0.3": the thing, and what the thumbs have made of it (its kind is the icon).

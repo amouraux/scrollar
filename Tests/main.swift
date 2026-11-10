@@ -1994,8 +1994,8 @@ let tbPaper = lvPaper("t1", title: "TMS for pain", journal: "Pain", journalID: "
                       topics: ["Neural dynamics", "Pain management"], topicIDs: ["T1", "T2"], reasons: ["Keyword: TMS", "Journal: Pain"])
 var tbPaperF = tbPaper; tbPaperF.followed = true
 let tbCands = ThumbBasis.candidates(for: tbPaperF, settings: tbs)
-check(tbCands.map(\.ref.name) == ["TMS", "Pain", "Ada L", "Alan T", "Neural dynamics", "Pain management"] && tbCands.map(\.ref.kind) == [.keyword, .journal, .author, .author, .topic, .topic], "thumb basis: the reasons the paper is in the feed for come first, then its journal, its first and last author and its topics, each once")
-check(tbCands[0].ref == FacetRef.keyword("TMS") && tbCands[1].ref == FacetRef(kind: .journal, id: "S1", name: "Pain") && tbCands[2].ref.id == "A1" && tbCands[3].ref.id == "A3" && tbCands[4].ref.id == "T1", "thumb basis: a thing is known by the id the lists give it, else by the id the paper gives it")
+check(tbCands.map(\.ref.name) == ["TMS", "Pain", "Ada L", "Alan T", "Grace H", "pain", "Neural dynamics", "Pain management"] && tbCands.map(\.ref.kind) == [.keyword, .journal, .author, .author, .author, .keyword, .topic, .topic], "thumb basis: the reasons the paper is in the feed for come first, then its journal, its researchers (first, last, then the others), the phrases of its title and its topics, each once")
+check(tbCands[0].ref == FacetRef.keyword("TMS") && tbCands[1].ref == FacetRef(kind: .journal, id: "S1", name: "Pain") && tbCands[2].ref.id == "A1" && tbCands[3].ref.id == "A3" && tbCands[6].ref.id == "T1", "thumb basis: a thing is known by the id the lists give it, else by the id the paper gives it")
 check(tbCands[0].level == .maximum && tbCands[1].level == .maximum && tbCands[2].level == .normal, "thumb basis: each shows the level it has now")
 check(ThumbBasis.preselected(tbCands, paper: tbPaperF) == FacetRef.keyword("TMS").key, "thumb basis: the first reason, the one the post names, is chosen to begin with")
 check(ThumbBasis.preselected(ThumbBasis.candidates(for: lvPaper("t2"), settings: tbs), paper: lvPaper("t2")) == nil, "thumb basis: a paper with no reason has nothing chosen to begin with, so the thumb is about the paper alone")
@@ -2120,12 +2120,27 @@ check(evDoc.apply(to: evBack).thumbEvents.isEmpty, "sync: events that were let g
 check((try! FeedSettings.decode(Data(#"{"evidence":{"strength":0.5}}"#.utf8))).evidence.strength == 0.5 && (try! FeedSettings.decode(Data(#"{"evidence":{"strength":0.5}}"#.utf8))).evidence.halfLifeUpDays == 90 && (try! FeedSettings.decode(Data("{}".utf8))).thumbEvents.isEmpty, "settings: the thumb events and their rules read from a file that lacks them, or has only some")
 check(Evidence.summary(evTarget, before: 0.24, after: 0.6, pinned: nil) == "“migraine” +0.2 → +0.6" && Evidence.summary(evTarget, before: 0, after: 0, pinned: .higher).contains("pinned at Higher"), "evidence: the toast says what a thumb did, or that a pin kept it from doing anything")
 
+// More reasons for a thumb: title phrases, more researchers, institutions, groups.
+check(TitleTerms.phrases(from: "Transdiagnostic efficacy, durability, and optimal parameters of rTMS for cognitive rehabilitation: A comprehensive meta-analysis", limit: 4) == ["rTMS", "Transdiagnostic efficacy", "optimal parameters", "cognitive rehabilitation"], "title terms: a title is cut at the little words and the punctuation, acronyms and longer phrases first")
+check(TitleTerms.phrases(from: "A study of the effects of a novel approach") == [] && TitleTerms.phrases(from: "Letter to the Editor: Cannabis Use and Clinical Outcomes of rTMS among adults with Major Depressive Disorder", limit: 5) == ["Major Depressive Disorder", "rTMS", "Cannabis Use"], "title terms: words any title could carry say nothing, alone or at the edge of a phrase")
+check(TitleTerms.phrases(from: "Pain and pain: pain", limit: 5) == ["Pain", "pain"] || TitleTerms.phrases(from: "Pain and pain: pain", limit: 5).count == 1, "title terms: a phrase is offered once")
+var mrPaper = lvPaper("mr1", title: "Botulinum toxin for chronic migraine: a randomised trial", journal: "Headache", journalID: "S9", authors: ["A One", "B Two", "C Three", "D Four", "E Five"], authorIDs: ["A1", "A2", "A3", "A4", "A5"], topics: (1...7).map { "Topic \($0)" }, topicIDs: (1...7).map { "T\($0)" })
+mrPaper.firstInstitution = "University of Alpha"; mrPaper.lastInstitution = "Beta Hospital"; mrPaper.keywords = (1...8).map { "Keyword \($0)" }
+let mrCands = ThumbBasis.candidates(for: mrPaper, settings: FeedSettings())
+check(mrCands.filter { $0.group == .author }.map(\.ref.name) == ["A One", "E Five", "B Two", "D Four"], "thumb basis: researchers are the first, the last and the ones next to them, four at most")
+check(mrCands.filter { $0.group == .institution }.map(\.ref.name) == ["University of Alpha", "Beta Hospital"] && mrCands.filter { $0.group == .institution }.allSatisfy { SourceRouting.isNamed($0.ref.id) }, "thumb basis: the institutions of the first and last author are offered, known by name")
+check(mrCands.filter { $0.group == .keyword }.count == 5 && mrCands.filter { $0.group == .topic }.count <= 5 && mrCands.filter { $0.group == .title }.map(\.ref.name) == ["Botulinum toxin", "chronic migraine"], "thumb basis: five keywords, the phrases of the title, five topics at most")
+check(mrCands.map(\.group.rawValue) == mrCands.map(\.group.rawValue).sorted() && mrCands.count <= 18 && Set(mrCands.map(\.ref.key)).count == mrCands.count, "thumb basis: the reasons come in groups, in order, each thing once, eighteen at most")
+var mrS = FeedSettings(); mrS.useMyPublications = false
+mrS.thumbEvents = (0..<3).map { ev(FacetRef(kind: .institution, id: SourceRouting.namedID("University of Alpha"), name: "University of Alpha"), true, Double($0) * 7) }
+check(!FeedBuilder.seeds(mrS, myWorkIDs: [], now: evNow).contains { if case .institution = $0.seed { return true } else { return false } } && Ranker.rank([mrPaper, lvPaper("zz", title: "Galaxy clusters")], profileTexts: [], settings: mrS, today: evNow).first?.paper.id == "mr1", "evidence: an institution known by name ranks the papers from it higher, but is not searched for")
+
 // A paper's keywords as thumb reasons.
 check(Keywords.clean([" Migraine ", "migraine", "", "x", "Prophylaxis", String(repeating: "y", count: 80), "Pain"], limit: 3) == ["Migraine", "Prophylaxis", "Pain"] && Keywords.clean(["", " "]) == nil, "keywords: trimmed, none empty, twice or very long, and at most the limit")
 var kwPaper = lvPaper("kw1", title: "A study", journal: "Pain", journalID: "S1", authors: ["Ann Able", "Bo Baker"], authorIDs: ["A1", "A2"], topics: ["Neural dynamics"], topicIDs: ["T1"])
 kwPaper.keywords = ["Migraine", "Prophylaxis", "Botulinum toxin", "Headache"]
 let kwCands = ThumbBasis.candidates(for: kwPaper, settings: FeedSettings())
-check(kwCands.filter { $0.ref.kind == .keyword }.map(\.ref.name) == ["Migraine", "Prophylaxis", "Botulinum toxin"], "thumb basis: the paper's own keywords are offered, three of them")
+check(kwCands.filter { $0.ref.kind == .keyword }.map(\.ref.name) == ["Migraine", "Prophylaxis", "Botulinum toxin", "Headache"], "thumb basis: the paper's own keywords are offered, up to five")
 check(kwCands.firstIndex { $0.ref.kind == .keyword }! > kwCands.firstIndex { $0.ref.kind == .author }! && kwCands.firstIndex { $0.ref.kind == .keyword }! < kwCands.firstIndex { $0.ref.kind == .topic }!, "thumb basis: keywords come after the journal and authors and before the topics")
 var kwFollow = FeedSettings(); kwFollow.followedKeywords = [KeywordRule(phrase: "migraine")]
 kwPaper.reasons = ["Keyword: migraine"]

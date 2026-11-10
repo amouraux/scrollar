@@ -78,7 +78,9 @@ enum FeedBuilder {
             if let seed = seed(for: e.ref) { add(seed, explicit: e.level.pins) }
         }
         // And so is what the thumbs have pulled up far enough, unless the user pinned it to something else.
-        for (entry, bonus) in Evidence.active(s, now: now) where bonus >= Evidence.fetchBonus && !s.defaultLevel(entry.ref).fetches {
+        // An institution known only by name cannot be asked for, so it only ranks.
+        for (entry, bonus) in Evidence.active(s, now: now) where bonus >= Evidence.fetchBonus && !s.defaultLevel(entry.ref).fetches
+            && !(entry.kind == .institution && SourceRouting.isNamed(entry.id)) {
             if let seed = seed(for: entry.ref) { add(seed, explicit: false) }
         }
         for p in s.trackedPapers { add(.cites(workIDs: [p.id], label: "Cites: \(p.name)"), explicit: true) }

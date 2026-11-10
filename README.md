@@ -652,9 +652,16 @@ seconds and put away by a tap. Older notes in this file may still say "Saved" or
 ## What a thumb is about
 
 **For me** and **Not for me** ask what the thumb is about, in a menu on the button (`App/ThumbMenu.swift`, `Core/Thumbs.swift`): one tap on
-the thumb, one tap on a reason, and it is counted. The menu lists what the paper has that could be why: the keyword or journal or author or
-topic that put it in the feed first, then its journal, first and last author, its own keywords (up to three) and its topics, ten at most,
-each with what the thumbs have made of it so far ("now +0.3") or its pin; "Just this paper" is the last line. **One reason only**: with
+the thumb, one tap on a reason, and it is counted. The menu lists what the paper has that could be why, in groups (a long list is still readable; it scrolls): **Why it is in your feed**
+(the keyword, journal, author or topic that put it there), the **journal**, the **researchers** (first, last, and the two next to them), the
+**institutions** of the first and last author (known by name, so they rank but are not searched for), the paper's own **keywords** (up to
+five, when the source gives them: OpenAlex and Europe PMC do, Crossref, arXiv and OSF do not), the **phrases of its title** (up to three: the
+title is cut at the little words and the punctuation, so "Optimal parameters of rTMS for cognitive rehabilitation" gives "rTMS",
+"optimal parameters" and "cognitive rehabilitation"; words any title could carry, like "study" or "effects", are dropped; `Core/TitleTerms.swift`,
+tested) and its **topics** (up to five), eighteen at most, each with what the thumbs have made of it so far ("now +0.3") or its pin;
+"Just this paper" is the last line. A phrase of the title is a keyword like any other: it is matched against the title and abstract of
+every paper, so a thumb on "rTMS" counts for all the papers that mention it. It was only the journal, two researchers, three keywords
+(when there were any) and three topics, which left too many papers with nothing to choose but the journal. **One reason only**: with
 several selectable, people ended up with the first one preselected plus whatever else they touched, so the user names the best reason.
 (It was a sheet with radio buttons first; the menu replaced it so that it takes one tap after the thumb, not a sheet to confirm.)
 "Ask what a thumb is about" off (Tune, Ranking) makes a thumb take the first reason without asking. Taking back a For me asks nothing. A topic
