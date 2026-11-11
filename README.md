@@ -422,13 +422,20 @@ sandboxed with the network and user-selected-file entitlements it needs.
 
 What is left for App Store Connect, which only the account holder can do: a public privacy policy
 address (`PRIVACY.md`, which the public repository serves), the App Privacy answers, the beta description, a feedback
-email, and the age rating. Archive with the released Xcode and a new build number each time:
+email, and the age rating. Archive with the released Xcode (from the Organizer, or with this command):
 
 ```sh
 xcodebuild -project Scrollar.xcodeproj -scheme Scrollar -configuration Release \
   -destination 'generic/platform=iOS' -archivePath Scrollar-ios.xcarchive \
-  DEVELOPMENT_TEAM=<team> CURRENT_PROJECT_VERSION=$(git rev-list --count HEAD) archive
+  DEVELOPMENT_TEAM=<team> archive
 ```
+
+The build number is stamped by a script phase ("Stamp build number") from `git rev-list --count HEAD`, into the built
+app only, so the project file shows no diff and an archive made from the Xcode window gets a new number as well. App Store
+Connect refuses a build number it has already seen, and the commit count only grows: **commit before you archive**, or the
+build repeats the last number. The version (`MARKETING_VERSION`, 0.1) is separate and changes only for a new release. The
+script's input is the built `Info.plist`, so Xcode runs it after that file is written, and `ENABLE_USER_SCRIPT_SANDBOXING` is
+NO because the sandbox hides `.git`; both look redundant and are not.
 
 then Distribute App → App Store Connect → Upload in the Organizer (it needs an Apple Distribution
 certificate). Use the same command with `-destination 'platform=macOS,variant=Mac Catalyst'` for the Mac.

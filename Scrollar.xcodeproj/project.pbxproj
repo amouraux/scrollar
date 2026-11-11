@@ -61,6 +61,7 @@
 				AA0000000000000000000009 /* Sources */,
 				AA0000000000000000000004 /* Frameworks */,
 				AA000000000000000000000A /* Resources */,
+				AA00000000000000000000F1 /* Stamp build number */,
 			);
 			buildRules = (
 			);
@@ -120,6 +121,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		AA00000000000000000000F1 /* Stamp build number */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)",
+			);
+			name = "Stamp build number";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Stamp the build number with the number of commits in this repository.\n#\n# App Store Connect refuses a build number it has already seen, and bumping one by hand is\n# remembered until the day it is not. The commit count only ever grows, needs no edit to any\n# file, and ties an uploaded build to an exact commit: `git rev-list --count HEAD` on any\n# revision tells you which.\n#\n# Only the built app is stamped, never the source, so this leaves no diff.\nplist=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\n[ -f \"$plist\" ] || exit 0\n\ncount=$(cd \"${SRCROOT}\" && git rev-list --count HEAD 2>&1) || { echo \"warning: git failed: $count\"; exit 0; }\n[ -n \"$count\" ] || exit 0\n\n/usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $count\" \"$plist\"\necho \"note: build number set to $count (commits in this repository)\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		AA0000000000000000000009 /* Sources */ = {
@@ -184,6 +204,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "Scrollar-Mac.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				DEVELOPMENT_TEAM = ZL9BJ32RWX;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -216,6 +237,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "Scrollar-Mac.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				DEVELOPMENT_TEAM = ZL9BJ32RWX;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Scrollar;
