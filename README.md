@@ -108,6 +108,15 @@ never committed. In the app each user pastes their own into Tune, Sources; it li
 Keychain, never in the settings file, the sync file or the binary, and is sent only to
 OpenAlex. Do not compile a key in.
 
+Every screen that asks for a key or a connection has a button that opens the page where it is made, and a line on what to
+choose there (`Core/SetupHelp.swift`, shown by `SetupPageRows`, so they cannot drift): OpenAlex ("Get a free key"), Zotero
+("Create a key on zotero.org": name it Scrollar; tick Allow library access, which reading needs, and Allow write access
+if Add to Zotero is wanted; leave notes and groups off, because the app reads neither), a read-only Zotero key (a button to
+the page where its access is changed), and a Claude or OpenAI key (a separate pay-per-use account, not a chat
+subscription). The Zotero wording follows what the app calls: `/keys/current`, `/users/<id>/items`, `/collections`, and
+file upload for a PDF. The labels on zotero.org are from its documentation; its key page needs a sign-in, so they were not
+checked on screen.
+
 ## Ranking
 
 `Ranker.rank` scores every candidate; the constants and their reasons are in
@@ -212,6 +221,25 @@ suggestions fill the lists (`profileFilled`, synced, so a second device does not
 nothing the user removes comes back); a notice says so. After that "Suggest what to follow…" in Tune
 shows what is not yet followed, to choose from. Without OpenAlex the same works from the Europe PMC records that carry the
 iD (MeSH headings as topics, journals and co-authors by name; no keywords, institutions or funders). `./run.sh <orcid> --suggest [--also <orcid>]` prints the suggestions.
+
+**Finding an iD by name.** Nobody should have to know their iD. Under You, "Find my iD by name…", and when
+adding someone under Also learn from, "Find their iD by name…", ask for a first and a last name
+(`PersonName.parse` reads "André Mouraux", "A. Mouraux", "Mouraux A" and "Mouraux, André"; a last name alone is refused
+because it names hundreds of people) and list who matches, each with their institution, how many works the source
+lists or how many papers were found, and a recent paper title, so that two people with one name can be told apart.
+Choosing one fills the field, verifies the iD's check character again (`Orcid.normalised`) and says so. When more than one
+person matches, the screen says "N different people match this name" and that they are not the same person; with none,
+it says so and links to orcid.org's own search page, opened in the browser. The sources are the ones the user has on:
+**Europe PMC**, which needs nothing, is asked for papers by that name where some author carries an iD
+(`AUTH:"Family I" AND AUTHORID:*`) and the candidates are the authors whose name fits (`PersonName.accepts`: strict about the
+family name, tolerant of initials, accents, hyphens and particles); it knows an iD only where a paper's record carries one,
+which is why it can miss a person. **OpenAlex**, with the user's key, is asked for authors by name that have an iD
+(`/authors?search=…&filter=has_orcid:true`) and knows many more; the two lists are merged by iD. Without a key the screen
+says that only Europe PMC was asked and offers to go to Tune, Sources. ORCID's own API is not used (its public licence is
+non-commercial), and the name is sent to nobody else. The matching, merging and wording are in `Core/PersonSearch.swift`
+and tested; the requests are in `PersonSearchClient.swift`. Tried against Europe PMC's live API for the query shape
+and the fields; OpenAlex's author search was tried without a key for the shape of the answer, and with a key only in the
+tests' fixture.
 
 ## Endless scroll
 
@@ -882,6 +910,18 @@ ones; which author heads a post and whether to show the journal banner. Settings
 tolerantly: a missing, unknown or mistyped key falls back to its default and only a file that is
 not JSON fails, in which case it is copied aside and never silently replaced.
 
+## First setup
+
+A new install used to show "Nothing here yet" and, on a pull, "Nothing to build a feed from", with no way from either to
+the screen that fixes it. The empty feed is now a short list (`FirstRun`, tested; `EmptyFeed` in `FeedView.swift`): add
+your ORCID iD, or follow something (the two ways to a first feed), then, marked optional, a free OpenAlex key (not
+listed when OpenAlex is off) and a reference manager. Each row opens the Tune screen that does it, through
+`AppModel.openTune`, which the tab bar and Tune both watch (`TuneScreen`, and Tune's navigation path), and is ticked once
+done. With no source on, the empty feed offers Sources instead. Chosen not to do: a modal tour or welcome screens, which
+hide the app behind something to dismiss; asking for permissions or keys before the user has seen a paper; filling the
+follow lists from the name search (the ticked suggestions already do that once there is an iD, and nothing is followed
+that is not in a Follow list); and rearranging Tune, which still has its eight screens.
+
 ## The Mac build
 
 Mac Catalyst, sandboxed (`Scrollar-Mac.entitlements`, applied to the Mac SDK only): network
@@ -904,6 +944,8 @@ checked on screen, and saving the key to the Keychain from the sandbox is untest
   initials on a colour stand in.
 - **A left column** for the wide window (Reading list, Read, Tune, or a list of what is followed, with
   counts): the feed and the reader pane were what was asked for, and the tabs still do the rest.
+- **Finding an iD with ORCID's own search**: its public API is non-commercial. The screen links to orcid.org's search page
+  in the browser for a person the two sources do not know, which uses no API.
 - **Background refresh and notifications**, and Crossref or arXiv as sources for fields
   outside biomedicine are proposed and not started.
 

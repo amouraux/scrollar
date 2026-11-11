@@ -130,6 +130,17 @@ final class AppModel {
     /// Something the user should be told once, such as a settings file that would not load.
     var notice: String?
     var needsRefresh = false
+    /// A Tune screen another part of the app has asked to be shown (the first-run list on an empty
+    /// feed): the tab bar switches to Tune and Tune opens it, then clears this.
+    var pendingTune: TuneScreen?
+
+    /// Counts the requests, so the tab bar can notice one even after Tune has taken `pendingTune`.
+    private(set) var tuneRequests = 0
+
+    func openTune(_ screen: TuneScreen) {
+        pendingTune = screen
+        tuneRequests += 1
+    }
 
     /// The whole ranked feed behind `layout`.
     private var citedYou: [RankedPaper] = []
@@ -911,7 +922,7 @@ final class AppModel {
         settings = s
     }
 
-    private var followListsAreEmpty: Bool {
+    var followListsAreEmpty: Bool {
         settings.followedTopics.isEmpty && settings.followedJournals.isEmpty && settings.followedAuthors.isEmpty
             && settings.followedInstitutions.isEmpty && settings.followedFunders.isEmpty && settings.followedKeywords.isEmpty
     }

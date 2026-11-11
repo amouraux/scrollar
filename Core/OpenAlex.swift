@@ -197,6 +197,12 @@ struct OpenAlexClient {
         }
     }
 
+    /// People with this name who have an ORCID iD, for finding one's own. The name goes to OpenAlex as
+    /// a search; the iD is read from its record, never from ORCID.
+    func people(matching name: PersonName) async throws -> [PersonCandidate] {
+        PersonSearch.openAlex(try await fetch("authors", PersonSearch.openAlexQuery(for: name)))
+    }
+
     /// Run one seed, tagging every result with why it is there.
     /// `maxPages` more than 1 keeps asking while a page comes back full, so a long
     /// gap since the last refresh is not cut off at the newest `perPage` papers.

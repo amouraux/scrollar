@@ -43,6 +43,8 @@ struct ScrollarApp: App {
                 // feed more than six hours old is refreshed, behind the "new papers" pill.
                 if new == .active { Task { await model.resume() } }
             }
+            // The first-run list on an empty feed takes the user to the Tune screen it names.
+            .onChange(of: model.tuneRequests) { _, _ in tab = .settings }
             // Changes made in Tune are applied when the user goes back to the feed,
             // not on every tap.
             .onChange(of: tab) { _, new in

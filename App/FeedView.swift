@@ -411,18 +411,61 @@ private struct CaughtUp: View {
     }
 }
 
+/// What a new install shows instead of a blank list: the few things that make the first feed
+/// useful, each one a way straight to the Tune screen that does it. Ticked once done, so it reads as
+/// progress. (`FirstRun` decides what is listed.)
 private struct EmptyFeed: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        ContentUnavailableView {
-            Label("Nothing here yet", systemImage: "text.magnifyingglass")
-        } description: {
-            Text(model.canBuild
-                 ? "Pull down to load papers, or add what you follow in Tune."
-                 : "Turn on a source in Tune to start.")
+        if !model.canBuild {
+            ContentUnavailableView {
+                Label("Nothing here yet", systemImage: "text.magnifyingglass")
+            } description: {
+                Text("Turn on a source in Tune to start.")
+            } actions: {
+                Button("Open Sources") { model.openTune(.sources) }
+            }
+            .padding(.top, 60)
+        } else {
+            let steps = FirstRun.steps(settings: model.settings, hasOpenAlexKey: model.hasKey,
+                                       hasReferenceLibrary: model.zotero != nil || model.libraryFile != nil)
+            let ready = FirstRun.hasPublications(model.settings) || FirstRun.hasFollows(model.settings)
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(spacing: 6) {
+                    Image(systemName: "text.magnifyingglass").font(.largeTitle).foregroundStyle(.secondary)
+                    Text(ready ? "Nothing here yet" : "Set up your feed").font(.title3.weight(.semibold))
+                    Text(ready ? "Pull down to load papers. The rest is optional."
+                               : "Two things to tell it, and the first papers arrive. The rest can wait.")
+                        .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                ForEach(steps) { step in
+                    Button {
+                        if let screen = TuneScreen(rawValue: step.target.rawValue) { model.openTune(screen) }
+                    } label: {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(step.done ? Color.green : Color.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(step.title + (step.optional ? " (optional)" : "")).font(.subheadline.weight(.semibold))
+                                Text(step.detail).font(.footnote).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.tertiary)
+                        }
+                        .padding(12)
+                        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 12))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(maxWidth: 520)
+            .padding(.horizontal, 20)
+            .padding(.top, 40)
+            .frame(maxWidth: .infinity)
         }
-        .padding(.top, 60)
     }
 }
 
@@ -453,8 +496,12 @@ private struct StatusBanner: View {
             case .loading(let message):
                 banner(icon: "arrow.triangle.2.circlepath", tint: .accentColor, text: "Building your feed. \(message)") { EmptyView() }
             case .failed(let message):
-                banner(icon: "exclamationmark.triangle", tint: .orange, text: message) {
-                    if model.canBuild { Button("Try again") { Task { await model.refresh() } } }
+                // The first-run list below says what to do about "nothing to build a feed from", better
+                // than a banner with a Try again that cannot help.
+                if !(model.layout.isEmpty && !FirstRun.hasPublications(model.settings) && !FirstRun.hasFollows(model.settings)) {
+                    banner(icon: "exclamationmark.triangle", tint: .orange, text: message) {
+                        if model.canBuild { Button("Try again") { Task { await model.refresh() } } }
+                    }
                 }
             }
         }

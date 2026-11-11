@@ -2207,5 +2207,80 @@ check(ErrorText.brief(EtPage(description: "OpenAlex answered HTTP 500: <html><bo
 check(ErrorText.clip("one   two\n three") == "one two three" && ErrorText.clip(String(repeating: "word ", count: 100), limit: 20) == "word word word word…" && ErrorText.clip("A thing failed. UserInfo={key=value}") == "A thing failed.", "error text: white space is tidied, a cut falls between words, and Cocoa's internals are dropped")
 check(ErrorText.brief(DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: String(repeating: "x", count: 5000)))) == "A source sent something the app could not read.", "error text: a decoding error is one plain sentence")
 
+// MARK: finding an ORCID iD by name
+check(PersonName.parse("Josiah Carberry") == PersonName(given: "Josiah", family: "Carberry")
+      && PersonName.parse("J. Carberry") == PersonName(given: "J", family: "Carberry")
+      && PersonName.parse("Carberry, Josiah") == PersonName(given: "Josiah", family: "Carberry"), "name: first-last, initial-last and last-comma-first are understood")
+check(PersonName.parse("Carberry JS") == PersonName(given: "JS", family: "Carberry")
+      && PersonName.parse("Ludwig van der Berg") == PersonName(given: "Ludwig", family: "van der Berg")
+      && PersonName.parse("  Anna   Maria  Rossi ") == PersonName(given: "Anna Maria", family: "Rossi"), "name: Europe PMC's form, a particle that stays with the family name, and stray spaces")
+check(PersonName.parse("Carberry") == nil && PersonName.parse("") == nil && PersonName.parse("  ") == nil && PersonName.parse(", x") == nil, "name: a family name alone, or nothing, is not a search")
+let pnCarberry = PersonName.parse("Josiah Carberry")!
+check(pnCarberry.accepts(given: "Josiah", family: "Carberry") && pnCarberry.accepts(given: "J", family: "CARBERRY") && pnCarberry.accepts(given: "JS", family: "Carberry"), "name: the same person as full name, as an initial and in capitals")
+check(!pnCarberry.accepts(given: "Jane", family: "Carberry") && !pnCarberry.accepts(given: "Josiah", family: "Carbery") && !pnCarberry.accepts(given: "Alan", family: "Carberry"), "name: another given name or another family name is another person")
+check(PersonName.parse("André Müller-Ström")!.accepts(given: "Andre", family: "Muller Strom") && PersonName.parse("Ludwig van der Berg")!.accepts(given: "L", family: "Berg") && PersonName.parse("Jean-Pierre Roy")!.accepts(given: "JP", family: "Roy"), "name: accents, hyphens, a dropped particle and hyphenated initials do not make a stranger")
+check(PersonName.parse("Carberry")?.europePMCAuthor == nil && pnCarberry.europePMCAuthor == "Carberry J" && PersonName.parse("André Mouraux")!.europePMCAuthor == "Mouraux A" && PersonName.parse("Mary \"Quote\" Lee")?.europePMCAuthor.contains("\"") == false, "name: Europe PMC is asked family name and first initial, with no quote to break the query")
+check(PersonSearch.europePMCQuery(for: pnCarberry) == "AUTH:\"Carberry J\" AND AUTHORID:*", "search: Europe PMC is asked only for papers that carry an iD")
+let psJ = "0000-0002-1825-0097", psK = "0000-0001-5109-3700"
+check(Orcid.normalised(psJ) == psJ && Orcid.normalised(psK) == psK, "search: the made-up iDs used here have valid check characters")
+func psAuthor(_ first: String, _ last: String, _ id: String?, place: String? = nil) -> String {
+    let idPart = id.map { #","authorId":{"type":"ORCID","value":"\#($0)"}"# } ?? ""
+    let aff = place.map { #","authorAffiliationDetailsList":{"authorAffiliation":[{"affiliation":"\#($0)"}]}"# } ?? ""
+    return #"{"fullName":"\#(last) \#(first.prefix(1))","firstName":"\#(first)","lastName":"\#(last)"\#(idPart)\#(aff)}"#
+}
+func psRecord(_ id: String, _ title: String, _ year: String, _ authors: [String]) -> String {
+    #"{"id":"\#(id)","source":"MED","title":"\#(title).","pubYear":"\#(year)","authorList":{"author":[\#(authors.joined(separator: ","))]}}"#
+}
+let psEPMC = Data(("{\"hitCount\":4,\"resultList\":{\"result\":["
+    + [psRecord("1", "Newest paper on cortical gamma", "2026", [psAuthor("Josiah", "Carberry", psJ, place: "Department of Psychoceramics, Brown University, Providence, USA"), psAuthor("Alice", "Smith", psK)]),
+       psRecord("2", "An older paper", "2025", [psAuthor("Josiah", "Carberry", psJ)]),
+       psRecord("3", "Another Carberry", "2024", [psAuthor("Jane", "Carberry", psK, place: "University of Elsewhere, Springfield, USA")]),
+       psRecord("4", "A slip in the iD", "2023", [psAuthor("Josiah", "Carberry", "0000-0002-1825-0098")])].joined(separator: ",")
+    + "]}}").utf8)
+let psFound = PersonSearch.europePMC(psEPMC, name: pnCarberry)
+check(psFound.map(\.orcid) == [psJ], "search: Europe PMC gives the one person whose name fits, not a co-author, a namesake with another given name or an iD with a wrong check character")
+check(psFound.first?.papersSeen == 2 && psFound.first?.latestTitle == "Newest paper on cortical gamma" && psFound.first?.latestYear == 2026, "search: Europe PMC counts the papers that carry the iD and shows the newest title, without its full stop")
+check(psFound.first?.affiliation?.contains("Brown University") == true && psFound.first?.latestLine == "Recent: Newest paper on cortical gamma (2026)", "search: the institution is read from the record that gives one, and the recent paper is a line of its own")
+let psInitial = PersonSearch.europePMC(psEPMC, name: PersonName.parse("J. Carberry")!)
+check(Set(psInitial.map(\.orcid)) == [psJ, psK], "search: an initial and a family name match two people, and both are listed")
+check(PersonSearch.europePMC(Data("not json".utf8), name: pnCarberry).isEmpty && PersonSearch.europePMC(Data(#"{"resultList":{"result":[]}}"#.utf8), name: pnCarberry).isEmpty, "search: an answer that is not a result list, or has none, finds nobody")
+let psOA = Data(#"{"results":[{"id":"https://openalex.org/A1","display_name":"Josiah S. Carberry","orcid":"https://orcid.org/0000-0002-1825-0097","works_count":212,"last_known_institutions":[{"display_name":"Brown University"},{"display_name":"Elsewhere"}],"topics":[{"display_name":"Psychoceramics"}]},{"id":"https://openalex.org/A2","display_name":"No Identifier","orcid":null,"works_count":9},{"id":"https://openalex.org/A3","display_name":"Bad Check","orcid":"https://orcid.org/0000-0002-1825-0098","works_count":3}]}"#.utf8)
+let psOAFound = PersonSearch.openAlex(psOA)
+check(psOAFound.count == 1 && psOAFound[0].orcid == psJ && psOAFound[0].works == 212 && psOAFound[0].affiliation == "Brown University" && psOAFound[0].topic == "Psychoceramics", "search: OpenAlex gives the iD without its link, the works, the institution and the main topic; one with no iD or a wrong one is left out")
+check(PersonSearch.openAlex(Data("{}".utf8)).isEmpty && PersonSearch.openAlexQuery(for: pnCarberry)["filter"] == "has_orcid:true" && PersonSearch.openAlexQuery(for: pnCarberry)["search"] == "Josiah Carberry", "search: OpenAlex is asked for people who have an iD, by the name as typed")
+let psBoth = PersonSearch.merge([psOAFound, psFound])
+check(psBoth.count == 1 && psBoth[0].works == 212 && psBoth[0].papersSeen == 2 && psBoth[0].inOpenAlex && psBoth[0].inEuropePMC && psBoth[0].latestTitle != nil && psBoth[0].affiliation == "Brown University", "search: a person both sources know is one row with what each says")
+check(psBoth[0].summaryLine == "Brown University · 212 works · Psychoceramics", "search: the line under a name is the institution, the works and the topic")
+var psMany = (0..<12).map { i in PersonCandidate(orcid: "0000-0000-0000-\(String(format: "%04d", i))", name: "N\(i)", papersSeen: i) }
+psMany.append(PersonCandidate(orcid: psJ, name: "Both", papersSeen: 1, inOpenAlex: true, inEuropePMC: true))
+let psRanked = PersonSearch.merge([psMany])
+check(psRanked.count == PersonSearch.limit && psRanked[0].orcid == psJ && psRanked[1].name == "N11", "search: at most eight are listed, the ones both sources know first and then the most published")
+check(PersonSearch.verdict([], asked: ["Europe PMC"]).contains("No one with that name") && PersonSearch.verdict([psBoth[0]], asked: ["OpenAlex"]).hasPrefix("One person")
+      && PersonSearch.verdict(psInitial, asked: ["Europe PMC", "OpenAlex"]).hasPrefix("2 different people match this name") && PersonSearch.verdict([], asked: ["Europe PMC", "OpenAlex"]).contains("Europe PMC and OpenAlex"), "search: it says how many people match and that namesakes are different people")
+check(OrcidLookup.pageURL(name: " Josiah Carberry ")?.absoluteString == "https://orcid.org/orcid-search/search?searchQuery=Josiah%20Carberry" && OrcidLookup.pageURL(name: "A&b=c")?.absoluteString.contains("&b=c") == false, "orcid page: the name is in the address, and cannot add a parameter")
+
+// MARK: where a key is made
+let shAll: [SetupPage] = [SetupHelp.openAlex, SetupHelp.zotero(needsWrite: false), SetupHelp.zotero(needsWrite: true), SetupHelp.zoteroKeys,
+                          SetupHelp.summaries(.anthropic)!, SetupHelp.summaries(.openai)!]
+check(shAll.allSatisfy { $0.url.scheme == "https" && !$0.buttonTitle.isEmpty && !$0.steps.isEmpty }, "setup: every page opens over https and says what to press")
+check(SetupHelp.openAlex.url.host == "openalex.org" && SetupHelp.zotero(needsWrite: true).url.absoluteString == "https://www.zotero.org/settings/keys/new" && SetupHelp.summaries(.anthropic)!.url.host == "console.anthropic.com" && SetupHelp.summaries(.openai)!.url.host == "platform.openai.com" && SetupHelp.summaries(.other) == nil, "setup: each key is made on its own service's page, and another service has none to offer")
+check(SetupHelp.zotero(needsWrite: true).guide.contains("Allow library access") && SetupHelp.zotero(needsWrite: true).guide.contains("Allow write access, which Add to Zotero needs") && SetupHelp.zotero(needsWrite: false).guide.contains("if you want Add to Zotero") && !SetupHelp.zotero(needsWrite: true).guide.contains("tick Allow notes"), "setup: the Zotero key must allow reading, and writing for Add to Zotero, and never notes")
+
+// MARK: the first-run list
+var frNew = FeedSettings()
+let frSteps = FirstRun.steps(settings: frNew, hasOpenAlexKey: false, hasReferenceLibrary: false)
+check(frSteps.map(\.target) == [.you, .follow, .sources, .references] && frSteps.allSatisfy { !$0.done } && frSteps.map(\.optional) == [false, false, true, true], "first run: a new install is offered who you are, what to follow, then a key and a reference manager, the last two optional")
+frNew.orcid = "0000-0002-1825-0097"
+check(FirstRun.steps(settings: frNew, hasOpenAlexKey: false, hasReferenceLibrary: false).map(\.done) == [true, false, false, false], "first run: a valid ORCID iD ticks the first step")
+frNew.orcid = "0000-0002-1825-0098"
+check(FirstRun.steps(settings: frNew, hasOpenAlexKey: false, hasReferenceLibrary: false)[0].done == false, "first run: an iD with a wrong check character does not count")
+frNew.orcid = nil; frNew.profileOrcids = [ProfileSource(orcid: "0000-0002-1825-0097")]
+check(FirstRun.hasPublications(frNew), "first run: someone to learn from counts as publications to learn from")
+frNew.followedKeywords = [KeywordRule(phrase: "migraine")]
+check(FirstRun.hasFollows(frNew) && !FirstRun.hasFollows(FeedSettings()), "first run: any follow ticks the second step")
+frNew.useOpenAlex = false
+check(!FirstRun.steps(settings: frNew, hasOpenAlexKey: false, hasReferenceLibrary: true).contains { $0.target == .sources } && FirstRun.steps(settings: frNew, hasOpenAlexKey: false, hasReferenceLibrary: true).last?.done == true, "first run: a key is not asked for when OpenAlex is off, and a connected library ticks the last step")
+check(FirstRunStep.Target(rawValue: "you") == .you && Set(FirstRun.steps(settings: FeedSettings(), hasOpenAlexKey: false, hasReferenceLibrary: false).map(\.id)).count == 4, "first run: each step has its own name")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

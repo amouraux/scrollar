@@ -30,6 +30,9 @@ extension AppModel {
 struct YouScreen: View {
     @Environment(AppModel.self) private var appModel
     @State private var suggesting = false
+    @State private var finding = false
+    /// Said once an iD was chosen from a search: who it is, and that its check character is right.
+    @State private var picked: String?
 
     var body: some View {
         @Bindable var model = appModel
@@ -38,6 +41,7 @@ struct YouScreen: View {
                 TextField("ORCID iD, 0000-0000-0000-0000", text: Binding(
                     get: { model.settings.orcid ?? "" },
                     set: {
+                        picked = nil
                         let typed = $0.trimmingCharacters(in: .whitespaces)
                         // A valid iD is stored in its standard form; anything else as typed.
                         model.settings.orcid = typed.isEmpty ? nil : (Orcid.normalised(typed) ?? typed)
@@ -46,6 +50,13 @@ struct YouScreen: View {
                     .autocorrectionDisabled()
                 if let typed = model.settings.orcid, Orcid.normalised(typed) == nil {
                     Text("That is not a valid ORCID iD.").font(.footnote).foregroundStyle(.orange)
+                } else if let picked {
+                    Label(picked, systemImage: "checkmark.circle.fill").font(.footnote).foregroundStyle(.green)
+                }
+                if model.settings.orcid.flatMap(Orcid.normalised) == nil {
+                    Button("Find my iD by name…") { finding = true }
+                    Link("I do not have one: register at orcid.org", destination: OrcidLookup.registerURL)
+                        .font(.footnote)
                 }
                 Toggle("Learn from publications", isOn: $model.settings.useMyPublications)
                 NavigationLink {
@@ -64,6 +75,14 @@ struct YouScreen: View {
         }
         .navigationTitle("You")
         .sheet(isPresented: $suggesting) { SuggestionsView() }
+        .sheet(isPresented: $finding) {
+            PersonFinderSheet(title: "Find your ORCID iD", namePrompt: "Your first and last name") { person in
+                if let orcid = Orcid.normalised(person.orcid) {
+                    appModel.settings.orcid = orcid
+                    picked = "Chosen: \(person.name), \(orcid). The iD checks out."
+                }
+            }
+        }
     }
 }
 
@@ -540,6 +559,7 @@ struct OpenAlexKeyRows: View {
 
     private var entry: some View {
         Group {
+            SetupPageRows(page: SetupHelp.openAlex)
             SecureField("Paste your OpenAlex key", text: $draft)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -549,7 +569,6 @@ struct OpenAlexKeyRows: View {
                 replacing = false
             }
             .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
-            Link("Get a free key", destination: URL(string: "https://openalex.org/settings/api")!)
         }
     }
 

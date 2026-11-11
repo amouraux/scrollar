@@ -42,6 +42,7 @@ struct AddProfileSourceSheet: View {
     @State private var found: String?
     @State private var checking = false
     @State private var lookupFailed = false
+    @State private var finding = false
 
     private var orcid: String? { Orcid.normalised(text) }
 
@@ -53,6 +54,7 @@ struct AddProfileSourceSheet: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                     TextField("What to call them, e.g. Supervisor", text: $label)
+                    Button("Find their iD by name…") { finding = true }
                 } footer: {
                     if orcid == nil, !text.isEmpty {
                         Text("That is not a valid ORCID iD.").foregroundStyle(.orange)
@@ -67,6 +69,11 @@ struct AddProfileSourceSheet: View {
             }
             .navigationTitle("Learn from")
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $finding) {
+                PersonFinderSheet(title: "Find their ORCID iD", namePrompt: "Their first and last name") { person in
+                    text = person.orcid
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {

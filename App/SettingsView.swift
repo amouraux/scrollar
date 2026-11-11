@@ -26,39 +26,93 @@ extension Weight {
     }
 }
 
-struct SettingsView: View {
-    @Environment(AppModel.self) private var appModel
+/// The screens Tune opens on, so that something outside Tune can take the user straight to one.
+enum TuneScreen: String, Hashable, CaseIterable {
+    case you, follow, ranking, content, references, pdfs, summaries, sources, sync
 
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Your feed") {
-                    row("You", "person.crop.circle", status: youStatus) { YouScreen() }
-                    row("Follow and mute", "binoculars", status: followStatus) { FollowScreen() }
-                    row("Ranking", "arrow.up.arrow.down", status: rankingStatus) { RankingScreen() }
-                    row("Content and display", "text.alignleft", status: contentStatus) { ContentScreen() }
-                }
-                Section("Connections and data") {
-                    row("Reference managers", "books.vertical", status: referencesStatus) { ReferencesScreen() }
-                    row("PDFs", "doc.richtext", status: pdfsStatus) { PDFsScreen() }
-                    row("Summaries and AI", "sparkles", status: summariesStatus) { SummariesScreen() }
-                    row("Sources", "network", status: sourcesStatus) { SourcesScreen() }
-                    row("Sync and backup", "icloud", status: appModel.syncStatusText) { SyncBackupScreen() }
-                }
-            }
-            .navigationTitle("Tune")
+    var title: String {
+        switch self {
+        case .you: return "You"
+        case .follow: return "Follow and mute"
+        case .ranking: return "Ranking"
+        case .content: return "Content and display"
+        case .references: return "Reference managers"
+        case .pdfs: return "PDFs"
+        case .summaries: return "Summaries and AI"
+        case .sources: return "Sources"
+        case .sync: return "Sync and backup"
         }
     }
 
-    private func row<D: View>(_ title: String, _ symbol: String, status: String,
-                              @ViewBuilder _ destination: @escaping () -> D) -> some View {
-        NavigationLink {
-            destination()
-        } label: {
+    var symbol: String {
+        switch self {
+        case .you: return "person.crop.circle"
+        case .follow: return "binoculars"
+        case .ranking: return "arrow.up.arrow.down"
+        case .content: return "text.alignleft"
+        case .references: return "books.vertical"
+        case .pdfs: return "doc.richtext"
+        case .summaries: return "sparkles"
+        case .sources: return "network"
+        case .sync: return "icloud"
+        }
+    }
+}
+
+struct SettingsView: View {
+    @Environment(AppModel.self) private var appModel
+    @State private var path: [TuneScreen] = []
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            Form {
+                Section("Your feed") {
+                    row(.you, status: youStatus)
+                    row(.follow, status: followStatus)
+                    row(.ranking, status: rankingStatus)
+                    row(.content, status: contentStatus)
+                }
+                Section("Connections and data") {
+                    row(.references, status: referencesStatus)
+                    row(.pdfs, status: pdfsStatus)
+                    row(.summaries, status: summariesStatus)
+                    row(.sources, status: sourcesStatus)
+                    row(.sync, status: appModel.syncStatusText)
+                }
+            }
+            .navigationTitle("Tune")
+            .navigationDestination(for: TuneScreen.self) { screen in
+                switch screen {
+                case .you: YouScreen()
+                case .follow: FollowScreen()
+                case .ranking: RankingScreen()
+                case .content: ContentScreen()
+                case .references: ReferencesScreen()
+                case .pdfs: PDFsScreen()
+                case .summaries: SummariesScreen()
+                case .sources: SourcesScreen()
+                case .sync: SyncBackupScreen()
+                }
+            }
+        }
+        // Asked for from the feed's first-run list; the tab may only just have appeared, so it is
+        // also looked at when it does.
+        .onChange(of: appModel.pendingTune) { _, _ in openPending() }
+        .onAppear { openPending() }
+    }
+
+    private func openPending() {
+        guard let screen = appModel.pendingTune else { return }
+        appModel.pendingTune = nil
+        path = [screen]
+    }
+
+    private func row(_ screen: TuneScreen, status: String) -> some View {
+        NavigationLink(value: screen) {
             LabeledContent {
                 Text(status).lineLimit(1)
             } label: {
-                Label(title, systemImage: symbol)
+                Label(screen.title, systemImage: screen.symbol)
             }
         }
     }
@@ -577,9 +631,13 @@ struct ZoteroSection: View {
                 }
                 Button(model.zoteroChecking ? "Checking…" : "Check the connection") { Task { await model.checkZotero() } }
                     .disabled(model.zoteroChecking)
-                Text(account.canWrite ? "This key can read your library and add papers to it."
-                                      : "This key can only read your library. Adding papers to it needs a key that may also write: change the key's access on zotero.org, then check the connection.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                if account.canWrite {
+                    Text("This key can read your library and add papers to it.").font(.footnote).foregroundStyle(.secondary)
+                } else {
+                    Text("This key can only read your library. Adding papers to it needs a key that may also write.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    SetupPageRows(page: SetupHelp.zoteroKeys)
+                }
                 if account.canWrite {
                     Picker("Save papers into", selection: Binding(
                         get: { model.zoteroCollection?.key ?? "" },
@@ -609,13 +667,13 @@ struct ZoteroSection: View {
             } else {
                 Label("No key stored: not connected.", systemImage: "link.badge.plus")
                     .font(.footnote).foregroundStyle(.secondary)
+                SetupPageRows(page: SetupHelp.zotero(needsWrite: false))
                 SecureField("Zotero API key", text: $key)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 Button(connecting ? "Connecting…" : "Connect") { connect() }
                     .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty || connecting)
                 if let problem { Text(problem).font(.footnote).foregroundStyle(.red) }
-                Link("Create a key at zotero.org", destination: URL(string: "https://www.zotero.org/settings/keys/new")!)
             }
         } header: {
             Text("Zotero library")
@@ -693,14 +751,7 @@ struct SummariesSection: View {
                 Button(testing ? "Trying it…" : "Try it and keep it") { setUp() }
                     .disabled(!canSetUp)
                 if let problem { Text(problem).font(.footnote).foregroundStyle(.red) }
-                switch provider {
-                case .anthropic:
-                    Link("Get a Claude API key", destination: URL(string: "https://console.anthropic.com/settings/keys")!)
-                case .openai:
-                    Link("Get an OpenAI API key", destination: URL(string: "https://platform.openai.com/api-keys")!)
-                case .other:
-                    EmptyView()
-                }
+                if let page = SetupHelp.summaries(provider) { SetupPageRows(page: page) }
             }
         } header: {
             Text("Summaries and matching")

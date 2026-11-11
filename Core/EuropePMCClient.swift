@@ -79,6 +79,16 @@ struct EuropePMCClient {
         return (EuropePMCParser.authorName(orcid: orcid, in: data), EuropePMCParser.papers(from: data), EuropePMCParser.hitCount(in: data))
     }
 
+    /// People with this name whose iD appears on a paper Europe PMC holds: the newest hundred papers
+    /// that carry one, read for the author whose name fits.
+    func people(matching name: PersonName) async throws -> [PersonCandidate] {
+        let data = try await fetch("search", [
+            "query": PersonSearch.europePMCQuery(for: name), "format": "json", "resultType": "core",
+            "pageSize": "100", "sort": "P_PDATE_D desc",
+        ])
+        return PersonSearch.europePMC(data, name: name)
+    }
+
     /// Just the name, for checking an iD before someone is added.
     func authorName(orcid: String) async throws -> String? {
         let data = try await fetch("search", [
