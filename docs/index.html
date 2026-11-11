@@ -75,6 +75,8 @@
 
   ul.plain { margin: 0; padding-left: 20px; color: var(--ink-soft); }
   ul.plain li { margin: 5px 0; }
+  ul.plain strong { color: var(--ink); }
+  .note ul.plain { margin: 6px 0 12px; }
 
   footer.wrap { padding: 44px 16px 60px; text-align: center; color: var(--ink-soft); font-size: 15px; }
   footer a { color: var(--ink-soft); }
@@ -110,6 +112,36 @@
     <div class="step"><h3>Say who you are</h3><p>Your ORCID iD, your Zotero library or a reference export, or a pasted project description if you have no papers yet, stand for what you work on.</p></div>
     <div class="step"><h3>Follow what you want</h3><p>Journals, topics, researchers, keywords, institutions and funders, with a preview of what each would bring in.</p></div>
     <div class="step"><h3>Read the feed</h3><p>Papers are ranked by closeness to your work, what you follow and how recent they are. A thumb up or down, with the reason you pick, teaches it.</p></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>How papers are selected</h2>
+  <div class="note">
+    <ul class="plain">
+      <li><strong>Only what you follow.</strong> Journals, researchers, keywords, topics, institutions, funders, and papers that cite yours. Nothing is followed unless it is on a list.</li>
+      <li><strong>Each follow is searched.</strong> Every source that is on is asked for papers published in your look-back, 30 days by default.</li>
+      <li><strong>Duplicates are merged.</strong> A paper found by several sources is shown once, and a preprint and its article are one paper.</li>
+      <li><strong>Your filters apply.</strong> Mutes, kinds of paper, language, open access, and whether an abstract is required.</li>
+      <li><strong>Narrow follows are never cut.</strong> Everything from a journal, researcher or keyword you follow stays in the feed, however low it ranks, unless you lower its level. Topics, institutions and funders are too broad for that, so they only help the ranking.</li>
+      <li><strong>It does not run out.</strong> Scroll to the end and it fetches the 30 days before, up to a year.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>How papers are ranked</h2>
+  <div class="note">
+    <p>One list, best first. A paper’s score adds up:</p>
+    <ul class="plain">
+      <li><strong>Closeness to your work.</strong> How like your papers, library, reading list and projects it is, by meaning and by shared words. A slider sets how much this counts.</li>
+      <li><strong>What you follow.</strong> A bonus for each follow that found it, and more if it cites your work. A higher level counts more, a lower one less.</li>
+      <li><strong>Newness.</strong> Newer papers rank higher; the bonus halves every two weeks. A slider sets it.</li>
+      <li><strong>Your thumbs.</strong> For me pulls toward similar papers and what they were about, Not for me pushes away. Both fade with time.</li>
+      <li><strong>Kind of paper.</strong> You can lower or boost reviews, preprints and the rest. Case reports and conference abstracts start lowered.</li>
+      <li><strong>Optional.</strong> Journal impact and the author’s h-index, both off until you turn them on.</li>
+    </ul>
+    <p>Papers you have already seen sink below new ones. Up to three that are very close to your work, and also cite it, come from something you follow, or have a strong journal or senior author, are lifted into Highlights. Every post says why it is there, and every weight is in Tune. <a href="https://github.com/amouraux/scrollar#ranking">The full detail</a> is in the source.</p>
   </div>
 </section>
 
