@@ -928,7 +928,18 @@ Mac Catalyst, sandboxed (`Scrollar-Mac.entitlements`, applied to the Mac SDK onl
 client, and user-selected read-write files with app-scoped bookmarks for the sync file. Commands:
 Cmd-R refreshes, Cmd-1/2/3 switch tabs, Cmd-] and Cmd-[ open the next and previous paper in the reader pane. Its data lives in its own container, so nothing is shared
 with the phone except through sync. It builds, is signed and runs; its window has not been
-checked on screen, and saving the key to the Keychain from the sandbox is untested.
+checked on screen.
+
+**Keys on the Mac need a provisioning profile.** Mac Catalyst keeps Keychain items only for an app signed with a
+profile that carries its application identifier and a `keychain-access-groups` entry
+(`$(AppIdentifierPrefix)com.andremouraux.scrollar`, in `Scrollar-Mac.entitlements`, Mac only). Without them the save is
+refused (the red "This device would not keep the key" under the OpenAlex key) and the key is gone at the next launch.
+A build made before this had Tune's Mac signing set to "None Required" and no profile; adding the Keychain Sharing
+capability in Xcode made it create one, and the signed app now shows `application-identifier` and the group
+(`codesign -d --entitlements - --xml`). Checked on a development-signed Mac build: a key pasted into Tune, Sources was
+still there after quitting and reopening. A build exported for TestFlight is signed at export with a distribution profile,
+and has not been exported or checked here. An ad-hoc build for screenshots (no team, its own bundle identifier) has no
+profile and will lose its keys.
 
 ## Not built, and why
 
