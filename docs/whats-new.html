@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What is new in the Scrollar beta</title>
+<meta name="description" content="What changed in the latest Scrollar beta on TestFlight compared with the previous one: thumbs with reasons, levels, search, projects, more sources, PDFs and reference managers, and more.">
+<link rel="icon" href="icon.png">
+<link rel="canonical" href="https://amouraux.github.io/scrollar/whats-new.html">
+<style>
+  :root {
+    --bg: #f2f4f8; --panel: #ffffff; --ink: #12151f; --ink-soft: #565c70;
+    --line: rgba(18,21,31,.10); --accent: #1f56b8; --accent-soft: rgba(31,86,184,.10);
+    --teal: #13857f;
+    --shadow: 0 1px 2px rgba(18,21,31,.05), 0 8px 24px rgba(18,21,31,.07);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0c0e14; --panel: #161a24; --ink: #f2f4f9; --ink-soft: #9fa5b8;
+      --line: rgba(255,255,255,.12); --accent: #7aa7ff; --accent-soft: rgba(122,167,255,.14);
+      --teal: #4fd0c6;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 28px rgba(0,0,0,.45);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 400 17px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 16px; }
+  a { color: var(--accent); }
+
+  header.wrap { padding: 72px 16px 34px; text-align: center; }
+  .icon { width: 128px; height: 128px; border-radius: 29px; box-shadow: var(--shadow); display: block; margin: 0 auto 24px; }
+  h1 { margin: 0; font-size: clamp(42px, 9vw, 64px); letter-spacing: -.028em; font-weight: 700; line-height: 1.04; }
+  .tagline { margin: 16px auto 0; max-width: 26ch; font-size: clamp(21px, 3.6vw, 27px); line-height: 1.3; letter-spacing: -.012em; }
+  .sub { margin: 16px auto 0; max-width: 56ch; color: var(--ink-soft); }
+  .badges { margin-top: 22px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .join { display: inline-block; margin-top: 26px; padding: 13px 26px; border-radius: 999px; background: var(--accent); color: #fff; font-weight: 600; font-size: 18px; text-decoration: none; box-shadow: var(--shadow); }
+  .join:hover, .join:focus-visible { filter: brightness(1.1); }
+  .join-note { margin: 10px 0 0; color: var(--ink-soft); font-size: 15px; }
+  .badge { font-size: 14px; padding: 5px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+  section.wrap { padding-top: 38px; padding-bottom: 6px; }
+  h2 { margin: 0 0 6px; font-size: clamp(26px, 4.5vw, 34px); letter-spacing: -.02em; line-height: 1.15; }
+  .lede { margin: 0 0 22px; color: var(--ink-soft); max-width: 62ch; }
+
+  .shot { margin: 8px 0 4px; text-align: center; }
+  .shot img { max-width: min(100%, 620px); height: auto; border-radius: 18px; box-shadow: var(--shadow); border: 1px solid var(--line); }
+  .shot figcaption { margin-top: 10px; color: var(--ink-soft); font-size: 15px; }
+
+  .steps { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); counter-reset: s; }
+  .step { background: var(--panel); border-radius: 18px; padding: 20px 20px 18px; box-shadow: var(--shadow); border: 1px solid var(--line); }
+  .step::before { counter-increment: s; content: counter(s); display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 15px; margin-bottom: 10px; }
+  .step h3 { margin: 0 0 4px; font-size: 19px; }
+  .step p { margin: 0; color: var(--ink-soft); font-size: 16px; }
+
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); }
+  .card { background: var(--panel); border-radius: 18px; padding: 20px; box-shadow: var(--shadow); border: 1px solid var(--line); }
+  .card h3 { margin: 0 0 6px; font-size: 19px; letter-spacing: -.01em; }
+  .card p { margin: 0; color: var(--ink-soft); font-size: 16px; }
+  .card p + p { margin-top: 8px; }
+  .tag { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--teal); margin-bottom: 6px; }
+
+  .note { background: var(--panel); border-radius: 18px; padding: 20px 22px; border: 1px solid var(--line); box-shadow: var(--shadow); }
+  .note p { margin: 0; color: var(--ink-soft); }
+  .note p + p { margin-top: 10px; }
+  .note strong { color: var(--ink); }
+
+  ul.plain { margin: 0; padding-left: 20px; color: var(--ink-soft); }
+  ul.plain li { margin: 5px 0; }
+
+  .from { margin: 0 auto; max-width: 56ch; color: var(--ink-soft); }
+  .back { display: inline-block; margin-bottom: 18px; font-size: 15px; }
+  .card ul { margin: 8px 0 0; padding-left: 20px; color: var(--ink-soft); font-size: 16px; }
+  .card li { margin: 4px 0; }
+  footer.wrap { padding: 44px 16px 60px; text-align: center; color: var(--ink-soft); font-size: 15px; }
+  footer a { color: var(--ink-soft); }
+  footer .links { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <img class="icon" src="icon.png" alt="Scrollar app icon">
+  <h1>What is new</h1>
+  <p class="tagline">This beta, compared with the one before it.</p>
+  <p class="sub">Everything below was added on 9 and 10 November 2026, and is not in the previous beta.</p>
+  <a class="join" href="https://testflight.apple.com/join/87XHYHuj">Open the beta on TestFlight</a>
+  <p class="join-note">Free. Needs the TestFlight app on an iPhone, iPad or Mac.</p>
+</header>
+
+<section class="wrap">
+  <a class="back" href="./">&larr; Back to Scrollar</a>
+  <div class="note">
+    <p><strong>Before you update.</strong> This beta writes a newer sync file. Update every device you sync before changing anything on them: an older build leaves the file alone instead of damaging it, but it will not see what the newer one wrote. Your settings are kept.</p>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>Teach the feed</h2>
+  <p class="lede">The biggest change: telling the app what you think is now specific, visible and reversible.</p>
+  <div class="grid">
+    <div class="card"><span class="tag">New</span><h3>A thumb asks what it was about</h3><p>A thumb up or down is one tap on a menu of reasons: the keyword, journal, researcher or topic that put the paper in your feed, the first, last and neighbouring authors, their institutions, up to five of the paper's keywords, the phrases of its title and up to five topics, grouped by kind. You choose the one best reason, or "none of these, just this paper", and only that one moves.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Thumbs are counted, and fade</h3><p>What a journal, keyword or researcher has come to is worked out from every thumb you gave it. Each fades over weeks, the total is read against what is normal for you, and the first few matter more than the tenth. A thumb against the direction so far counts more, so a change of heart is noticed. Tune shows every thing with its counts and pull, lets you pin one by hand, and shows all the numbers.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Not for me now teaches the feed</h3><p>It used to hide one paper. Now it also pushes the feed away from papers like it, and only when they are closer to what you hid than to anything you want. What you follow, and what cites your work, is never lowered. Your reading list and For me teach it too, and all of it fades with age. A post says why it was lowered.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Five levels for every follow</h3><p>Each keyword, journal, researcher and topic can be Hide, Lower, Normal, Higher or Maximum (four for what is broad: topics, institutions and funders). Higher is searched for and ranks higher; Maximum also keeps everything it finds, however low it scores. With none set, the feed is exactly what it was. Tune, Follow and mute, Levels lists them all.</p></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>Finding and filling the feed</h2>
+  <div class="grid">
+    <div class="card"><span class="tag">New</span><h3>Search</h3><p>A magnifier on the feed searches every source you have on for the last twelve months. Every word, in any order, ranked by the phrase first and then by what you keep and the levels you set. Misspellings are put right. Afterwards it asks whether the search should count toward your feed, for a while and less each week; if you say no, nothing is kept. Searches stay on your device.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Your project</h3><p>If you have few papers yet, paste a grant proposal or a thesis plan, or take it from a PDF or a text file. Up to ten projects, each with a title and a switch for whether it ranks your feed. The text stays on your device and is never synced. Its recurring phrases are offered as keywords to follow.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Better keyword suggestions, on request</h3><p>Ask Apple's on-device model for search phrases from a project, or your own Claude, ChatGPT or any OpenAI-compatible model, including one on your own computer. Nothing is asked until you do. Before anything leaves the device a screen shows who receives it and the exact text, and asks every time.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Crossref, arXiv and the OSF preprint servers</h3><p>Three more sources, all free and without a key. Crossref covers every DOI and is used when OpenAlex is off; arXiv covers physics, mathematics and computer science; the Open Science Framework carries PsyArXiv, SocArXiv and others, which matter most in psychology and the social sciences. arXiv and OSF are off until you switch them on in Tune, Sources.</p></div>
+    <div class="card"><span class="tag">Clearer</span><h3>Your OpenAlex key says what it is doing</h3><p>Tune shows the key's last four characters, "Saved on this device and in use", or "No key: OpenAlex is skipped". The key is saved by a button, and if the device refuses to keep a key you are told, instead of finding it gone next time.</p></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>Reading and keeping</h2>
+  <div class="grid">
+    <div class="card"><span class="tag">Changed</span><h3>Read later, separate from Zotero</h3><p>Save meant two unrelated things. Read later puts a paper on your Reading list tab, like Safari's list. Add to Zotero is its own action in the Share menu and on every row (swipe right, long press or right-click), and it is greyed out, with the reason, when the key cannot write. Opened papers are dimmed and marked Read.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Your lists look like the feed</h3><p>The Reading list, For me and Read use the same posts, with the same colours, journals, authors and reasons. On a wide window a tap opens the paper in the reader pane on the right, with the abstract and the PDF where there is one. The filter sidebar lists topics, keywords, authors and journals first.</p></div>
+    <div class="card"><span class="tag">New</span><h3>All or New</h3><p>A switch at the top of the feed shows only what you have not looked at yet, with a count, leaving out what you glanced at and what you read. The choice is kept.</p></div>
+    <div class="card"><span class="tag">New</span><h3>A panel of reasons, on iPad and Mac</h3><p>A folding panel lists why papers are in your feed (cites your work, authors, keywords, journals, topics), how many papers carry each and how many are new. Pick one to catch up on a single topic. It folds to a thin strip, and on the Mac View, Show or Hide opens it from the keyboard. Where there is room for the reader but not the panel, it opens as a sheet.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Filter your lists by why a paper matters</h3><p>The Reading list, For me and Read can be grouped by the reasons papers reached your feed (cites your work, an author, a keyword, a journal, an institution, a funder, a topic you follow, a topic from your own papers), with the names inside each kind and a count. Sort by latest kept, publication date or relevance to you, and search by title, author or journal. The panel sits beside the list on a wide window and opens as a sheet on a narrow one. Papers kept before reasons were recorded are listed under Other, not guessed.</p></div>
+    <div class="card"><span class="tag">Fixed</span><h3>PDFs that used to fail now open</h3><p>The reader asks for a PDF the way a browser does and tries once more after a server error, which fixes the "error 500" many publishers returned. Where a publisher still refuses a download, the PDF opens in a web view instead, with Open in browser always in reach. For bioRxiv, medRxiv, arXiv and the OSF servers, a free PDF is offered from the paper's DOI when no source lists one.</p></div>
+    <div class="card"><span class="tag">New</span><h3>PDFs kept for offline reading</h3><p>A PDF you open is kept, so it opens again at once and without a connection. Tune shows the space used, lets you set a limit and clear them. When the limit is reached the least recently opened go first, and the PDFs of papers on your reading list go last.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Share PDFs between your devices</h3><p>Point each device at the same folder in iCloud Drive. A device looks there after its own copies and before the network, and puts there the PDFs of your reading list and For me papers, or of every PDF you open, as you choose. The app never trims that folder.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Zotero with the PDF, EndNote and Mendeley</h3><p>Add to Zotero puts the paper in a collection you choose or create and attaches the PDF. If Zotero's storage is full or refuses it, the paper is still saved and you are told the PDF was not attached. This has been tried against a stand-in for Zotero and not yet a real library, so please tell me if it fails. EndNote opens its own .enw file directly. You can put a PDF in the folder EndNote or Mendeley watches, or copy the PDF or the reference as text for any app that accepts a paste.</p></div>
+    <div class="card"><span class="tag">Clearer</span><h3>Reference managers and PDFs</h3><p>The screen asks which you use (Zotero, EndNote, Mendeley, others) and shows only what works for them, here and in the Share menu. The Zotero block says whether the key is stored, who you are connected as and what Zotero said when last asked. PDFs have their own row, saying where the shared folder is and whether it is in iCloud Drive or only on this device.</p></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>Around the edges</h2>
+  <div class="grid">
+    <div class="card"><span class="tag">Changed</span><h3>Tune is a short list of screens</h3><p>It was one scroll of twenty sections. It now opens on eight rows, each saying what is set, and each opens its own screen: You, Follow and mute, Ranking, Content and display, Reference managers and PDFs, Summaries and AI, Sources, and Sync and backup. Nothing was removed.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Start again, in parts</h3><p>Tune, Sync and backup, Start again clears the ORCID iD, follows and mutes, thumbs, the reading list, sliders, sources, reference managers, recent searches, projects or reading history, each on its own or all together. A confirmation names what goes, your keys and the sync link are never touched, and the last reset can be undone until the app closes.</p></div>
+    <div class="card"><span class="tag">Fixed</span><h3>Short error messages</h3><p>A network error used to print the whole request address and system internals, once more than a page in the feed banner. Errors are now one short sentence, and the banner never shows more than four lines.</p></div>
+    <div class="card"><span class="tag">New</span><h3>A privacy policy, and a licence</h3><p>The privacy policy is published and lists exactly which services the app contacts and what it sends them. The developer receives nothing. The app declares what it reads on the device and that it collects no data and does no tracking. The source is public to read and check, under a view-only licence.</p></div>
+    <div class="card"><span class="tag">Fixed</span><h3>Steadier ranking</h3><p>Scores that differ only by rounding noise are treated as ties, so the same feed ranks the same way twice.</p></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>Tell me what you think</h2>
+  <div class="note">
+    <p>This page lists what changed since the previous beta; <a href="./">the main page</a> describes the app as a whole. Feedback is welcome as an <a href="https://github.com/amouraux/scrollar/issues">issue on GitHub</a>, or through TestFlight's own feedback.</p>
+  </div>
+</section>
+
+<footer class="wrap">
+  <div class="links">
+    <a href="./">Scrollar</a>
+    <a href="privacy.html">Privacy</a>
+    <a href="https://github.com/amouraux/scrollar">Source</a>
+    <a href="https://github.com/amouraux/scrollar/issues">Feedback</a>
+  </div>
+  <div>© 2026 André Mouraux</div>
+</footer>
+
+</body>
+</html>
