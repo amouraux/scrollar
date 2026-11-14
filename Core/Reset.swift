@@ -91,7 +91,7 @@ extension FeedSettings {
         if parts.contains(.ranking) {
             kindWeights = d.kindWeights; daysBack = d.daysBack; recency = d.recency; closeness = d.closeness
             impactWeight = d.impactWeight; authorWeight = d.authorWeight; byline = d.byline
-            feedOrder = d.feedOrder; highlightCount = d.highlightCount; highlightCloseness = d.highlightCloseness
+            highlightCount = d.highlightCount; highlightCloseness = d.highlightCloseness
             highlightImpact = d.highlightImpact; highlightAuthorH = d.highlightAuthorH
             requireAbstract = d.requireAbstract; openAccessOnly = d.openAccessOnly; seenExpiryDays = d.seenExpiryDays
             showReadPapers = d.showReadPapers; languages = d.languages; dwellSeconds = d.dwellSeconds

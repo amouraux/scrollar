@@ -774,21 +774,7 @@ check(SyncProjection.items(of: FeedSettings()).keys.contains("v/orcid") && (try?
 var every = FeedSettings(); every.orcid = "0000-0001-2345-6789"; every.languages = ["en", "fr"]; every.kindWeights = ["caseReport": .hide]; every.impactWeight = 0.7; every.authorWeight = 0.3; every.byline = .first
 check(device(every, stamp: at(1)).apply(to: FeedSettings()) == every, "sync: every kind of setting survives the record and back")
 
-// MARK: the section for what the user follows
 func ranked(_ p: Paper, _ score: Double) -> RankedPaper { RankedPaper(paper: p, score: score, similarity: 0) }
-let fOld = ranked(ok("fa") { $0.followed = true; $0.date = "2026-10-01" }, 9)
-let fNewLow = ranked(ok("fb") { $0.followed = true; $0.date = "2026-10-05" }, 0.1)
-let fNewHigh = ranked(ok("fc") { $0.followed = true; $0.date = "2026-10-05" }, 3)
-let plainTop = ranked(ok("pt") { $0.date = "2026-10-06" }, 8)
-let plainLow = ranked(ok("pl") { $0.date = "2026-10-02" }, 1)
-let splitOn = Arranger.split([fOld, plainTop, fNewLow, fNewHigh, plainLow], followSection: true)
-check(splitOn.followed.map(\.paper.id) == ["fc", "fb", "fa"], "follow section: newest first, then by score, whatever the ranking said")
-check(splitOn.rest.map(\.paper.id) == ["pt", "pl"], "follow section: the rest keeps its rank order and does not repeat what was taken out")
-check(splitOn.followed.count + splitOn.rest.count == 5, "follow section: nothing is lost or shown twice")
-let splitOff = Arranger.split([fOld, plainTop, fNewLow], followSection: false)
-let offIDs: [String] = splitOff.rest.map { $0.paper.id }
-check(splitOff.followed.isEmpty && offIDs == ["fa", "pt", "fb"], "follow section off: everything stays in the ranked list")
-check(Arranger.split([], followSection: true).followed.isEmpty, "follow section: an empty feed is fine")
 
 // MARK: ORCID and profile suggestions
 check(Orcid.normalised("0000-0003-1056-5980") == "0000-0003-1056-5980", "orcid: a valid iD is accepted")
@@ -843,10 +829,7 @@ check(otherOrcid.forRanking != FeedSettings().forRanking && otherOrcid.forFetchi
 let institutionOnly = ranked(ok("io") { $0.followed = true; $0.reasons = ["Institution: UCLouvain"]; $0.date = "2026-10-07" }, 2)
 let topicOnly = ranked(ok("to") { $0.followed = true; $0.reasons = ["Topic: Pain"]; $0.date = "2026-10-09" }, 5)
 let journalToo = ranked(ok("jt") { $0.followed = true; $0.reasons = ["Topic: Pain", "Journal: Pain"]; $0.date = "2026-10-08" }, 4)
-let splitTopics = Arranger.split([topicOnly, journalToo, plainTop, institutionOnly], followSection: true)
-let topicIDs: [String] = splitTopics.followed.map { $0.paper.id }
-let restIDs: [String] = splitTopics.rest.map { $0.paper.id }
-check(topicIDs == ["jt"] && restIDs == ["to", "pt", "io"], "follow section: a paper found only by a topic or an institution is ranked with the rest, one a journal also found is listed")
+check(!topicOnly.paper.isPinned && !institutionOnly.paper.isPinned && journalToo.paper.isPinned, "pinned: a paper found only by a topic or an institution is ranked with the rest, one a journal also found is kept")
 
 let bigJournal = pfE("S9", "General Journal")
 let sizedWorks = (0..<4).map { _ in ProfileWork(year: 2026, journal: bigJournal) } + (0..<4).map { _ in ProfileWork(year: 2026, journal: pfE("S8", "Specialist Journal")) }
@@ -881,12 +864,6 @@ let kwRanked = Ranker.rank([kwLow, kwPlain, kwHigh, kwNone], profileTexts: profi
 check(kwRanked.firstIndex(of: "kh")! < kwRanked.firstIndex(of: "kp")! && kwRanked.firstIndex(of: "kp")! < kwRanked.firstIndex(of: "kl")!, "keyword importance: high above normal above low in the ranking, all else equal")
 check(kwSettings.keywordImportance(of: kwBoth) == .high && kwSettings.keywordImportance(of: kwNone) == nil, "keyword importance: a paper two keywords found counts as the higher; none, no importance")
 check(Importance.high.bonus > Importance.normal.bonus && Importance.normal.bonus == 0 && Importance.low.bonus < 0, "keyword importance: the bonuses run the right way")
-let kwSplit = Arranger.split([kwLow, kwPlain, kwHigh, kwBoth].map { ranked($0, 1) }, followSection: true, keywords: kwSettings.followedKeywords)
-let kwOrder: [String] = kwSplit.followed.map { $0.paper.id }
-check(kwOrder == ["kb", "kh", "kp", "kl"], "keyword importance: under From what you follow, high first, then normal, then low, newest first within each")
-let kwJournal = ranked(ok("kj") { $0.reasons = ["Keyword: low one", "Journal: Pain"]; $0.followed = true; $0.date = "2026-10-04" }, 1)
-let kwMixed: [String] = Arranger.split([ranked(kwLow, 1), kwJournal], followSection: true, keywords: kwSettings.followedKeywords).followed.map { $0.paper.id }
-check(kwMixed == ["kj", "kl"], "keyword importance: a paper a journal also found is at least normal, whatever its low keyword says")
 check((try! JSONDecoder().decode(KeywordRule.self, from: Data("{\"phrase\": \"tactile\", \"alsoRequire\": [\"EEG\"]}".utf8))).importance == .normal, "keyword importance: a keyword saved before it existed is normal")
 check((try! JSONDecoder().decode(KeywordRule.self, from: Data("{\"phrase\": \"x\", \"importance\": \"nonsense\"}".utf8))).importance == .normal, "keyword importance: an unknown value is normal")
 var importanceSynced = FeedSettings(); importanceSynced.followedKeywords = [KeywordRule(phrase: "x", importance: .high)]
@@ -895,12 +872,12 @@ var importanceChanged = importanceSynced; importanceChanged.followedKeywords[0].
 var importanceLedger = device(importanceSynced, stamp: at(1)); importanceLedger.reconcile(importanceChanged, at: at(9))
 check(importanceLedger.merged(with: device(importanceSynced, stamp: at(1))).apply(to: importanceSynced).followedKeywords.first?.importance == .low, "keyword importance: changing it on one device is a later decision than the old value")
 
-// MARK: feed order and highlights
+// MARK: highlights
 let hlDefaults = FeedSettings()
-check(hlDefaults.feedOrder == .blended && hlDefaults.highlightCount == 3 && hlDefaults.highlightCloseness == 0.95 && hlDefaults.highlightImpact == 5 && hlDefaults.highlightAuthorH == 40, "layout settings: one ranked list and three highlights by default")
-let hlClamped = try! FeedSettings.decode(Data("{\"highlightCount\": 99, \"highlightCloseness\": 0.1, \"highlightImpact\": -4, \"highlightAuthorH\": 9999, \"feedOrder\": \"nonsense\"}".utf8))
-check(hlClamped.highlightCount == 5 && hlClamped.highlightCloseness == 0.5 && hlClamped.highlightImpact == 0 && hlClamped.highlightAuthorH == 200 && hlClamped.feedOrder == .blended, "layout settings: clamped when read, an unknown order is the default")
-var hlChanged = FeedSettings(); hlChanged.feedOrder = .sections; hlChanged.highlightCount = 0; hlChanged.highlightImpact = 12; hlChanged.highlightCloseness = 0.8; hlChanged.highlightAuthorH = 70
+check(hlDefaults.highlightCount == 3 && hlDefaults.highlightCloseness == 0.95 && hlDefaults.highlightImpact == 5 && hlDefaults.highlightAuthorH == 40, "layout settings: three highlights by default")
+let hlClamped = try! FeedSettings.decode(Data("{\"highlightCount\": 99, \"highlightCloseness\": 0.1, \"highlightImpact\": -4, \"highlightAuthorH\": 9999, \"feedOrder\": \"sections\"}".utf8))
+check(hlClamped.highlightCount == 5 && hlClamped.highlightCloseness == 0.5 && hlClamped.highlightImpact == 0 && hlClamped.highlightAuthorH == 200, "layout settings: clamped when read, and the order an earlier version kept is ignored")
+var hlChanged = FeedSettings(); hlChanged.highlightCount = 0; hlChanged.highlightImpact = 12; hlChanged.highlightCloseness = 0.8; hlChanged.highlightAuthorH = 70
 check(hlChanged.forRanking == FeedSettings().forRanking && hlChanged.forFetching == FeedSettings().forFetching, "layout settings: only display, so they ask for no refresh")
 check(device(hlChanged, stamp: at(1)).apply(to: FeedSettings()) == hlChanged, "layout settings: they sync")
 
@@ -943,11 +920,6 @@ let blendedIDs: [String] = blended.feed.fresh.map { $0.paper.id }
 check(blended.highlights.map { $0.ranked.paper.id } == ["star"] && !blendedIDs.contains("star"), "layout: a highlight is lifted out of the list, not shown twice")
 check(blendedIDs.count == 202 && blendedIDs.last == "lowFollow", "layout: the list is not cut, so it can be scrolled as far as what is held")
 check(Array(blendedIDs.prefix(3)) == ["o0", "cited", "o1"], "layout: a paper citing the user's work is placed by its score among the rest, not ahead of them")
-check(blended.citedYou.isEmpty && blended.following.isEmpty && blended.forYou.isEmpty, "layout: one list, no sections")
-var sectionSettings = layoutSettings; sectionSettings.feedOrder = .sections
-let sections = FeedLayout.make(citedYou: layoutCited, forYou: layoutOthers, history: History(), settings: sectionSettings, now: layoutNow)
-check(sections.citedYou.fresh.map { $0.paper.id } == ["cited"] && sections.following.fresh.map { $0.paper.id } == ["lowFollow"] && sections.feed.isEmpty, "layout in sections: cited you, what is followed, and the rest apart")
-check(!sections.forYou.fresh.contains { $0.paper.id == "star" } && sections.highlights.count == 1, "layout in sections: highlights come out of the sections too")
 // papers older than the look-back go last, whatever they score
 let oldPapers = [hr(ok("recentOld") { $0.date = "2026-08-25" }, 1, 0.1),
                  hr(ok("ancient") { $0.date = "2026-08-01"; $0.journalImpact = 30 }, 9.5, 0.99),
@@ -956,8 +928,6 @@ let withOld = FeedLayout.make(citedYou: layoutCited, forYou: layoutOthers + oldP
 check(withOld.older.map { $0.paper.id } == ["recentOld", "ancient", "ancientFollow"], "layout: papers older than the look-back are a list of their own, the nearer 30 days first and the best first within them")
 check(!withOld.feed.fresh.contains { $0.paper.id.hasPrefix("ancient") } && withOld.highlights.map { $0.ranked.paper.id } == ["star"], "layout: they are not in the list above and are never highlighted")
 check(withOld.all.contains { $0.paper.id == "ancient" } && !withOld.isEmpty, "layout: they count as on screen")
-let withOldSections = FeedLayout.make(citedYou: layoutCited, forYou: layoutOthers + oldPapers, history: History(), settings: sectionSettings, now: layoutNow)
-check(withOldSections.older.map { $0.paper.id } == ["recentOld", "ancient", "ancientFollow"] && !withOldSections.following.fresh.contains { $0.paper.id == "ancientFollow" }, "layout in sections: the same")
 // going further back
 let backFrom = Calendar(identifier: .gregorian).date(from: DateComponents(timeZone: TimeZone(identifier: "UTC"), year: 2026, month: 11, day: 8, hour: 12))!
 let firstBack = Incremental.olderRange(now: backFrom, daysBack: 30, extraDays: 0)!
@@ -1088,9 +1058,6 @@ check(Reader.neighbour(of: nil, offset: 1, in: ["a", "b"]) == "a" && Reader.neig
 let rdOrder = withOld.displayOrder(settings: layoutSettings)
 check(rdOrder.first == "oa:star" && rdOrder.count == withOld.highlights.count + withOld.feed.fresh.count + withOld.older.count + withOld.feed.earlier.count, "reader: the on-screen order starts with the highlights and holds every paper once")
 check(Array(rdOrder.suffix(3)) == withOld.older.suffix(3).map { $0.paper.dedupeKey } || rdOrder.firstIndex(of: "oa:recentOld")! > rdOrder.firstIndex(of: "oa:lowFollow")!, "reader: further back comes after the look-back")
-var rdSections = layoutSettings; rdSections.feedOrder = .sections
-let rdSecLayout = FeedLayout.make(citedYou: layoutCited, forYou: layoutOthers, history: History(), settings: rdSections, now: layoutNow)
-check(Set(rdSecLayout.displayOrder(settings: rdSections)).count == rdSecLayout.displayOrder(settings: rdSections).count && rdSecLayout.displayOrder(settings: rdSections).first == "oa:star", "reader: in sections the order is the highlights, then cited you, what is followed, and the rest")
 var rdMulti = ok("multi") { $0.reasons = ["Topic: Pain", "Author: Ada One", "Cites your work"]; $0.followed = true }
 check(Why.all(for: rdMulti).map(\.text) == ["Cites your work", "Author you follow: Ada One", "Topic you follow: Pain"], "reader: every reason is listed, the user's most specific first")
 check(Why.all(for: ok("noreason")).isEmpty && Why.all(for: rdMulti).first?.isCitation == true, "reader: no reasons, no list; a citation is marked")
@@ -1805,15 +1772,13 @@ check(device(tsrc, stamp: at(1)).apply(to: FeedSettings()).useArXiv && !device(t
 func lay(_ id: String) -> RankedPaper { RankedPaper(paper: paper(id, "Paper \(id)"), score: 1, similarity: 0.5) }
 var nl = FeedLayout()
 nl.feed.fresh = [lay("f1"), lay("f2")]; nl.feed.earlier = [lay("e1")]; nl.feed.read = [lay("r1")]
-nl.forYou.fresh = [lay("y1")]; nl.forYou.earlier = [lay("y2")]; nl.following.fresh = [lay("w1")]; nl.citedYou.earlier = [lay("c1")]
 nl.older = [lay("o1")]
 nl.highlights = [Highlight(ranked: lay("h1"), reason: "close")]
 let nlOnly = nl.newOnly
-check(nlOnly.feed.fresh.count == 2 && nlOnly.feed.earlier.isEmpty && nlOnly.feed.read.isEmpty && nlOnly.forYou.earlier.isEmpty && nlOnly.citedYou.earlier.isEmpty, "new only: what has been glanced at, and what has been read, are left out")
-check(nlOnly.highlights.count == 1 && nlOnly.older.count == 1 && nlOnly.following.fresh.count == 1 && nlOnly.forYou.fresh.count == 1, "new only: the highlights, what lies further back and the new part of each list stay")
-check(nl.newCount == 6 && nlOnly.newCount == 6 && FeedLayout().newCount == 0, "new only: the count is what has not been looked at, and the same with or without the filter")
-var nlSections = FeedSettings(); nlSections.feedOrder = .sections
-check(nlOnly.displayOrder(settings: nlSections) == ["oa:h1", "oa:w1", "oa:y1", "oa:o1"], "new only: the reading order follows the filtered feed")
+check(nlOnly.feed.fresh.count == 2 && nlOnly.feed.earlier.isEmpty && nlOnly.feed.read.isEmpty, "new only: what has been glanced at, and what has been read, are left out")
+check(nlOnly.highlights.count == 1 && nlOnly.older.count == 1, "new only: the highlights and what lies further back stay")
+check(nl.newCount == 4 && nlOnly.newCount == 4 && FeedLayout().newCount == 0, "new only: the count is what has not been looked at, and the same with or without the filter")
+check(nlOnly.displayOrder(settings: FeedSettings()) == ["oa:h1", "oa:f1", "oa:f2", "oa:o1"], "new only: the reading order follows the filtered feed")
 check(nl.displayOrder(settings: FeedSettings()).count > nlOnly.displayOrder(settings: FeedSettings()).count, "new only: the filter shortens the reading order")
 check(FeedLayout().newOnly.isEmpty, "new only: an empty feed stays empty")
 
@@ -2148,7 +2113,7 @@ rsLoud.mutedTopics = [Entity(id: "T2", name: "Muted")]; rsLoud.mutedKeywords = [
 rsLoud.thumbEvents = [ev(evTarget, true, 0)]; rsLoud.evidence.strength = 0.2; rsLoud.asksThumbBasis = false; rsLoud.hideMemory = 7; rsLoud.hideHalfLifeMonths = 1; rsLoud.likeMemory = 9; rsLoud.likeHalfLifeMonths = 2; rsLoud.hideStrength = 0.1; rsLoud.likeStrength = 0.2
 rsLoud.feedback.saved = [SavedPaper(lvPaper("rs1"))]; rsLoud.feedback.liked = [SavedPaper(lvPaper("rs2"))]; rsLoud.feedback.hidden = ["doi:x"]; rsLoud.feedback.hiddenPapers = [SavedPaper(lvPaper("rs3"))]
 rsLoud.kindWeights = [:]; rsLoud.daysBack = 3; rsLoud.recency = 0.9; rsLoud.closeness = 0.1; rsLoud.impactWeight = 0.7; rsLoud.authorWeight = 0.6; rsLoud.byline = .first
-rsLoud.feedOrder = .sections; rsLoud.highlightCount = 9; rsLoud.highlightCloseness = 0.5; rsLoud.highlightImpact = 1; rsLoud.highlightAuthorH = 3
+rsLoud.highlightCount = 9; rsLoud.highlightCloseness = 0.5; rsLoud.highlightImpact = 1; rsLoud.highlightAuthorH = 3
 rsLoud.requireAbstract = true; rsLoud.openAccessOnly = true; rsLoud.seenExpiryDays = 1; rsLoud.showReadPapers = true; rsLoud.languages = ["fr"]; rsLoud.dwellSeconds = 9
 rsLoud.countsSearches = false; rsLoud.asksAboutSearches = false
 rsLoud.useOpenAlex = false; rsLoud.useEuropePMC = false; rsLoud.useCrossref = false; rsLoud.useArXiv = true; rsLoud.useOSF = true
@@ -2156,7 +2121,7 @@ rsLoud.referenceManagers = [.zotero]; rsLoud.useZotero = true; rsLoud.useLibrary
 let rsSettingsParts = Set(ResetPart.allCases.filter(\.inSettings))
 var rsAll = rsLoud; rsAll.reset(rsSettingsParts)
 check(rsAll == FeedSettings(), "reset: every part together gives back the settings of a first launch, so no setting is left out of a part")
-check(Mirror(reflecting: FeedSettings()).children.count == 56, "reset: a setting was added or removed: give it a part in Reset.swift, set it in this test, then change this number")
+check(Mirror(reflecting: FeedSettings()).children.count == 55, "reset: a setting was added or removed: give it a part in Reset.swift, set it in this test, then change this number")
 var rsFollows = rsLoud; rsFollows.reset([.follows])
 check(rsFollows.followedTopics.isEmpty && rsFollows.mutedKeywords.isEmpty && rsFollows.levels.isEmpty && rsFollows.trackedPapers.isEmpty && !rsFollows.profileFilled && rsFollows.orcid == rsLoud.orcid && rsFollows.thumbEvents == rsLoud.thumbEvents && rsFollows.feedback == rsLoud.feedback && rsFollows.daysBack == 3 && rsFollows.useArXiv, "reset: follows go, and everything else stays, the ORCID, the thumbs, the lists and the sliders included; the lists are filled from the publications again")
 var rsThumbs = rsLoud; rsThumbs.reset([.thumbs])
@@ -2164,7 +2129,7 @@ check(rsThumbs.thumbEvents.isEmpty && rsThumbs.evidence == EvidenceSettings() &&
 var rsLists = rsLoud; rsLists.reset([.lists])
 check(rsLists.feedback == Feedback() && rsLists.thumbEvents == rsLoud.thumbEvents && rsLists.followedTopics == rsLoud.followedTopics, "reset: the reading list, For me and hidden papers go, the thumbs stay")
 var rsRank = rsLoud; rsRank.reset([.ranking])
-check(rsRank.daysBack == 30 && rsRank.feedOrder == FeedSettings().feedOrder && rsRank.languages.isEmpty && !rsRank.requireAbstract && rsRank.kindWeights == FeedSettings().kindWeights && rsRank.useArXiv && rsRank.orcid == rsLoud.orcid && rsRank.followedKeywords == rsLoud.followedKeywords, "reset: the sliders and filters go, what is followed and the sources stay")
+check(rsRank.daysBack == 30 && rsRank.highlightCount == FeedSettings().highlightCount && rsRank.languages.isEmpty && !rsRank.requireAbstract && rsRank.kindWeights == FeedSettings().kindWeights && rsRank.useArXiv && rsRank.orcid == rsLoud.orcid && rsRank.followedKeywords == rsLoud.followedKeywords, "reset: the sliders and filters go, what is followed and the sources stay")
 var rsSrc = rsLoud; rsSrc.reset([.sources, .references, .you])
 check(rsSrc.useOpenAlex && rsSrc.useEuropePMC && !rsSrc.useArXiv && !rsSrc.useOSF && rsSrc.referenceManagers.isEmpty && !rsSrc.useZotero && rsSrc.orcid == nil && rsSrc.useMyPublications && rsSrc.daysBack == 3, "reset: parts can be combined, and the rest is left alone")
 var rsNone = rsLoud; rsNone.reset([])

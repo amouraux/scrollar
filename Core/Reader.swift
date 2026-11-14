@@ -100,38 +100,26 @@ extension FeedLayout {
         func fresh(_ a: Arranged) -> Arranged { var o = a; o.earlier = []; o.read = []; return o }
         var out = self
         out.feed = fresh(feed)
-        out.citedYou = fresh(citedYou)
-        out.following = fresh(following)
-        out.forYou = fresh(forYou)
         return out
     }
 
     /// How many papers have not been looked at yet.
     var newCount: Int {
-        highlights.count + older.count + [feed, citedYou, following, forYou].reduce(0) { $0 + $1.fresh.count }
+        highlights.count + older.count + feed.fresh.count
     }
 }
 
 extension FeedLayout {
     /// Every post in the order the feed draws it, top to bottom, with the same cuts, so the pane's
     /// next and previous follow what the reader sees. `FeedView.content` draws the same sequence;
-    /// a test pins the two orders together for the blended feed.
+    /// a test pins the two orders together.
     func displayOrder(settings: FeedSettings) -> [String] {
         var out = highlights.map { $0.ranked.paper.dedupeKey }
         func add(_ list: [RankedPaper]) { out += list.map { $0.paper.dedupeKey } }
-        if settings.feedOrder == .blended {
-            add(feed.fresh)
-            add(older)
-            add(feed.earlier)
-            if settings.showReadPapers { add(feed.read) }
-        } else {
-            add(Array((citedYou.fresh + citedYou.earlier).prefix(10)))
-            add(Array((following.fresh + following.earlier).prefix(400)))
-            add(Array(forYou.fresh.prefix(FeedLayout.freshCap)))
-            add(older)
-            add(Array(forYou.earlier.prefix(FeedLayout.earlierCap)))
-            if settings.showReadPapers { add(Array((following.read + forYou.read).prefix(FeedLayout.readCap))) }
-        }
+        add(feed.fresh)
+        add(older)
+        add(feed.earlier)
+        if settings.showReadPapers { add(feed.read) }
         return out
     }
 }

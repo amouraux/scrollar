@@ -32,7 +32,6 @@ final class AppModel {
             // hiding one paper does not.
             if settings.forRanking != oldValue.forRanking { needsRefresh = true }
             let layoutChanged = settings.seenExpiryDays != oldValue.seenExpiryDays
-                || settings.feedOrder != oldValue.feedOrder
                 || settings.highlightCount != oldValue.highlightCount
                 || settings.highlightCloseness != oldValue.highlightCloseness
                 || settings.highlightImpact != oldValue.highlightImpact
@@ -437,7 +436,7 @@ final class AppModel {
     private func stage(_ result: FeedResult, builtFor: FeedSettings) {
         let onScreen = Set(layout.all.map { $0.paper.dedupeKey })
         let incoming = makeLayout(citedYou: result.citedYou, forYou: result.forYou, now: Date())
-        let fresh = incoming.highlights.map(\.ranked) + [incoming.feed, incoming.citedYou, incoming.following, incoming.forYou].flatMap(\.fresh)
+        let fresh = incoming.highlights.map(\.ranked) + incoming.feed.fresh
         let count = fresh.filter { !onScreen.contains($0.paper.dedupeKey) }.count
         if count == 0 {
             apply(result, builtFor: builtFor)   // nothing the user would notice changing
@@ -1453,9 +1452,6 @@ final class AppModel {
             a.read.removeAll { !keeps($0) }
         }
         drop(&layout.feed)
-        drop(&layout.citedYou)
-        drop(&layout.following)
-        drop(&layout.forYou)
         layout.older.removeAll { !keeps($0) }
         layout.highlights.removeAll { !keeps($0.ranked) }
     }

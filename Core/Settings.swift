@@ -18,24 +18,7 @@ struct Entity: Codable, Hashable {
     var name: String
 }
 
-/// How the feed is ordered on screen.
-enum FeedOrder: String, Codable, CaseIterable {
-    /// One list, ordered by score, with a short strip of highlights above it. Everything a
-    /// journal, researcher or keyword the user follows found stays in it, however low it scores.
-    case blended
-    /// Cited you, then what the user follows, then the ranked rest.
-    case sections
-
-    var title: String {
-        switch self {
-        case .blended: return "One ranked list"
-        case .sections: return "In sections"
-        }
-    }
-}
-
-/// How much a followed keyword matters to the user: it moves the papers it finds up or down
-/// the ranking, and decides their order under "From what you follow".
+/// How much a followed keyword matters to the user: it moves the papers it finds up or down the ranking.
 enum Importance: String, Codable, CaseIterable {
     case low, normal, high
 
@@ -53,15 +36,6 @@ enum Importance: String, Codable, CaseIterable {
         case .low: return -0.6
         case .normal: return 0
         case .high: return 1.2
-        }
-    }
-
-    /// Order under "From what you follow": high first.
-    var tier: Int {
-        switch self {
-        case .low: return 0
-        case .normal: return 1
-        case .high: return 2
         }
     }
 }
@@ -370,8 +344,6 @@ struct FeedSettings: Codable, Equatable {
     /// Papers whose new citations the user wants to hear about.
     var trackedPapers: [Entity] = []
     // MARK: How the feed is laid out. Only display: changing any of these fetches and ranks nothing again.
-    /// One list ordered by score, or the older three blocks.
-    var feedOrder = FeedOrder.blended
     /// How many highlights to put above the feed (0 for none, at most 5).
     var highlightCount = 3
     /// A highlight must be this close to the user's own work, as a place among the candidates:
@@ -436,8 +408,8 @@ struct FeedSettings: Codable, Equatable {
     /// no keyword did. A paper found by a high keyword and a low one counts as high.
     func keywordImportance(of paper: Paper) -> Importance? {
         let byReason = Dictionary(followedKeywords.map { ($0.seed.reason, $0.importance) },
-                                  uniquingKeysWith: { $0.tier >= $1.tier ? $0 : $1 })
-        return paper.reasons.compactMap { byReason[$0] }.max { $0.tier < $1.tier }
+                                  uniquingKeysWith: { $0.bonus >= $1.bonus ? $0 : $1 })
+        return paper.reasons.compactMap { byReason[$0] }.max { $0.bonus < $1.bonus }
     }
 
     /// A new rule on `phrase`. It takes the phrase as its id unless something already has it,
@@ -466,7 +438,6 @@ struct FeedSettings: Codable, Equatable {
         s.impactWeight = d.impactWeight
         s.authorWeight = d.authorWeight
         s.byline = d.byline
-        s.feedOrder = d.feedOrder
         s.highlightCount = d.highlightCount
         s.highlightCloseness = d.highlightCloseness
         s.highlightImpact = d.highlightImpact
@@ -505,7 +476,6 @@ struct FeedSettings: Codable, Equatable {
         let d = FeedSettings()
         // Which managers are in use only decides what the screens and the Share menu offer.
         s.referenceManagers = d.referenceManagers
-        s.feedOrder = d.feedOrder
         s.highlightCount = d.highlightCount
         s.highlightCloseness = d.highlightCloseness
         s.highlightImpact = d.highlightImpact
@@ -564,7 +534,7 @@ extension FeedSettings {
         case useCrossref, useArXiv, useOSF, referenceManagers, levels, thumbEvents, evidence, asksThumbBasis, countsSearches, asksAboutSearches
         case useZotero, useLibraryFile, zoteroRecent
         case followedTopics, followedJournals, followedAuthors, followedInstitutions
-        case followedFunders, followedKeywords, trackedPapers, feedOrder, highlightCount, highlightCloseness, highlightImpact, highlightAuthorH, dwellSeconds
+        case followedFunders, followedKeywords, trackedPapers, highlightCount, highlightCloseness, highlightImpact, highlightAuthorH, dwellSeconds
         case mutedJournals, mutedAuthors, mutedTopics, mutedKeywords
         case kindWeights, daysBack, recency, closeness, impactWeight, authorWeight, byline
         case requireAbstract, openAccessOnly, seenExpiryDays, showReadPapers, languages, feedback
@@ -610,7 +580,6 @@ extension FeedSettings {
         followedFunders = get(.followedFunders, followedFunders)
         followedKeywords = get(.followedKeywords, followedKeywords)
         trackedPapers = get(.trackedPapers, trackedPapers)
-        feedOrder = get(.feedOrder, feedOrder)
         highlightCount = min(max(get(.highlightCount, highlightCount), 0), 5)
         highlightCloseness = min(max(get(.highlightCloseness, highlightCloseness), 0.5), 1)
         highlightImpact = min(max(get(.highlightImpact, highlightImpact), 0), 50)

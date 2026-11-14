@@ -148,54 +148,21 @@ struct FeedView: View {
             ForEach(layout.highlights, id: \.ranked.paper.dedupeKey) { PaperCard(ranked: $0.ranked, highlight: $0.reason) }
         }
 
-        if model.settings.feedOrder == .blended {
-            // One list in the order of its score; the line on each card says why it is there.
-            let feed = layout.feed
-            if !feed.fresh.isEmpty {
-                SectionTitle(text: "Your feed", systemImage: "text.justify.leading")
-                ForEach(feed.fresh, id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
-            }
-            olderPapers(layout)
-            if !feed.earlier.isEmpty {
-                if feed.fresh.isEmpty && layout.highlights.isEmpty && layout.older.isEmpty { CaughtUp() }
-                SectionTitle(text: "Earlier", systemImage: "clock")
-                ForEach(feed.earlier, id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
-            }
-            if model.settings.showReadPapers, !feed.read.isEmpty {
-                SectionTitle(text: "Read", systemImage: "checkmark.circle")
-                ForEach(feed.read, id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
-            }
-        } else {
-            let cited = layout.citedYou.fresh + layout.citedYou.earlier
-            if !cited.isEmpty {
-                SectionTitle(text: "Cited you", systemImage: "quote.bubble")
-                ForEach(cited.prefix(10), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
-            }
-
-            // Everything something you follow found, newest first, with no cut-off by rank.
-            let following = layout.following.fresh + layout.following.earlier
-            if !following.isEmpty {
-                SectionTitle(text: "From what you follow", systemImage: "star")
-                ForEach(following.prefix(400), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
-            }
-
-            if !layout.forYou.fresh.isEmpty {
-                SectionTitle(text: "For you", systemImage: "sparkles")
-                ForEach(layout.forYou.fresh.prefix(FeedLayout.freshCap), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
-            }
-
-            olderPapers(layout)
-            if !layout.forYou.earlier.isEmpty {
-                if layout.forYou.fresh.isEmpty && layout.following.fresh.isEmpty && layout.older.isEmpty { CaughtUp() }
-                SectionTitle(text: "Earlier", systemImage: "clock")
-                ForEach(layout.forYou.earlier.prefix(FeedLayout.earlierCap), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
-            }
-
-            let read = layout.following.read + layout.forYou.read
-            if model.settings.showReadPapers, !read.isEmpty {
-                SectionTitle(text: "Read", systemImage: "checkmark.circle")
-                ForEach(read.prefix(FeedLayout.readCap), id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
-            }
+        // One list in the order of its score; the line on each card says why it is there.
+        let feed = layout.feed
+        if !feed.fresh.isEmpty {
+            SectionTitle(text: "Your feed", systemImage: "text.justify.leading")
+            ForEach(feed.fresh, id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+        }
+        olderPapers(layout)
+        if !feed.earlier.isEmpty {
+            if feed.fresh.isEmpty && layout.highlights.isEmpty && layout.older.isEmpty { CaughtUp() }
+            SectionTitle(text: "Earlier", systemImage: "clock")
+            ForEach(feed.earlier, id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
+        }
+        if model.settings.showReadPapers, !feed.read.isEmpty {
+            SectionTitle(text: "Read", systemImage: "checkmark.circle")
+            ForEach(feed.read, id: \.paper.dedupeKey) { PaperCard(ranked: $0) }
         }
 
         if layout.isEmpty, !model.isLoading { EmptyFeed() }

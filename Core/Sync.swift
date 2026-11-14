@@ -183,7 +183,7 @@ enum SyncProjection {
         scalar("byline", \.byline), scalar("requireAbstract", \.requireAbstract),
         scalar("openAccessOnly", \.openAccessOnly), scalar("seenExpiryDays", \.seenExpiryDays),
         scalar("showReadPapers", \.showReadPapers), scalar("languages", \.languages),
-        scalar("feedOrder", \.feedOrder), scalar("highlightCount", \.highlightCount),
+        scalar("highlightCount", \.highlightCount),
         scalar("highlightCloseness", \.highlightCloseness), scalar("highlightImpact", \.highlightImpact),
         scalar("highlightAuthorH", \.highlightAuthorH), scalar("profileFilled", \.profileFilled),
         scalar("dwellSeconds", \.dwellSeconds), scalar("useZotero", \.useZotero), scalar("useLibraryFile", \.useLibraryFile), scalar("zoteroRecent", \.zoteroRecent),

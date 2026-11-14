@@ -65,18 +65,14 @@ struct FeedLayout {
     /// New papers older than the look-back, best first: what scrolling to the end fetched.
     /// They go after everything else new so the list only ever grows downwards.
     var older: [RankedPaper] = []
-    /// Blended order: everything, ranked.
+    /// Everything else, ranked.
     var feed = Arranged()
-    /// Sections order.
-    var citedYou = Arranged()
-    var following = Arranged()
-    var forYou = Arranged()
 
-    var isEmpty: Bool { highlights.isEmpty && older.isEmpty && feed.isEmpty && citedYou.isEmpty && following.isEmpty && forYou.isEmpty }
+    var isEmpty: Bool { highlights.isEmpty && older.isEmpty && feed.isEmpty }
 
     /// Every paper still on screen, as a place to look for one.
     var all: [RankedPaper] {
-        highlights.map(\.ranked) + older + [feed, citedYou, following, forYou].flatMap { $0.fresh + $0.earlier + $0.read }
+        highlights.map(\.ranked) + older + feed.fresh + feed.earlier + feed.read
     }
 
     static func make(citedYou: [RankedPaper], forYou: [RankedPaper], history: History,
@@ -111,36 +107,16 @@ struct FeedLayout {
             return out
         }
 
-        switch settings.feedOrder {
-        case .blended:
-            let everything = (citedYou + forYou).sorted(by: byScore)
-            var arranged = Arranger.arrange(everything, history: history, settings: settings, now: now)
-            layout.older = furtherBack(arranged.fresh)
-            arranged = withoutOlder(arranged)
-            layout.highlights = Highlights.select(arranged.fresh, settings: settings)
-            arranged = removing(Set(layout.highlights.map { $0.ranked.paper.dedupeKey }), from: arranged)
-            // No cut-off: the list goes as far as what is held, and then further back.
-            arranged.earlier = Arranger.blend(arranged.earlier, cap: earlierCap)
-            arranged.read = Array(arranged.read.prefix(readCap))
-            layout.feed = arranged
-        case .sections:
-            let split = Arranger.split(forYou, followSection: true, keywords: settings.followedKeywords)
-            var cited = Arranger.arrange(citedYou, history: history, settings: settings, now: now)
-            var following = Arranger.arrange(split.followed, history: history, settings: settings, now: now)
-            var rest = Arranger.arrange(split.rest, history: history, settings: settings, now: now)
-            layout.older = furtherBack(cited.fresh + following.fresh + rest.fresh)
-            cited = withoutOlder(cited)
-            following = withoutOlder(following)
-            rest = withoutOlder(rest)
-            layout.highlights = Highlights.select((cited.fresh + following.fresh + rest.fresh).sorted(by: byScore), settings: settings)
-            let taken = Set(layout.highlights.map { $0.ranked.paper.dedupeKey })
-            cited = removing(taken, from: cited)
-            following = removing(taken, from: following)
-            rest = removing(taken, from: rest)
-            layout.citedYou = cited
-            layout.following = following
-            layout.forYou = rest
-        }
+        let everything = (citedYou + forYou).sorted(by: byScore)
+        var arranged = Arranger.arrange(everything, history: history, settings: settings, now: now)
+        layout.older = furtherBack(arranged.fresh)
+        arranged = withoutOlder(arranged)
+        layout.highlights = Highlights.select(arranged.fresh, settings: settings)
+        arranged = removing(Set(layout.highlights.map { $0.ranked.paper.dedupeKey }), from: arranged)
+        // No cut-off: the list goes as far as what is held, and then further back.
+        arranged.earlier = Arranger.blend(arranged.earlier, cap: earlierCap)
+        arranged.read = Array(arranged.read.prefix(readCap))
+        layout.feed = arranged
         return layout
     }
 }

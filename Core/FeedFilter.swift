@@ -89,10 +89,8 @@ extension FeedLayout {
     /// Every paper on the layout, with whether it has not been looked at yet.
     func entries(includeRead: Bool) -> [(RankedPaper, Bool)] {
         var out: [(RankedPaper, Bool)] = highlights.map { ($0.ranked, true) } + older.map { ($0, true) }
-        for arranged in [feed, citedYou, following, forYou] {
-            out += arranged.fresh.map { ($0, true) } + arranged.earlier.map { ($0, false) }
-            if includeRead { out += arranged.read.map { ($0, false) } }
-        }
+        out += feed.fresh.map { ($0, true) } + feed.earlier.map { ($0, false) }
+        if includeRead { out += feed.read.map { ($0, false) } }
         return out
     }
 
@@ -105,9 +103,6 @@ extension FeedLayout {
         out.highlights = highlights.filter { filter.matches($0.ranked.paper) }
         out.older = keep(older)
         out.feed = keep(feed)
-        out.citedYou = keep(citedYou)
-        out.following = keep(following)
-        out.forYou = keep(forYou)
         return out
     }
 }

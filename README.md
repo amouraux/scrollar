@@ -150,13 +150,10 @@ are interleaved by how well they fit, newest breaking ties, and not shown as thr
 list is not cut: it goes as far down as the papers held (the earlier and read lists are limited to 60
 each), so a paper found by a **journal, a researcher or a keyword** (`Paper.isPinned`) always
 appears, however low it scores, and still passes the user's mutes, filters and the same seen, read
-and expiry rules. Past the end of it the feed goes on (see Endless scroll). In the sections order the
-"For you" list is still limited to 150.
+and expiry rules. Past the end of it the feed goes on (see Endless scroll).
 A **topic, an institution or a funder** is too broad to list in full (each names hundreds of
 papers a month, in every field), so what only those found is ranked with the rest and gets +0.8
 (and +0.5 for each further search that found it), and a weak match sinks to the bottom.
-Tune, Order and highlights can instead show the old three sections (cites you, from what you
-follow, for you; `Arranger.split`).
 
 **Highlights.** Up to three posts (0 to 5) are lifted into a strip at the top, marked with
 an orange outline and the reason in one line. A paper qualifies only if it is very close to the

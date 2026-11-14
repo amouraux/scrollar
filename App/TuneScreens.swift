@@ -165,9 +165,6 @@ struct RankingScreen: View {
         @Bindable var model = appModel
         Form {
             Section {
-                Picker("Order", selection: $model.settings.feedOrder) {
-                    ForEach(FeedOrder.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
                 Stepper("Highlights: \(model.settings.highlightCount)", value: $model.settings.highlightCount, in: 0...5)
                 if model.settings.highlightCount > 0 {
                     VStack(alignment: .leading) {
@@ -187,9 +184,9 @@ struct RankingScreen: View {
                             value: $model.settings.highlightAuthorH, in: 0...200, step: 5)
                 }
             } header: {
-                Text("Order and highlights")
+                Text("Highlights")
             } footer: {
-                Text("One ranked list puts every paper where its score says, so a paper that cites you, one from a journal you follow and a close match all compete, and the line on each card says why it is there. In sections puts what cites you first, then what you follow, then the rest. Highlights are the few new papers above the feed that are very close to your work and also have something more: a journal or an author as strong as you set, a citation of your work, or something specific you follow. Impact is OpenAlex's two-year mean citedness (a high journal is about 5 or more); the h-index is checked only when the h-index option under Time and balance has fetched it, for the author you chose under Content and display, Posts.")
+                Text("The feed is one ranked list: a paper that cites you, one from a journal you follow and a close match all compete, and the line on each card says why it is there. Highlights are the few new papers above the feed that are very close to your work and also have something more: a journal or an author as strong as you set, a citation of your work, or something specific you follow. Impact is OpenAlex's two-year mean citedness (a high journal is about 5 or more); the h-index is checked only when the h-index option under Time and balance has fetched it, for the author you chose under Content and display, Posts.")
             }
 
             Section {

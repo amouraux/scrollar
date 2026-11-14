@@ -129,34 +129,6 @@ struct Arranged {
 }
 
 enum Arranger {
-    /// "From what you follow": every paper that something the user follows found, newest
-    /// first, taken out of the ranked list so a card is never shown twice. The ranking
-    /// decides what is worth reading among the rest; for what they follow they asked to
-    /// see everything, so nothing about similarity or a cut-off applies to it.
-    static func split(_ ranked: [RankedPaper], followSection: Bool, keywords: [KeywordRule] = []) -> (followed: [RankedPaper], rest: [RankedPaper]) {
-        guard followSection else { return ([], ranked) }
-        var followed: [RankedPaper] = []
-        var rest: [RankedPaper] = []
-        for r in ranked { if r.paper.isPinned { followed.append(r) } else { rest.append(r) } }
-        // High keywords first, then the rest; newest first within each. A paper something other
-        // than a keyword also found is at least Normal, whatever its keywords say.
-        var settings = FeedSettings()
-        settings.followedKeywords = keywords
-        func tier(_ p: Paper) -> Int {
-            let byKeyword = settings.keywordImportance(of: p)
-            let byOther = p.reasons.contains { !$0.hasPrefix("Keyword: ") && !Paper.broadReasonPrefixes.contains(where: $0.hasPrefix) }
-            if let k = byKeyword { return byOther ? max(k.tier, Importance.normal.tier) : k.tier }
-            return Importance.normal.tier
-        }
-        followed.sort {
-            if tier($0.paper) != tier($1.paper) { return tier($0.paper) > tier($1.paper) }
-            if $0.paper.date != $1.paper.date { return $0.paper.date > $1.paper.date }
-            if $0.score != $1.score { return $0.score > $1.score }
-            return $0.paper.dedupeKey < $1.paper.dedupeKey
-        }
-        return (followed, rest)
-    }
-
     /// Sort a ranked list into new, earlier and read. This is computed when the
     /// feed is loaded or refreshed, not as the user scrolls: a card that moved
     /// the moment it was seen would jump away under their finger.

@@ -138,7 +138,7 @@ struct SettingsView: View {
 
     private var rankingStatus: String {
         let s = appModel.settings
-        return s.feedOrder.title + " · " + (s.highlightCount == 0 ? "no highlights" : "\(s.highlightCount) highlights")
+        return s.highlightCount == 0 ? "No highlights" : "\(s.highlightCount) highlights"
     }
 
     private var contentStatus: String {
