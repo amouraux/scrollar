@@ -26,6 +26,7 @@ struct SearchScreen: View {
     @FocusState private var focused: Bool
     /// Phrases the user has answered the question for in this visit, so it is not asked twice.
     @State private var answered: Set<String> = []
+    @State private var keepProblem: String?
 
     private enum Phase {
         case idle
@@ -110,7 +111,6 @@ struct SearchScreen: View {
 
     private var recent: some View {
         @Bindable var model = model
-        let now = Date()
         return List {
             if !model.searches.isEmpty {
                 Section {
@@ -119,9 +119,8 @@ struct SearchScreen: View {
                             HStack {
                                 Label(search.text, systemImage: "clock.arrow.circlepath").foregroundStyle(.primary)
                                 Spacer()
-                                if model.settings.countsSearches {
-                                    Text(Self.standing(SearchLog.weight(search, now: now)))
-                                        .font(.caption).foregroundStyle(.secondary)
+                                if model.isSearchInterest(search.text) {
+                                    Text("Current interest").font(.caption).foregroundStyle(.secondary)
                                 }
                             }
                         }
@@ -131,9 +130,7 @@ struct SearchScreen: View {
                 } header: {
                     Text("Recent searches")
                 } footer: {
-                    Text(model.settings.countsSearches
-                         ? "A recent search pulls the feed toward it, less and less: it counts half as much after two weeks. Swipe left to forget one."
-                         : "These do not change the feed. Swipe left to forget one.")
+                    Text("Tap one to search again; swipe left to forget it. A recent search does not change the feed by itself: one you added to current interests does, under Tune, Current interests.")
                 }
             }
             Section {
@@ -141,14 +138,11 @@ struct SearchScreen: View {
                 Toggle("Ask me after each search", isOn: $model.settings.asksAboutSearches)
                     .disabled(!model.settings.countsSearches)
             } footer: {
-                Text("After a search, you are asked whether it should count toward your feed. Searches you agree to are kept on this device only. They are not synced or backed up, and the phrase is sent to the sources that are on, as a search term, like any keyword you follow.")
+                Text(model.settings.asksAboutSearches
+                     ? "After a search, you are asked whether to add it to current interests, follow it as a keyword, or leave it as a one-off. Recent searches and current interests are kept on this device only, not synced or backed up; the phrase goes to the sources that are on, as a search term, like any keyword you follow."
+                     : "Each search that finds papers is added to current interests, for two weeks. Recent searches and current interests are kept on this device only, not synced or backed up; the phrase goes to the sources that are on, as a search term, like any keyword you follow.")
             }
         }
-    }
-
-    /// How much a search still counts, in words.
-    static func standing(_ weight: Double) -> String {
-        weight >= 0.75 ? "Counts strongly" : weight >= 0.4 ? "Counts" : "Counts a little"
     }
 
     // MARK: After
@@ -180,7 +174,7 @@ struct SearchScreen: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    countQuestion(query)
+                    keepQuestion(outcome)
                     Text("\(outcome.papers.count) \(outcome.papers.count == 1 ? "paper" : "papers") from the last twelve months, ranked by your search first, then by what you keep, your library and current interests, and the levels you set.")
                         .font(.footnote).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -202,33 +196,52 @@ struct SearchScreen: View {
             .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
     }
 
-    /// Whether this search should count toward the feed: asked once the results are on screen, so the user knows
-    /// what the search was before agreeing; not asked if they turned searches off, said not to ask, or already agreed.
-    @ViewBuilder private func countQuestion(_ query: String) -> some View {
+    /// What to do with this search: asked once the results are on screen, so the user knows what the search finds
+    /// before choosing; not asked if they turned searches off, said not to ask, or already chose.
+    @ViewBuilder private func keepQuestion(_ outcome: AppModel.SearchOutcome) -> some View {
+        let query = outcome.query
         let key = query.lowercased()
-        if model.settings.countsSearches, model.settings.asksAboutSearches, !model.isCounted(query), !answered.contains(key) {
+        if model.isSearchInterest(query) {
+            settled("This search is one of your current interests", symbol: "lightbulb")
+        } else if model.isFollowedKeyword(query) {
+            settled("You follow this as a keyword", symbol: "checkmark.circle")
+        } else if model.settings.countsSearches, model.settings.asksAboutSearches, !answered.contains(key) {
             VStack(alignment: .leading, spacing: 10) {
-                Label("Count this search toward your feed?", systemImage: "arrow.up.right.circle")
+                Label("Keep this search?", systemImage: "arrow.up.right.circle")
                     .font(.subheadline.weight(.semibold))
-                Text("If you agree, your feed leans toward “\(query)” for a while, and less each week. If not, this stays a one-off search and nothing is kept.")
+                Text("As a current interest, the feed searches for “\(query)” and leans toward what it finds, for two weeks; you can change that, or turn it off, under Tune, Current interests. As a keyword you follow, everything it finds is kept in full.")
                     .font(.footnote).foregroundStyle(.secondary)
+                Button {
+                    do { try model.addSearchInterest(query, found: outcome.papers); keepProblem = nil; answered.insert(key) }
+                    catch { keepProblem = error.localizedDescription }
+                } label: {
+                    Text("Add to current interests").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
                 HStack(spacing: 10) {
-                    Button { answered.insert(key); model.countSearch(query) } label: {
-                        Text("Yes, count it").frame(maxWidth: .infinity)
+                    Button { answered.insert(key); model.followKeywords([query]) } label: {
+                        Text("Follow as a keyword").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
                     Button { answered.insert(key) } label: {
-                        Text("No, just this once").frame(maxWidth: .infinity)
+                        Text("Just this once").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
                 }
+                if let keepProblem { Text(keepProblem).font(.footnote).foregroundStyle(.red) }
+                if let notice = model.interestNotice { Text(notice).font(.footnote).foregroundStyle(.secondary) }
             }
             .padding(12)
             .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
-        } else if model.isCounted(query) {
-            Label("This search counts toward your feed", systemImage: "checkmark.circle")
-                .font(.footnote).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func settled(_ text: String, symbol: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(text, systemImage: symbol)
+            if let notice = model.interestNotice { Text(notice) }
+        }
+        .font(.footnote).foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

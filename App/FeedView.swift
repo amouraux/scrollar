@@ -605,8 +605,9 @@ struct PaperCard: View {
         // The time it is in front of the reader is what makes it seen (a flick does not) and,
         // past the user's number of seconds, studied.
         .trackingDwell { model.addDwell(paper, seconds: $0) }
-        // The on-device model writes the takeaway for a post that stays on screen.
-        .task {
+        // The on-device model writes the takeaway for a post that stays on screen; turning headlines on asks again
+        // for the posts already showing.
+        .task(id: model.settings.cardHeadlines) {
             try? await Task.sleep(for: .milliseconds(700))
             if !Task.isCancelled { await model.writeTakeaway(for: paper) }
         }
@@ -810,14 +811,28 @@ struct PaperCard: View {
 
     // MARK: Post
 
-    /// The whole title, the biggest thing on the card, then what the paper shows. A tap opens the abstract.
+    /// The whole title, the biggest thing on the card, then what the paper shows. A tap opens the abstract. With
+    /// headlines on, a model's headline takes the title's place and the paper's own title follows it, smaller: the
+    /// headline is a reading of the paper, the title is the paper's own words, and both stay in view.
     private var post: some View {
         Button(action: tapPost) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(paper.title)
-                    .font(.title3.weight(.bold))
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let headline = model.headline(for: paper) {
+                    Text(headline)
+                        .font(.title3.weight(.bold))
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(paper.title)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text(paper.title)
+                        .font(.title3.weight(.bold))
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let takeaway = model.takeaway(for: paper) {
                     Text(takeaway.text)
                         .font(.subheadline)

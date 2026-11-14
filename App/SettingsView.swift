@@ -77,7 +77,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Your feed")
                 } footer: {
-                    Text("What you follow is searched for and kept in full. A current interest that is ticked is searched for too, by its strongest phrases, and ranked with the rest. Your publications and reference library decide only the order, and can suggest what to follow. Changes take effect when you go back to the feed.")
+                    Text("What you follow is searched for and kept in full. A current interest that is on is searched for too, by its strongest phrases, and ranked with the rest. Your publications and reference library decide only the order, and can suggest what to follow. Changes take effect when you go back to the feed.")
                 }
                 Section("Connections and data") {
                     row(.references, status: referencesStatus)
@@ -881,7 +881,7 @@ struct LibraryFileSection: View {
 
 
 /// Texts that say what the user is interested in now: a grant proposal, a thesis plan, an abstract, a paper being
-/// written, a conference programme. Each is dated, ticked or not, and may have a last day, so a conference can count
+/// written, a conference programme. Each is dated, on or off, and may have a last day, so a conference can count
 /// for its week and then be set aside, kept, to tick again later. "Project" in the code; read and kept on the device.
 struct CurrentInterestsScreen: View {
     @Environment(AppModel.self) private var model
@@ -901,15 +901,6 @@ struct CurrentInterestsScreen: View {
                 }
                 ForEach(listed) { project in
                     HStack(spacing: 12) {
-                        Button {
-                            model.setProjectEnabled(!project.isInUse(today: today), id: project.id)
-                        } label: {
-                            Image(systemName: project.isInUse(today: today) ? "checkmark.circle.fill" : "circle")
-                                .font(.title3)
-                                .foregroundStyle(project.isInUse(today: today) ? Color.accentColor : Color.secondary)
-                        }
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel(project.isInUse(today: today) ? "In use. Untick to set it aside" : "Set aside. Tick to use it")
                         NavigationLink {
                             ProjectScreen(id: project.id)
                         } label: {
@@ -919,16 +910,31 @@ struct CurrentInterestsScreen: View {
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         }
+                        // The same switch as In use on its own screen: an ended one shows off, and turning it on clears its last day.
+                        Toggle("In use", isOn: Binding(
+                            get: { project.isInUse(today: today) },
+                            set: { model.setProjectEnabled($0, id: project.id) }))
+                            .labelsHidden()
+                            .accessibilityLabel("\(project.name) in use")
                     }
                     .swipeActions {
                         Button("Delete", role: .destructive) { deleting = project }
                     }
                 }
                 Button("Add a text or a document…") { adding = true }
-                    .disabled(model.projects.count >= ProjectText.maxProjects)
+                    .disabled(model.keepsAllInterests && model.projects.count >= ProjectText.maxProjects)
                 if let message { Text(message).font(.footnote).foregroundStyle(.red) }
+                if let notice = model.interestNotice { Text(notice).font(.footnote).foregroundStyle(.secondary) }
             } footer: {
-                Text("Paste anything that says what you are interested in now: a grant proposal, a thesis plan, an abstract, a paper you are writing, a conference programme. While one is ticked, papers close to it rank higher and its strongest phrases are searched for, so it brings in papers too. Untick it to set it aside, or give it a last day: it is kept, to tick again later. Swipe to delete one for good.")
+                Text("Paste anything that says what you are interested in now: a grant proposal, a thesis plan, an abstract, a paper you are writing, a conference programme. A search can be added here too, from Search. While one is on, papers close to it rank higher and its strongest phrases are searched for, so it brings in papers too. Turn it off to set it aside, or give it a last day: it is kept, to turn on again later. Swipe to delete one for good.")
+            }
+
+            Section {
+                Toggle("Keep them all", isOn: Bindable(model).keepsAllInterests)
+            } footer: {
+                Text(model.keepsAllInterests
+                     ? "Nothing is deleted for you. When there are \(ProjectText.maxProjects), delete one to add another."
+                     : "There is room for \(ProjectText.maxProjects). When the list is full, a new one deletes the oldest, one that is off or ended before one in use. Turn on Keep them all to delete only by hand.")
             }
 
             Section {
@@ -937,6 +943,7 @@ struct CurrentInterestsScreen: View {
             }
         }
         .navigationTitle("Current interests")
+        .onDisappear { model.interestNotice = nil }
         .sheet(isPresented: $adding) {
             PasteProjectSheet(replacing: false) { title, text, until, settled in
                 do { try model.addProject(title: title, text: text, until: until, nameLater: !settled); message = nil }
@@ -948,7 +955,7 @@ struct CurrentInterestsScreen: View {
             Button("Delete", role: .destructive) { if let d = deleting { model.removeProject(id: d.id) }; deleting = nil }
             Button("Cancel", role: .cancel) { deleting = nil }
         } message: {
-            Text("Its text is removed from this device and cannot be brought back. To stop it counting and keep it, untick it instead.")
+            Text("Its text is removed from this device and cannot be brought back. To stop it counting and keep it, turn it off instead.")
         }
     }
 }
@@ -965,7 +972,7 @@ enum InterestText {
     }
 
     static func status(_ p: ProjectFile, today: String) -> String {
-        var parts = [added(p.addedAt)]
+        var parts = [p.query != nil ? "Search, a" + added(p.addedAt).dropFirst() : added(p.addedAt)]
         if !p.enabled {
             parts.append("set aside")
         } else if p.hasEnded(today: today), let until = p.until {
@@ -998,7 +1005,7 @@ struct ProjectScreen: View {
                 Section {
                     TextField("Title", text: $title)
                         .onSubmit { model.renameProject(id: id, to: title) }
-                    if ProjectAI.onDeviceAvailable {
+                    if ProjectAI.onDeviceAvailable && project.query == nil {
                         Button {
                             naming = true
                             Task {
@@ -1039,7 +1046,7 @@ struct ProjectScreen: View {
                     } header: {
                         Text("Searched for")
                     } footer: {
-                        Text("The phrases it returns to most, at most \(ProjectFile.searchLimit). They go to the sources as searches, as a keyword you follow does; the text itself never leaves this device. What they find is ranked with everything else and not kept in full, and the card says \"Current interest\". A phrase you already follow, or muted, is not searched again. To keep everything a phrase finds, follow it as a keyword. Tap one to see the papers it finds.")
+                        Text(project.query != nil ? "The phrase you searched for. It goes to the sources at each refresh, as a keyword you follow does. What it finds is ranked with everything else and not kept in full, and the card says \"Current interest\". To keep everything it finds, follow it as a keyword. Tap it to see the papers it finds." : "The phrases it returns to most, at most \(ProjectFile.searchLimit). They go to the sources as searches, as a keyword you follow does; the text itself never leaves this device. What they find is ranked with everything else and not kept in full, and the card says \"Current interest\". A phrase you already follow, or muted, is not searched again. To keep everything a phrase finds, follow it as a keyword. Tap one to see the papers it finds.")
                     }
                 } else if inUse && project.searches {
                     Section("Searched for") {
@@ -1054,7 +1061,7 @@ struct ProjectScreen: View {
                         Text(String(project.text.prefix(4000))).font(.footnote).textSelection(.enabled)
                     }
                     Button("Suggest keywords from it…") { suggesting = true }
-                    Button("Replace the text…") { replacing = true }
+                    if project.query == nil { Button("Replace the text…") { replacing = true } }
                     if let message { Text(message).font(.footnote).foregroundStyle(.red) }
                 } footer: {
                     Text("Suggest keywords from it offers more phrases, to follow as keywords: a keyword you follow is kept in full, wherever it ranks. Replacing the text discards the old text for the new, and does not merge them. The title, and any keywords you already follow, stay.")
@@ -1063,7 +1070,7 @@ struct ProjectScreen: View {
                 Section {
                     Button("Delete for good", role: .destructive) { deleting = true }
                 } footer: {
-                    Text("To stop it counting and keep it, untick In use instead. Keywords you followed from it stay followed, under Follow and mute.")
+                    Text("To stop it counting and keep it, turn off In use instead. Keywords you followed from it stay followed, under Follow and mute.")
                 }
             }
             .navigationTitle(project.name)

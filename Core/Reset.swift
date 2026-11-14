@@ -36,7 +36,7 @@ enum ResetPart: String, CaseIterable, Identifiable {
         case .ranking: return "The sliders, the kinds of paper, how far back to look, the filters and the order of the feed."
         case .sources: return "Which sources are on (OpenAlex, Europe PMC, Crossref, arXiv, OSF), not the OpenAlex key."
         case .references: return "Which reference managers you use and the Zotero and library file switches, not the Zotero key."
-        case .searches: return "The searches you agreed to count toward the feed."
+        case .searches: return "The list of recent searches, to run again. Searches you added to current interests are cleared with those."
         case .projects: return "The texts you pasted under Current interests."
         case .history: return "Which papers were seen and read, so every paper in the feed is new again."
         }
@@ -94,7 +94,7 @@ extension FeedSettings {
             highlightCount = d.highlightCount; highlightCloseness = d.highlightCloseness
             highlightImpact = d.highlightImpact; highlightAuthorH = d.highlightAuthorH
             requireAbstract = d.requireAbstract; openAccessOnly = d.openAccessOnly; seenExpiryDays = d.seenExpiryDays
-            showReadPapers = d.showReadPapers; languages = d.languages; dwellSeconds = d.dwellSeconds
+            showReadPapers = d.showReadPapers; cardHeadlines = d.cardHeadlines; languages = d.languages; dwellSeconds = d.dwellSeconds
             countsSearches = d.countsSearches; asksAboutSearches = d.asksAboutSearches
         }
         if parts.contains(.sources) {

@@ -1524,6 +1524,45 @@ neuropathic pain
 let briefWords = ProjectBrief.keywords(from: briefAnswer, in: proposal)
 check(briefWords.map(\.phrase) == ["transcranial magnetic stimulation", "chronic pain", "EEG", "alpha oscillations", "descending pain modulation system", "neuropathic pain"], "project model: a list is read through its bullets, numbers and quotes; an introduction, a sentence and a repeat are left out")
 check(briefWords.first { $0.phrase == "chronic pain" }?.count == 4 && briefWords.first { $0.phrase == "neuropathic pain" }?.count == 1 && ProjectBrief.keywords(from: "heschl gyrus", in: proposal).first?.count == 0, "project model: each phrase says how often the text uses it, and zero for one the model supplied")
+// A headline above the takeaway, from one answer.
+let hdBoth = RemoteSummary.headed("Headline: Gamma oscillations track pain intensity, not stimulus salience.\nTakeaway: In 40 healthy volunteers, EEG gamma power over somatosensory cortex followed pain ratings across laser intensities.")
+check(hdBoth.headline == "Gamma oscillations track pain intensity, not stimulus salience" && hdBoth.takeaway?.hasPrefix("In 40 healthy volunteers") == true, "headline: both come from their labels, the headline without its full stop")
+let hdBold = RemoteSummary.headed("**Headline:** \"opioid tapering raises overdose risk!\"\n\n**Takeaway:** In a cohort of 100,000 patients, tapering long-term opioids was followed by more overdoses within a year.")
+check(hdBold.headline == "Opioid tapering raises overdose risk" && hdBold.takeaway?.hasPrefix("In a cohort") == true, "headline: bold, quotes and an exclamation mark are taken off, and a capital put first")
+let hdBare = RemoteSummary.headed("Spinal cord stimulation eases diabetic neuropathic pain\nA randomised trial of 216 patients found pain relief at six months with stimulation added to medical treatment.")
+check(hdBare.headline == "Spinal cord stimulation eases diabetic neuropathic pain" && hdBare.takeaway?.hasPrefix("A randomised trial") == true, "headline: without labels, the first line and the rest")
+let hdLong = RemoteSummary.headed("Headline: This is not a headline. It is a paragraph that goes on and on about the paper and what it might mean for everyone.\nTakeaway: The study found that the drug reduced pain scores compared with placebo in adults.")
+check(hdLong.headline == nil && hdLong.takeaway != nil, "headline: a paragraph is not a headline, and the takeaway is still kept")
+check(RemoteSummary.headed("Just one line of text without anything else in it").headline == nil, "headline: one unlabelled line gives no headline")
+
+// A search kept as a current interest.
+let siNow = Date(timeIntervalSince1970: 1794000000)
+var siCal = Calendar(identifier: .gregorian); siCal.timeZone = TimeZone(identifier: "Europe/Brussels")!
+let siFound: [(title: String, abstract: String?)] = (0..<12).map { ("Paper \($0) on laser-evoked potentials", $0 == 1 ? nil : "Abstract \($0) about habituation of nociceptive responses.") }
+let si = ProjectFile.fromSearch("  laser   evoked potentials ", found: siFound, now: siNow, calendar: siCal)
+check(si.name == "laser evoked potentials" && si.query == "laser evoked potentials" && si.searchPhrases == ["laser evoked potentials"], "search interest: named and searched by its phrase, tidied")
+check(si.until == "2026-11-20" && si.isInUse(today: "2026-11-20") && !si.isInUse(today: "2026-11-21"), "search interest: it counts for two weeks, a date the user can move")
+check(si.text.hasPrefix("laser evoked potentials\n\nPaper 0") && si.text.contains("Paper 9") && !si.text.contains("Paper 10") && !si.text.contains("Abstract 1 "), "search interest: its text is the phrase and the first ten papers found, to rank by")
+let siOne = ProjectFile.fromSearch("migraine", found: [], now: siNow)
+check(siOne.searchPhrases == ["migraine"], "search interest: a single word is searched, since the user ran it and saw what it finds")
+var siOff = si; siOff.searches = false
+check(siOff.searchPhrases.isEmpty, "search interest: with searching off it only ranks")
+let siBack = try! JSONDecoder().decode(ProjectFile.self, from: JSONEncoder().encode(si))
+check(siBack == si && (try! JSONDecoder().decode(ProjectFile.self, from: Data(#"{"name":"Old","text":"x"}"#.utf8))).query == nil, "search interest: its phrase is kept, and a pasted text has none")
+let siLog = [Search(text: "fresh", at: siNow.timeIntervalSince1970 - 86_400), Search(text: "old", at: siNow.timeIntervalSince1970 - 100 * 86_400)]
+let siMoved = SearchLog.asInterests(siLog, now: siNow, calendar: siCal)
+check(siMoved.map(\.name) == ["fresh"] && siMoved[0].until == "2027-01-04" && siMoved[0].isInUse(today: "2026-11-14"), "search interest: a search counted before moves in for as long as it would still have pulled the feed, and a faded one does not")
+
+// Twenty places: a new interest makes room by deleting the oldest, one not in use first, unless all are kept.
+let roomToday = "2026-11-14"
+let roomList = (0..<20).map { i in ProjectFile(id: "r\(i)", name: "R\(i)", text: "", addedAt: String(format: "2026-10-%02dT09:00:00Z", i + 1)) }
+check(ProjectFile.makingRoom(in: Array(roomList.prefix(19)), keepAll: false, today: roomToday) == [], "interests: while there is room nothing goes")
+check(ProjectFile.makingRoom(in: roomList, keepAll: false, today: roomToday) == ["r0"], "interests: when full, the oldest goes")
+var roomAside = roomList; roomAside[7].enabled = false; roomAside[12].until = "2026-11-01"
+check(ProjectFile.makingRoom(in: roomAside, keepAll: false, today: roomToday) == ["r7"], "interests: one set aside or ended goes before an older one in use, the oldest of them first")
+check(ProjectFile.makingRoom(in: roomList, keepAll: true, today: roomToday) == nil && ProjectFile.makingRoom(in: Array(roomList.prefix(5)), keepAll: true, today: roomToday) == [], "interests: kept all, nothing is deleted, and a full list declines a new one")
+check(ProjectFile.makingRoom(in: roomList + [ProjectFile(id: "r20", name: "x", text: "", addedAt: "2026-11-01T00:00:00Z")], keepAll: false, today: roomToday) == ["r0", "r1"], "interests: a list already over the limit comes back to it")
+
 check(InterestTitle.clean("Title: \"Spinal cord stimulation for neuropathic pain\".", text: proposal) == "Spinal cord stimulation for neuropathic pain", "interest title: a label, quotes and a full stop are taken off")
 check(InterestTitle.clean("**nociceptive EEG responses**\n\nThis title reflects the text.", text: proposal) == "Nociceptive EEG responses", "interest title: the first line only, bold off, a capital first")
 check(InterestTitle.clean("Here is a title for the text you gave me, which is about pain and the brain and many other things.", text: proposal) == nil, "interest title: a sentence is not a title")
@@ -2122,14 +2161,14 @@ rsLoud.thumbEvents = [ev(evTarget, true, 0)]; rsLoud.evidence.strength = 0.2; rs
 rsLoud.feedback.saved = [SavedPaper(lvPaper("rs1"))]; rsLoud.feedback.liked = [SavedPaper(lvPaper("rs2"))]; rsLoud.feedback.hidden = ["doi:x"]; rsLoud.feedback.hiddenPapers = [SavedPaper(lvPaper("rs3"))]
 rsLoud.kindWeights = [:]; rsLoud.daysBack = 3; rsLoud.recency = 0.9; rsLoud.closeness = 0.1; rsLoud.impactWeight = 0.7; rsLoud.authorWeight = 0.6; rsLoud.byline = .first
 rsLoud.highlightCount = 9; rsLoud.highlightCloseness = 0.5; rsLoud.highlightImpact = 1; rsLoud.highlightAuthorH = 3
-rsLoud.requireAbstract = true; rsLoud.openAccessOnly = true; rsLoud.seenExpiryDays = 1; rsLoud.showReadPapers = true; rsLoud.languages = ["fr"]; rsLoud.dwellSeconds = 9
+rsLoud.requireAbstract = true; rsLoud.openAccessOnly = true; rsLoud.seenExpiryDays = 1; rsLoud.showReadPapers = true; rsLoud.cardHeadlines = true; rsLoud.languages = ["fr"]; rsLoud.dwellSeconds = 9
 rsLoud.countsSearches = false; rsLoud.asksAboutSearches = false
 rsLoud.useOpenAlex = false; rsLoud.useEuropePMC = false; rsLoud.useCrossref = false; rsLoud.useArXiv = true; rsLoud.useOSF = true
 rsLoud.referenceManagers = [.zotero]; rsLoud.useZotero = true; rsLoud.useLibraryFile = true; rsLoud.zoteroRecent = 5
 let rsSettingsParts = Set(ResetPart.allCases.filter(\.inSettings))
 var rsAll = rsLoud; rsAll.reset(rsSettingsParts)
 check(rsAll == FeedSettings(), "reset: every part together gives back the settings of a first launch, so no setting is left out of a part")
-check(Mirror(reflecting: FeedSettings()).children.count == 55, "reset: a setting was added or removed: give it a part in Reset.swift, set it in this test, then change this number")
+check(Mirror(reflecting: FeedSettings()).children.count == 56, "reset: a setting was added or removed: give it a part in Reset.swift, set it in this test, then change this number")
 var rsFollows = rsLoud; rsFollows.reset([.follows])
 check(rsFollows.followedTopics.isEmpty && rsFollows.mutedKeywords.isEmpty && rsFollows.levels.isEmpty && rsFollows.trackedPapers.isEmpty && !rsFollows.profileFilled && rsFollows.orcid == rsLoud.orcid && rsFollows.thumbEvents == rsLoud.thumbEvents && rsFollows.feedback == rsLoud.feedback && rsFollows.daysBack == 3 && rsFollows.useArXiv, "reset: follows go, and everything else stays, the ORCID, the thumbs, the lists and the sliders included; the lists are filled from the publications again")
 var rsThumbs = rsLoud; rsThumbs.reset([.thumbs])

@@ -27,6 +27,20 @@ enum SearchLog {
         return Array(([Search(text: clean, at: now.timeIntervalSince1970)] + others).prefix(limit))
     }
 
+    /// The searches an earlier version counted toward the feed, as current interests: each lasts as long as it would
+    /// have kept pulling the feed (until its weight fell below `faded`), and one that has faded already is left out.
+    /// They have only their phrase to rank by: what they found was not kept.
+    static func asInterests(_ log: [Search], now: Date, calendar: Calendar = .current) -> [ProjectFile] {
+        let lastDays = halfLifeDays * log2(1 / faded)
+        return log.compactMap { s in
+            guard weight(s, now: now) >= faded else { return nil }
+            let at = Date(timeIntervalSince1970: s.at)
+            var p = ProjectFile.fromSearch(s.text, found: [], now: at, days: Int(lastDays), calendar: calendar)
+            p.addedAt = ISO8601DateFormatter().string(from: at)
+            return p
+        }
+    }
+
     /// How much a search counts now.
     static func weight(_ search: Search, now: Date) -> Double {
         pow(0.5, max(now.timeIntervalSince1970 - search.at, 0) / (halfLifeDays * 86_400))

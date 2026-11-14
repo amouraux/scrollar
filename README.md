@@ -520,6 +520,16 @@ cache from before this, which came from the sentence model, is read as that. Tun
 says which model is in use. Not tested on a real EU iPhone: here the contextual model was run on a Mac and the
 app's fallback path was built, not exercised on a device that lacks the sentence model.
 
+**Headlines instead of titles** (Tune, Content and display, `cardHeadlines`, off to begin with, synced, display only so it does
+not rebuild the feed). The model writes a headline of 6 to 12 words in the same request as the takeaway
+(`RemoteSummary.instructionsWithHeadline`, parsed by `RemoteSummary.headed`, tested), so the option costs no second call; a paper that
+already has a takeaway is asked again once, for both. The headline takes the title's place on the card, and the paper's own title follows
+it, smaller: a model can overstate a finding, and the title is the paper's own words. The reader, the lists, search, exports and sharing
+keep the real title. Headlines are kept apart from takeaways (`headlines.json` in the caches). Tried against Apple's model on a Mac: the
+first wording led with a bare number ("79% of patients … had 50% pain relief") and claimed a finding for a paper that only describes a
+mouse model; it now begins with the subject, says what was better than what, and for a method, model, protocol or review says what the
+paper offers. Tried on the iPhone simulator with Apple's model.
+
 **Summaries** (the sentence under each title) need a language model. Where the device has Apple's, it is used and
 nothing leaves the phone. Otherwise the user can set up an account of their own in Tune (`Core/RemoteSummary.swift`):
 **Claude** (Anthropic's messages API; default model `claude-opus-5-5`, low effort, no sampling settings, which
@@ -597,6 +607,15 @@ leaves the device. The project is kept in `project.json` in Application Support,
 file, because a proposal may be confidential. Replacing or removing it re-ranks the feed without fetching.
 Not tried: a proposal in another language than English (the stop words and the sentence model are English),
 and the real proposals of anyone but the sample in the tests.
+
+### Twenty places, newest in, and a switch on each row
+
+Each row of Current interests has a switch, the same as In use on its own screen (an ended one shows off, and turning it on clears
+its last day); tapping the rest of the row opens it. There is room for twenty, and interests are meant to come and go: when the list
+is full, a new one deletes the oldest, one that is off or ended before one in use (`ProjectFile.makingRoom`, tested), and the list
+says which went. **Keep them all** (off to begin with, on this device only like the interests, `UserDefaults` `keepsAllInterests`)
+deletes nothing for the user: a full list then declines a new one. Tried on the iPhone simulator: the switch, turned off and on from the
+list (a simulator tap does not reach it; a press-and-drag on the thumb does, and a quick slide is taken as swipe-to-delete).
 
 ### Several projects, each with a title
 
@@ -878,18 +897,18 @@ most is shown, with a line saying so: its first guess alone is often another rea
 iPhone simulator with "migrane prophylaxis" and "transcranal magnatic stimulaton". Not tried: a long phrase with two misspelled words, nor
 a language other than English (the dictionary is asked for en_US only; what the app has seen works in any language).
 
-**Recent searches count, if the user agrees.** After the results, a question asks "Count this search toward your feed?" (Yes, count it | No,
-just this once). Only a yes keeps the phrase; a no keeps nothing, not even in the recent list. Searching again for a phrase already agreed to
-refreshes it without asking. Two switches in the search screen: **Let searches shape the feed** (`countsSearches`; off keeps nothing and asks
-nothing) and **Ask me after each search** (`asksAboutSearches`, synced; off counts every search with results, as the first version did).
-A search with no results is never counted. Each agreed search is kept (newest first, repeats moved to the top, thirty at most) and, until it fades, counts in the
-feed as an interest of its own, at full weight when new and **half as much after two weeks**, and for nothing once under 5%
-(`SearchLog`). So searching for a subject for a few days pulls the next feed toward it, and stops doing so on its own. The search screen
-lists them, each with how much it still counts, with swipe to forget, Forget all, and a switch (**Let recent searches shape the feed**,
-`countsSearches`, synced like the other settings; sync format is still 5). Searches are stored in `searches.json` on the device only: not
-synced, not in a backup of the settings. The phrase goes to the sources as a search term; PRIVACY.md and the site say so. Tried on the iPhone
-simulator against the real sources: a search, its results and the list of recent searches. Not tried: the iPad or the Mac, a search with
-no source that can answer it, whether the feed changes after several searches over a real feed.
+**A search is kept as a current interest, if the user says so.** After the results, "Keep this search?" offers three answers:
+**Add to current interests** (it becomes an interest, `ProjectFile.fromSearch`: named and searched by its phrase, ranked by the phrase and
+the titles and abstracts of the first ten papers it found, and counting for **two weeks**, a last day the user can see and move or remove),
+**Follow as a keyword** (everything it finds is kept in full), or **Just this once**. Two switches in the search screen: **Let searches shape
+the feed** (`countsSearches`; off asks nothing) and **Ask me after each search** (`asksAboutSearches`; off adds every search with results to
+current interests). A search with no results is never kept. The recent list (`searches.json`, thirty at most) is now only for running a
+search again: it no longer pulls the feed by itself, unseen and fading, as it first did. A search the earlier version counted moved into
+Current interests once (`SearchLog.asInterests`), lasting as long as it would still have pulled the feed (about two months after it was
+run: weight halving every two weeks, gone under 5%), with only its phrase to rank by, since what it found was not kept. Searches and
+interests are stored on the device only: not synced, not in a backup of the settings. The phrase goes to the sources as a search term;
+PRIVACY.md and the site say so. Tried on the iPhone simulator: the migration of a counted search, the three answers, and adding one
+(13 papers' text kept, last day two weeks on).
 
 ## Catching up on one topic
 

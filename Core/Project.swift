@@ -25,9 +25,12 @@ struct ProjectFile: Codable, Equatable, Identifiable {
     var searches: Bool
     /// The last day it counts (yyyy-MM-dd, the user's own calendar), or nil for until it is unticked.
     var until: String?
+    /// Set when it was made from a search: the phrase, which is what it searches for, rather than phrases counted in
+    /// its text (the text is the phrase and what the search found, there to rank by). Nil for a pasted text.
+    var query: String?
 
     init(id: String = UUID().uuidString, name: String, text: String, addedAt: String, enabled: Bool = true,
-         searches: Bool = true, until: String? = nil) {
+         searches: Bool = true, until: String? = nil, query: String? = nil) {
         self.id = id
         self.name = name
         self.text = text
@@ -35,9 +38,10 @@ struct ProjectFile: Codable, Equatable, Identifiable {
         self.enabled = enabled
         self.searches = searches
         self.until = until
+        self.query = query
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, text, addedAt, enabled, searches, until }
+    enum CodingKeys: String, CodingKey { case id, name, text, addedAt, enabled, searches, until, query }
 
     /// Tolerant like every stored type.
     init(from decoder: Decoder) throws {
@@ -49,6 +53,7 @@ struct ProjectFile: Codable, Equatable, Identifiable {
         enabled = (try? c.decodeIfPresent(Bool.self, forKey: .enabled)) ?? true
         searches = (try? c.decodeIfPresent(Bool.self, forKey: .searches)) ?? true
         until = try? c.decodeIfPresent(String.self, forKey: .until)
+        query = try? c.decodeIfPresent(String.self, forKey: .query)
     }
 
     /// Past its last day. It stays kept, and ticked, so the list shows what it was; it simply does nothing.
@@ -74,11 +79,47 @@ struct ProjectFile: Codable, Equatable, Identifiable {
     /// once), the strongest few. A single word is never searched alone: it would list far too much.
     var searchPhrases: [String] {
         guard enabled && searches else { return [] }
+        // The user ran this phrase and saw what it finds, so it is searched as typed, even a single word.
+        if let query { return [query] }
         return Array(ProjectText.keywords(text).filter(\.selected).prefix(ProjectFile.searchLimit).map(\.phrase))
     }
 
     /// Each phrase is a request to every source at each refresh, so a project asks for only a few.
     static let searchLimit = 3
+
+    /// How long a search added as an interest counts unless the user changes it: about as long as a recent search
+    /// used to pull the feed before it faded, but now as a date the user can see and move.
+    static let searchDays = 14
+    /// How many of the papers a search found go into its text, to rank by.
+    static let searchPapers = 10
+
+    /// An interest made from a search: named and searched by its phrase, ranked by the phrase and the titles and
+    /// abstracts of the first papers it found, and counting for `days` days from `now`.
+    static func fromSearch(_ query: String, found: [(title: String, abstract: String?)], now: Date,
+                           days: Int = searchDays, calendar: Calendar = .current) -> ProjectFile {
+        let phrase = query.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        let papers = found.prefix(searchPapers).map { p in
+            [p.title, p.abstract ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        }
+        let last = calendar.date(byAdding: .day, value: days, to: now) ?? now
+        return ProjectFile(name: phrase, text: ([phrase] + papers).joined(separator: "\n\n"),
+                           addedAt: ISO8601DateFormatter().string(from: now), until: day(last, calendar: calendar), query: phrase)
+    }
+
+    /// Which interests go to make room for one more: none while there is room. When the list is full, the oldest
+    /// goes, one set aside or ended before one in use, since interests are meant to come and go. Nil when the user
+    /// keeps them all and the list is full: then nothing is deleted, and adding is declined.
+    static func makingRoom(in projects: [ProjectFile], keepAll: Bool, today: String,
+                           limit: Int = ProjectText.maxProjects) -> [String]? {
+        let over = projects.count - limit + 1
+        guard over > 0 else { return [] }
+        if keepAll { return nil }
+        let oldestFirst = projects.sorted { a, b in
+            let (ua, ub) = (a.isInUse(today: today), b.isInUse(today: today))
+            return ua != ub ? !ua : a.addedAt < b.addedAt
+        }
+        return oldestFirst.prefix(over).map(\.id)
+    }
 
     /// The projects in a stored file: a list, or the single project an earlier version kept, whose name was
     /// the first words of its text and is replaced by a title the text suggests.

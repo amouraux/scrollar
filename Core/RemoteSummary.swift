@@ -112,6 +112,54 @@ enum RemoteSummary {
         result, say in one sentence what the paper does. Reply with those sentences only, as one paragraph.
         """
 
+    /// The same takeaway with a headline above it, for the option that shows a headline in place of the paper's title
+    /// on a card. One request gives both, so the option costs no second call. The paper's own title stays on the card.
+    static let instructionsWithHeadline = """
+        You write a short post about a research paper for a scientist scrolling a feed. Reply in two lines. \
+        The first line begins "Headline:" and gives a headline of 6 to 12 words that says what the study \
+        found, plainly and specifically, as a colleague would announce it. It begins with the subject (the \
+        treatment, exposure, method or phenomenon studied), not with a number, so it makes sense on its own, and when the study compares things it says what was better than what. It is not a \
+        question, has no exclamation mark, no emoji, no words such as breakthrough or game-changer, and makes \
+        no claim stronger than the abstract does. If the paper reports no result, because it describes a method, \
+        a model, a protocol or a review, the headline says what the paper offers, and claims no finding. \
+        The second line begins "Takeaway:" and gives one or two sentences, at most 45 words, that make sense \
+        without the headline and add what it leaves out: how it was shown, and in whom or what. Write about the \
+        study in the third person, never "we". Use only what the abstract states: add no background, no \
+        opinion, and no number or claim that is not in it.
+        """
+
+    /// The headline and the takeaway in an answer to `instructionsWithHeadline`: by their labels, or, when a model
+    /// leaves the labels out, the first line and the rest. Either can be nil when it is not usable.
+    static func headed(_ answer: String) -> (headline: String?, takeaway: String?) {
+        let lines = answer.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "*_#")) }
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        func labelled(_ label: String) -> String? {
+            guard let i = lines.firstIndex(where: { $0.lowercased().hasPrefix(label) }) else { return nil }
+            let first = String(lines[i].dropFirst(label.count)).trimmingCharacters(in: CharacterSet(charactersIn: " :*_"))
+            return first
+        }
+        var head = labelled("headline"), body: String?
+        if let i = lines.firstIndex(where: { $0.lowercased().hasPrefix("takeaway") }) {
+            let first = String(lines[i].dropFirst("takeaway".count)).trimmingCharacters(in: CharacterSet(charactersIn: " :*_"))
+            body = ([first] + lines[(i + 1)...].filter { !$0.lowercased().hasPrefix("headline") }).joined(separator: " ")
+        } else if head == nil, lines.count >= 2 {
+            head = lines[0]
+            body = lines[1...].joined(separator: " ")
+        }
+        return (head.flatMap(headline), body.flatMap(clean))
+    }
+
+    /// A headline as the card shows it, or nil: quotes, a full stop and an exclamation mark off, and a sentence
+    /// or a paragraph refused.
+    static func headline(_ text: String) -> String? {
+        let t = text.trimmingCharacters(in: CharacterSet(charactersIn: "\"“”'‘’`*_ .!"))
+        let words = t.split(separator: " ").count
+        guard t.count >= 8, t.count <= 110, words >= 2, words <= 16, !t.contains(". ") else { return nil }
+        return t.prefix(1).uppercased() + t.dropFirst()
+    }
+
     static func prompt(title: String, abstract: String) -> String {
         "Title: \(title)\n\nAbstract: \(String(abstract.prefix(3000)))"
     }
@@ -228,6 +276,14 @@ enum RemoteSummary {
                          session: URLSession = .shared) async throws -> String? {
         try await answer(config, system: instructions, user: prompt(title: title, abstract: abstract), session: session)
             .flatMap(clean)
+    }
+
+    /// A headline and a takeaway from the user's own account, in one request.
+    static func headedTakeaway(_ config: RemoteSummaryConfig, title: String, abstract: String,
+                               session: URLSession = .shared) async throws -> (headline: String?, takeaway: String?) {
+        guard let answer = try await answer(config, system: instructionsWithHeadline,
+                                            user: prompt(title: title, abstract: abstract), session: session) else { return (nil, nil) }
+        return headed(answer)
     }
 
     static func clean(_ text: String) -> String? {

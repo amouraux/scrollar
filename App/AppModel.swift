@@ -75,6 +75,13 @@ final class AppModel {
     }
     /// Whether the window has room for it beside the feed (set by the feed), and the sheet that stands in when it has not.
     var feedPanelFits = false
+    /// Keep every current interest: when the list is full, a new one is declined rather than the oldest deleted.
+    /// Off to begin with, since interests are meant to come and go. On this device only, like the interests.
+    var keepsAllInterests: Bool = UserDefaults.standard.bool(forKey: "keepsAllInterests") {
+        didSet { UserDefaults.standard.set(keepsAllInterests, forKey: "keepsAllInterests") }
+    }
+    /// What adding an interest deleted to make room, said once on the list.
+    var interestNotice: String?
 
     /// Hide or show the panel of reasons: beside the feed when there is room, else as a sheet. One place, for the
     /// buttons, the edge strip and the menu command.
@@ -122,6 +129,9 @@ final class AppModel {
     /// a post shows sentences chosen from the abstract instead.
     private(set) var summaries: [String: String]
     private var summaryFailures: Set<String> = []
+    /// Headlines written while the option is on, by paper; and the papers whose headline failed this run.
+    private(set) var headlines: [String: String] = [:]
+    private var headlineFailures: Set<String> = []
     private var saveSummariesTask: Task<Void, Never>?
     /// How many papers a background refresh found that are not on screen yet.
     private(set) var pendingNew = 0
@@ -206,6 +216,7 @@ final class AppModel {
         zotero = Keychain.load(service: Keychain.zotero).data(using: .utf8).flatMap { try? JSONDecoder().decode(ZoteroAccount.self, from: $0) }
         history = store.loadHistory()
         summaries = store.loadSummaries()
+        headlines = store.loadHeadlines()
         if let cached = store.loadFeed() {
             citedYou = cached.citedYou.map { RankedPaper(paper: $0.paper.withPlainText, score: $0.score, similarity: $0.similarity) }
             forYou = cached.forYou.map { RankedPaper(paper: $0.paper.withPlainText, score: $0.score, similarity: $0.similarity) }
@@ -249,6 +260,7 @@ final class AppModel {
         if settings.feedback.stampUndated(Date()) { store.saveSettings(settings) }
         // The levels a thumb used to move by one step cannot be told from ones set by hand, and a thumb now teaches
         // by what it adds up to (Evidence.swift): they are scrapped once, and what is set by hand from now on stays.
+        moveCountedSearches()
         if !UserDefaults.standard.bool(forKey: "scrappedThumbLevels") {
             UserDefaults.standard.set(true, forKey: "scrappedThumbLevels")
             if !settings.levels.isEmpty { settings.levels = []; store.saveSettings(settings) }
@@ -347,7 +359,6 @@ final class AppModel {
         let library = await zoteroTexts(allowNetwork: !older) + libraryFileTexts()
         let projectPassages = self.projectPassages
         let projects = self.projectsInUse
-        let searchEntries = SearchLog.entries(searches, now: Date())
         // What this feed is built for, taken now: the user may change a follow
         // while it runs, and the result must not claim to match that.
         let builtFor = settings.withoutFeedback
@@ -362,7 +373,7 @@ final class AppModel {
                 // Apple's sentence model, else its contextual one (fetched once if need be), else none.
                 let cache = await TextEmbedders.best().map { CachingEmbedder($0, stored: cachedVectors) }
                 let engine = AppModel.engine(settings, openAlexKey: key, embedder: cache, log: report)
-                let result = try await engine.build(settings, previous: previous, older: older, library: library, project: projectPassages, projects: projects, searches: searchEntries)
+                let result = try await engine.build(settings, previous: previous, older: older, library: library, project: projectPassages, projects: projects)
                 let used = result.profileTexts + (result.citedYou + result.forYou).map { Ranker.text($0.paper) }
                 return (result, cache?.snapshot(keeping: used))
             }.value
@@ -479,15 +490,26 @@ final class AppModel {
         return nil
     }
 
+    /// The headline a model wrote for a card, while the option is on.
+    func headline(for p: Paper) -> String? {
+        settings.cardHeadlines ? headlines[p.dedupeKey] : nil
+    }
+
     /// Ask the model for a post that has been on screen a moment. It runs when the
     /// post appears and is cancelled when it leaves, so scrolling fast costs nothing.
+    /// With headlines on, a paper that has a takeaway but no headline is asked again, for both in one request.
     func writeTakeaway(for p: Paper) async {
         let key = p.dedupeKey
-        guard summaries[key] == nil, !summaryFailures.contains(key),
+        let wantsHeadline = settings.cardHeadlines && headlines[key] == nil && !headlineFailures.contains(key)
+        guard summaries[key] == nil || wantsHeadline, !summaryFailures.contains(key),
               let abstract = p.abstract, canSummarise, summaryProblem == nil else { return }
-        switch await Summarizer.shared.takeaway(title: p.title, abstract: abstract) {
+        switch await Summarizer.shared.takeaway(title: p.title, abstract: abstract, headline: wantsHeadline) {
         case .text(let text):
             summaries[key] = text
+            saveSummariesSoon()
+        case .headed(let head, let text):
+            summaries[key] = text
+            if let head { headlines[key] = head } else if !Task.isCancelled { headlineFailures.insert(key) }
             saveSummariesSoon()
         case .failed(let why):
             // A refused key would be refused for every paper: say so once, and stop asking.
@@ -554,6 +576,7 @@ final class AppModel {
             try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled, let self else { return }
             self.store.saveSummaries(self.summaries)
+            self.store.saveHeadlines(self.headlines)
         }
     }
 
@@ -631,7 +654,7 @@ final class AppModel {
     /// What a search for `phrase` finds: from every source that is on, ranked by the phrase, by what the user has
     /// kept, their library and projects, what they searched for lately, and by the levels they set. A search that
     /// finds nothing is tried again with its misspelled words put right, toward words the app has seen. Nothing is
-    /// remembered here: whether the search counts toward the feed is the user's to say (`countSearch`).
+    /// counted here: whether the search shapes the feed is the user's to say (`addSearchInterest`).
     func search(_ phrase: String) async throws -> SearchOutcome {
         let text = phrase.trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.count >= 2 else { return SearchOutcome(query: text, original: text, papers: [], suggestion: nil, corrected: false) }
@@ -652,10 +675,12 @@ final class AppModel {
             let seen = Typos.vocabulary(outcome.papers.map(\.paper.title))
             outcome.suggestion = Typos.suggest(text, vocabulary: Typos.merge(searchVocabulary(), seen))
         }
-        // A phrase the user already agreed to count is refreshed; a new one waits for their answer, unless they said
-        // not to ask.
-        if !outcome.papers.isEmpty, settings.countsSearches, isCounted(outcome.query) || !settings.asksAboutSearches {
-            countSearch(outcome.query)
+        // Kept to run again. Whether it shapes the feed is the user's answer after the results, unless they said not to ask.
+        if !outcome.papers.isEmpty {
+            rememberSearch(outcome.query)
+            if settings.countsSearches, !settings.asksAboutSearches, !isSearchInterest(outcome.query) {
+                try? addSearchInterest(outcome.query, found: outcome.papers)
+            }
         }
         return outcome
     }
@@ -663,8 +688,7 @@ final class AppModel {
     private func runSearch(_ text: String) async throws -> [RankedPaper] {
         let settings = self.settings
         let library = await zoteroTexts(allowNetwork: false) + libraryFileTexts()
-        let extra = FeedBuilder.profile(settings, own: [], library: library, project: projectPassages,
-                                        searches: SearchLog.entries(searches, now: Date()), now: Date())
+        let extra = FeedBuilder.profile(settings, own: [], library: library, project: projectPassages, now: Date())
         let key = engineKey
         let cached = store.loadEmbeddings()
         let (ranked, vectors) = try await Task.detached(priority: .userInitiated) { () -> ([RankedPaper], Data?) in
@@ -696,27 +720,54 @@ final class AppModel {
         return checker.guesses(forWordRange: range, in: word, language: "en_US") ?? []
     }
 
-    func isCounted(_ phrase: String) -> Bool {
-        searches.contains { $0.text.lowercased() == phrase.lowercased() }
-    }
-
-    /// The user agreed: from now this search counts toward the feed, fading as time passes.
-    func countSearch(_ phrase: String) {
+    /// Recent searches, to run again. They no longer shape the feed by themselves: a search does that as a current
+    /// interest, which the user can see, date and turn off.
+    func rememberSearch(_ phrase: String) {
         searches = SearchLog.adding(phrase, to: searches, at: Date())
         store.saveSearches(searches)
-        if settings.countsSearches { needsRefresh = true }
     }
 
     func forgetSearch(_ search: Search) {
         searches.removeAll { $0.text == search.text }
         store.saveSearches(searches)
-        if settings.countsSearches { needsRefresh = true }
     }
 
     func clearSearches() {
         searches = []
         store.saveSearches([])
-        needsRefresh = true
+    }
+
+    func isSearchInterest(_ phrase: String) -> Bool {
+        projects.contains { $0.query?.lowercased() == phrase.lowercased() }
+    }
+
+    func isFollowedKeyword(_ phrase: String) -> Bool {
+        settings.followedKeywords.contains { $0.phrase.lowercased() == phrase.lowercased() }
+    }
+
+    /// The user's answer after a search: it becomes a current interest, searched for and ranked by for two weeks.
+    func addSearchInterest(_ phrase: String, found: [RankedPaper]) throws {
+        guard !isSearchInterest(phrase) else { return }
+        try makeRoom()
+        projects.append(ProjectFile.fromSearch(phrase, found: found.map { ($0.paper.title, $0.paper.abstract) }, now: Date()))
+        projectsChanged()
+    }
+
+    /// An earlier version let a search pull the feed, fading, unseen. Those searches move into Current interests once,
+    /// each lasting as long as it would have kept pulling; the list of recent searches stays, to run them again.
+    private func moveCountedSearches() {
+        guard !UserDefaults.standard.bool(forKey: "searchesMovedToInterests") else { return }
+        UserDefaults.standard.set(true, forKey: "searchesMovedToInterests")
+        guard settings.countsSearches else { return }
+        let moved = SearchLog.asInterests(searches, now: Date()).filter { !isSearchInterest($0.query ?? "") }
+        guard !moved.isEmpty else { return }
+        projects += moved
+        // Keep them all is new and so off: past twenty, the oldest go, as for any interest added.
+        while let gone = ProjectFile.makingRoom(in: projects, keepAll: false, today: ProjectFile.day(Date()),
+                                                limit: ProjectText.maxProjects + 1), !gone.isEmpty {
+            projects.removeAll { gone.contains($0.id) }
+        }
+        store.saveProjects(projects)
     }
 
     // MARK: Sync between devices
@@ -1030,7 +1081,7 @@ final class AppModel {
         case unreadable, noPapers, projectTooShort, tooManyProjects
         var errorDescription: String? {
             switch self {
-            case .tooManyProjects: return "That is the most interests there is room for (\(ProjectText.maxProjects)). Delete one to add another."
+            case .tooManyProjects: return "That is the most interests there is room for (\(ProjectText.maxProjects)), and Keep them all is on. Delete one to add another."
             case .projectTooShort: return "That says too little to tell what it is about. Paste at least a few sentences: the aims, an abstract, a programme."
             case .unreadable: return "That file could not be read."
             case .noPapers: return "No papers were found. Paste a RIS or BibTeX export, a list of references, or titles one per line (a bare DOI says nothing about the paper)."
@@ -1115,8 +1166,8 @@ final class AppModel {
     /// `nameLater`: the title is only a stand-in, so Apple's on-device model is asked for a better one.
     @discardableResult
     func addProject(title: String, text: String, until: Date? = nil, nameLater: Bool = false) throws -> String {
-        guard projects.count < ProjectText.maxProjects else { throw ImportProblem.tooManyProjects }
         let text = try checked(text)
+        try makeRoom()
         let given = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = !given.isEmpty ? given : (ProjectText.suggestedTitle(text) ?? "Interest \(projects.count + 1)")
         let file = ProjectFile(name: name, text: text, addedAt: ISO8601DateFormatter().string(from: Date()),
@@ -1125,6 +1176,16 @@ final class AppModel {
         projectsChanged()
         if nameLater { Task { await nameProject(id: file.id, unless: name) } }
         return file.id
+    }
+
+    /// Room for one more interest: the oldest goes (one not in use first), unless the user keeps them all.
+    private func makeRoom() throws {
+        guard let gone = ProjectFile.makingRoom(in: projects, keepAll: keepsAllInterests, today: ProjectFile.day(Date())) else {
+            throw ImportProblem.tooManyProjects
+        }
+        let names = projects.filter { gone.contains($0.id) }.map { "“\($0.name)”" }
+        projects.removeAll { gone.contains($0.id) }
+        interestNotice = names.isEmpty ? nil : "\(names.joined(separator: ", ")), the oldest, was deleted to make room."
     }
 
     /// The model's title replaces the stand-in, unless the user renamed it while the model was reading.

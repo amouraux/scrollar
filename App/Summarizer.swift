@@ -6,6 +6,8 @@ import FoundationModels
 /// How an attempt to write a takeaway ended.
 enum SummaryOutcome {
     case text(String)
+    /// A takeaway with a headline above it, when the card shows headlines; the headline can fail on its own.
+    case headed(headline: String?, takeaway: String)
     /// The model chose not to (it may refuse medical text), or what it wrote was unusable.
     case declined
     /// The call failed: a refused key, no connection. The reason is for the user.
@@ -70,8 +72,8 @@ actor Summarizer {
         if remoteWaiting.isEmpty { remoteActive -= 1 } else { remoteWaiting.removeFirst().resume() }
     }
 
-    func takeaway(title: String, abstract: String) async -> SummaryOutcome {
-        if Self.isAvailable { return await onDevice(title: title, abstract: abstract) }
+    func takeaway(title: String, abstract: String, headline: Bool = false) async -> SummaryOutcome {
+        if Self.isAvailable { return await onDevice(title: title, abstract: abstract, headline: headline) }
         guard let remote else { return .unavailable }
         guard remoteCalls < Self.remoteLimit else {
             return .failed("The limit of \(Self.remoteLimit) summaries written this way per launch is reached. The rest are chosen from the abstracts.")
@@ -81,22 +83,30 @@ actor Summarizer {
         if Task.isCancelled { return .declined }
         remoteCalls += 1
         do {
+            if headline {
+                let (head, body) = try await RemoteSummary.headedTakeaway(remote, title: title, abstract: abstract)
+                return body.map { SummaryOutcome.headed(headline: head, takeaway: $0) } ?? .declined
+            }
             return try await RemoteSummary.takeaway(remote, title: title, abstract: abstract).map(SummaryOutcome.text) ?? .declined
         } catch {
             return .failed("\(ErrorText.brief(error))")
         }
     }
 
-    private func onDevice(title: String, abstract: String) async -> SummaryOutcome {
+    private func onDevice(title: String, abstract: String, headline: Bool) async -> SummaryOutcome {
         await enter()
         defer { leave() }
         if Task.isCancelled { return .declined }
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
-            let session = LanguageModelSession(model: .default, instructions: RemoteSummary.instructions)
+            let session = LanguageModelSession(model: .default, instructions: headline ? RemoteSummary.instructionsWithHeadline : RemoteSummary.instructions)
             let prompt = RemoteSummary.prompt(title: title, abstract: abstract)
             do {
                 let response = try await session.respond(to: prompt, options: GenerationOptions(temperature: 0.2))
+                if headline {
+                    let (head, body) = RemoteSummary.headed(response.content)
+                    return body.map { SummaryOutcome.headed(headline: head, takeaway: $0) } ?? .declined
+                }
                 return RemoteSummary.clean(response.content).map(SummaryOutcome.text) ?? .declined
             } catch {
                 return .declined

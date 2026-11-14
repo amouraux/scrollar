@@ -81,6 +81,7 @@ struct Store {
     private var historyURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("history.json") }
     private var ledgerURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("sync-ledger.json") }
     private var summariesURL: URL { folder(.cachesDirectory).appendingPathComponent("summaries.json") }
+    private var headlinesURL: URL { folder(.cachesDirectory).appendingPathComponent("headlines.json") }
     private var zoteroURL: URL { folder(.cachesDirectory).appendingPathComponent("zotero.json") }
     private var libraryFileURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("library-import.json") }
     private var projectURL: URL { folder(.applicationSupportDirectory).appendingPathComponent("project.json") }
@@ -150,6 +151,16 @@ struct Store {
 
     func saveSummaries(_ summaries: [String: String]) {
         if let data = try? JSONEncoder().encode(summaries) { try? data.write(to: summariesURL, options: .atomic) }
+    }
+
+    /// Headlines a model wrote, by paper, kept apart from the takeaways: written only while the option is on.
+    func loadHeadlines() -> [String: String] {
+        guard let data = try? Data(contentsOf: headlinesURL) else { return [:] }
+        return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
+    }
+
+    func saveHeadlines(_ headlines: [String: String]) {
+        if let data = try? JSONEncoder().encode(headlines) { try? data.write(to: headlinesURL, options: .atomic) }
     }
 
     /// When the settings were last written: the best guess at when the user last changed

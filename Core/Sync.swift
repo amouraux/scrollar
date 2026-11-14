@@ -182,7 +182,7 @@ enum SyncProjection {
         scalar("impactWeight", \.impactWeight), scalar("authorWeight", \.authorWeight),
         scalar("byline", \.byline), scalar("requireAbstract", \.requireAbstract),
         scalar("openAccessOnly", \.openAccessOnly), scalar("seenExpiryDays", \.seenExpiryDays),
-        scalar("showReadPapers", \.showReadPapers), scalar("languages", \.languages),
+        scalar("showReadPapers", \.showReadPapers), scalar("cardHeadlines", \.cardHeadlines), scalar("languages", \.languages),
         scalar("highlightCount", \.highlightCount),
         scalar("highlightCloseness", \.highlightCloseness), scalar("highlightImpact", \.highlightImpact),
         scalar("highlightAuthorH", \.highlightAuthorH), scalar("profileFilled", \.profileFilled),

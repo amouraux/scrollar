@@ -278,6 +278,15 @@ struct RankingScreen: View {
     }
 }
 
+/// What the headline switch does, and with which model, in a line or two.
+@MainActor private func headlineNote(_ model: AppModel) -> String {
+    guard model.canSummarise else {
+        return "Headlines instead of titles needs a language model: Apple's on this device, or an account set up under Summaries and AI."
+    }
+    let who = Summarizer.isAvailable ? "Apple's model, on this device," : "the account set up under Summaries and AI"
+    return "With headlines on, \(who) writes a short headline from each paper's abstract, in the same request as the sentence under it, and the paper's own title is shown beneath it, smaller. A model can overstate what a paper found: the title and the abstract are the paper's own words. A paper without an abstract keeps its title."
+}
+
 /// What is shown, and how a post looks.
 struct ContentScreen: View {
     @Environment(AppModel.self) private var appModel
@@ -308,10 +317,12 @@ struct ContentScreen: View {
                     ForEach(BylineChoice.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
                 Toggle("Journal banner on each post", isOn: $showCovers)
+                Toggle("Headlines instead of titles", isOn: $model.settings.cardHeadlines)
+                    .disabled(!model.canSummarise && !model.settings.cardHeadlines)
             } header: {
                 Text("Posts")
             } footer: {
-                Text("Badges show initials: open scholarly data has no author photographs. Which end of the author list leads depends on your field. The h-index option under Ranking follows this choice: the higher of the two when both are shown. A journal always has the same colour: a banner with its name and subject above the title. Off, the journal is a plain line.")
+                Text("Badges show initials: open scholarly data has no author photographs. Which end of the author list leads depends on your field. The h-index option under Ranking follows this choice: the higher of the two when both are shown. A journal always has the same colour: a banner with its name and subject above the title. Off, the journal is a plain line.\n\n" + headlineNote(model))
             }
 
             Section {

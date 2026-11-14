@@ -395,6 +395,9 @@ struct FeedSettings: Codable, Equatable {
     var seenExpiryDays = 7
     /// Show papers already read, dimmed, at the end of the feed.
     var showReadPapers = false
+    /// Cards headed by a headline a language model writes, with the paper's own title beneath. Off to begin with:
+    /// a model can overstate what a paper found, and the title is the paper's own words.
+    var cardHeadlines = false
     /// ISO 639-1 codes. Empty means any. A paper with no detected language passes.
     var languages: [String] = []
 
@@ -482,7 +485,8 @@ struct FeedSettings: Codable, Equatable {
         s.highlightAuthorH = d.highlightAuthorH
         s.dwellSeconds = d.dwellSeconds
         s.profileFilled = d.profileFilled
-        // Whether to ask is how the app talks to the user, not what the feed holds.
+        // Whether to ask is how the app talks to the user, not what the feed holds; a headline is only how a card looks.
+        s.cardHeadlines = d.cardHeadlines
         s.asksThumbBasis = d.asksThumbBasis
         s.asksAboutSearches = d.asksAboutSearches
         return s
@@ -537,7 +541,7 @@ extension FeedSettings {
         case followedFunders, followedKeywords, trackedPapers, highlightCount, highlightCloseness, highlightImpact, highlightAuthorH, dwellSeconds
         case mutedJournals, mutedAuthors, mutedTopics, mutedKeywords
         case kindWeights, daysBack, recency, closeness, impactWeight, authorWeight, byline
-        case requireAbstract, openAccessOnly, seenExpiryDays, showReadPapers, languages, feedback
+        case requireAbstract, openAccessOnly, seenExpiryDays, showReadPapers, cardHeadlines, languages, feedback
     }
 
     init(from decoder: Decoder) throws {
@@ -600,6 +604,7 @@ extension FeedSettings {
         openAccessOnly = get(.openAccessOnly, openAccessOnly)
         seenExpiryDays = min(max(get(.seenExpiryDays, seenExpiryDays), 1), 60)
         showReadPapers = get(.showReadPapers, showReadPapers)
+        cardHeadlines = get(.cardHeadlines, cardHeadlines)
         languages = get(.languages, languages)
         feedback = get(.feedback, feedback)
     }
