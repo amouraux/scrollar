@@ -23,10 +23,7 @@ final class AppModel {
 
     var settings: FeedSettings {
         didSet {
-            store.saveSettings(settings)
-            // Whatever differs from what was recorded was decided here, just now.
-            ledger.reconcile(settings, at: Date())
-            store.saveLedger(ledger)
+            saveSettingsSoon()
             if !applyingSync { syncSoon(after: 3) }
             if settings.feedback.saved != oldValue.feedback.saved || settings.feedback.liked != oldValue.feedback.liked {
                 PDFCache.setSavedKeys(settings.feedback.saved.map(\.id) + settings.feedback.liked.map(\.id))
@@ -159,6 +156,9 @@ final class AppModel {
     /// trying again by itself, which would loop on a broken connection.
     private(set) var olderFailed = false
     private var saveHistoryTask: Task<Void, Never>?
+    private var saveSettingsTask: Task<Void, Never>?
+    /// When the settings were last changed and not yet written.
+    private var settingsEditedAt: Date?
     private let store = Store()
 
     // MARK: Sync state
@@ -780,7 +780,7 @@ final class AppModel {
         }
 
         // Merge against the state as it is now: the user may have edited while the file was read.
-        ledger.reconcile(settings, at: Date())
+        saveSettingsNow()
         var merged = ledger
         for doc in [outcome.main].compactMap({ $0 }) + outcome.conflicts { merged = merged.merged(with: doc) }
         var mergedHistory = history.merged(with: merged.history)
@@ -1337,6 +1337,29 @@ final class AppModel {
     func saveHistoryNow() {
         saveHistoryTask?.cancel()
         store.saveHistory(history)
+    }
+
+    /// A slider changes the settings at every step of a drag, and each write is the settings file, a pass over the
+    /// sync record and the whole record written out again. They are written once the hand stops instead.
+    private func saveSettingsSoon() {
+        settingsEditedAt = Date()
+        saveSettingsTask?.cancel()
+        saveSettingsTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(0.5))
+            guard !Task.isCancelled else { return }
+            self?.saveSettingsNow()
+        }
+    }
+
+    /// Write what is waiting. Also when the app leaves the screen, which may be the last chance.
+    func saveSettingsNow() {
+        saveSettingsTask?.cancel()
+        guard let editedAt = settingsEditedAt else { return }
+        settingsEditedAt = nil
+        store.saveSettings(settings)
+        // Whatever differs from what was recorded was decided here, when it was changed.
+        ledger.reconcile(settings, at: editedAt)
+        store.saveLedger(ledger)
     }
 
     func isSaved(_ p: Paper) -> Bool { settings.feedback.saved.contains { $0.id == p.dedupeKey } }

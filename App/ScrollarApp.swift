@@ -37,11 +37,17 @@ struct ScrollarApp: App {
             .onChange(of: scenePhase) { _, new in
                 if new != .active {
                     model.saveHistoryNow()
+                    model.saveSettingsNow()
                     Task { await model.syncNow() }
                 }
                 // The app is often resumed, not launched: the other device is read, and a
                 // feed more than six hours old is refreshed, behind the "new papers" pill.
                 if new == .active { Task { await model.resume() } }
+            }
+            // Quitting on the Mac need not pass through the background first, and settings wait half a second to be written.
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willTerminateNotification)) { _ in
+                model.saveSettingsNow()
+                model.saveHistoryNow()
             }
             // The first-run list on an empty feed takes the user to the Tune screen it names.
             .onChange(of: model.tuneRequests) { _, _ in tab = .settings }
