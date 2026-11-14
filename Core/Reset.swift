@@ -21,7 +21,7 @@ enum ResetPart: String, CaseIterable, Identifiable {
         case .sources: return "Sources"
         case .references: return "Reference managers"
         case .searches: return "Recent searches"
-        case .projects: return "Your projects"
+        case .projects: return "Current interests"
         case .history: return "What you have read"
         }
     }
@@ -37,7 +37,7 @@ enum ResetPart: String, CaseIterable, Identifiable {
         case .sources: return "Which sources are on (OpenAlex, Europe PMC, Crossref, arXiv, OSF), not the OpenAlex key."
         case .references: return "Which reference managers you use and the Zotero and library file switches, not the Zotero key."
         case .searches: return "The searches you agreed to count toward the feed."
-        case .projects: return "The project descriptions you pasted."
+        case .projects: return "The texts you pasted under Current interests."
         case .history: return "Which papers were seen and read, so every paper in the feed is new again."
         }
     }

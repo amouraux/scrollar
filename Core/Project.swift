@@ -6,8 +6,11 @@ import Foundation
 // not only orders them (the phrases go to the sources, the text does not); and the phrases it keeps
 // coming back to are offered as keywords to follow. Pure and tested; the screens are in SettingsView.swift.
 
-/// A project the user pasted, with a title they can change. Device-local like the library file: a proposal
-/// is the user's, and may be confidential. Several can be kept, each used for ranking or not.
+/// A text the user pasted about what they are interested in now (a proposal, an abstract, a conference programme),
+/// with a title they can change. "Current interest" on screen; "project" in the code and the file, which is not worth
+/// a migration. Device-local like the library file: a proposal is the user's, and may be confidential. Several are
+/// kept, each ticked or not, and one can be given a last day, so a conference counts for its week and is then set
+/// aside without being lost.
 struct ProjectFile: Codable, Equatable, Identifiable {
     var id: String
     /// What the user calls it.
@@ -20,17 +23,21 @@ struct ProjectFile: Codable, Equatable, Identifiable {
     /// Whether, while it is in use, its strongest phrases are searched for. On unless turned off: a project is
     /// pasted to find what is about to matter, and ranking alone only reorders what something else found.
     var searches: Bool
+    /// The last day it counts (yyyy-MM-dd, the user's own calendar), or nil for until it is unticked.
+    var until: String?
 
-    init(id: String = UUID().uuidString, name: String, text: String, addedAt: String, enabled: Bool = true, searches: Bool = true) {
+    init(id: String = UUID().uuidString, name: String, text: String, addedAt: String, enabled: Bool = true,
+         searches: Bool = true, until: String? = nil) {
         self.id = id
         self.name = name
         self.text = text
         self.addedAt = addedAt
         self.enabled = enabled
         self.searches = searches
+        self.until = until
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, text, addedAt, enabled, searches }
+    enum CodingKeys: String, CodingKey { case id, name, text, addedAt, enabled, searches, until }
 
     /// Tolerant like every stored type.
     init(from decoder: Decoder) throws {
@@ -41,6 +48,26 @@ struct ProjectFile: Codable, Equatable, Identifiable {
         id = (try? c.decodeIfPresent(String.self, forKey: .id)) ?? UUID().uuidString
         enabled = (try? c.decodeIfPresent(Bool.self, forKey: .enabled)) ?? true
         searches = (try? c.decodeIfPresent(Bool.self, forKey: .searches)) ?? true
+        until = try? c.decodeIfPresent(String.self, forKey: .until)
+    }
+
+    /// Past its last day. It stays kept, and ticked, so the list shows what it was; it simply does nothing.
+    func hasEnded(today: String) -> Bool { until.map { today > $0 } ?? false }
+
+    /// Whether it ranks the feed and searches on `today` (yyyy-MM-dd): ticked, and not past its last day.
+    func isInUse(today: String) -> Bool { enabled && !hasEnded(today: today) }
+
+    /// A day as `until` and `isInUse` take it: the user's own calendar, not UTC, so "until Friday" ends on their Friday.
+    static func day(_ date: Date, calendar: Calendar = .current) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    /// The date `until` stands for, at noon, for a date picker.
+    static func date(ofDay day: String, calendar: Calendar = .current) -> Date? {
+        let parts = day.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12))
     }
 
     /// The phrases searched for while it is in use: those its keyword suggestions tick (several words, said more than
@@ -83,7 +110,7 @@ enum ProjectText {
     /// Embedding is the slow part of ranking, so a long text is thinned, evenly, rather than cut.
     static let maxPassages = 40
     /// How many projects there is room for, each a text read and kept on the device.
-    static let maxProjects = 10
+    static let maxProjects = 20
     /// Fewer words than this say too little to tell what the project is.
     static let fewestWords = 30
 

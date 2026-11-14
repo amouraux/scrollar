@@ -36,7 +36,7 @@ struct ResetScreen: View {
                     .disabled(chosen.isEmpty)
                 Button("Clear everything", role: .destructive) { everything = true; asking = true }
             } footer: {
-                Text("With syncing on, the other devices follow a reset of settings (follows, thumbs, the reading list, sliders). Recent searches and projects stay on each device. What you have read is merged between devices, so it can come back from one that still has it.")
+                Text("With syncing on, the other devices follow a reset of settings (follows, thumbs, the reading list, sliders). Recent searches and current interests stay on each device. What you have read is merged between devices, so it can come back from one that still has it.")
             }
 
             Section {
@@ -85,7 +85,7 @@ struct ResetScreen: View {
         func n(_ count: Int, _ one: String, _ many: String) -> String { count == 0 ? "Nothing to clear" : "\(count) \(count == 1 ? one : many)" }
         switch part {
         case .searches: return n(model.searches.count, "search", "searches")
-        case .projects: return n(model.projects.count, "project", "projects")
+        case .projects: return n(model.projects.count, "interest", "interests")
         case .history: return n(model.history.states.count, "paper seen or read", "papers seen or read")
         default: return part.detail(in: s)
         }

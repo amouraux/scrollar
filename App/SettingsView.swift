@@ -28,11 +28,12 @@ extension Weight {
 
 /// The screens Tune opens on, so that something outside Tune can take the user straight to one.
 enum TuneScreen: String, Hashable, CaseIterable {
-    case you, follow, ranking, content, references, pdfs, summaries, sources, sync
+    case you, interests, follow, ranking, content, references, pdfs, summaries, sources, sync
 
     var title: String {
         switch self {
         case .you: return "You"
+        case .interests: return "Current interests"
         case .follow: return "Follow and mute"
         case .ranking: return "Ranking"
         case .content: return "Content and display"
@@ -47,6 +48,7 @@ enum TuneScreen: String, Hashable, CaseIterable {
     var symbol: String {
         switch self {
         case .you: return "person.crop.circle"
+        case .interests: return "lightbulb"
         case .follow: return "binoculars"
         case .ranking: return "arrow.up.arrow.down"
         case .content: return "text.alignleft"
@@ -68,13 +70,14 @@ struct SettingsView: View {
             Form {
                 Section {
                     row(.you, status: youStatus)
+                    row(.interests, status: interestsStatus)
                     row(.follow, status: followStatus)
                     row(.ranking, status: rankingStatus)
                     row(.content, status: contentStatus)
                 } header: {
                     Text("Your feed")
                 } footer: {
-                    Text("What you follow is searched for and kept in full. A project in use is searched for too, by its strongest phrases, and ranked with the rest. Your publications and reference library decide only the order, and can suggest what to follow. Changes take effect when you go back to the feed.")
+                    Text("What you follow is searched for and kept in full. A current interest that is ticked is searched for too, by its strongest phrases, and ranked with the rest. Your publications and reference library decide only the order, and can suggest what to follow. Changes take effect when you go back to the feed.")
                 }
                 Section("Connections and data") {
                     row(.references, status: referencesStatus)
@@ -88,6 +91,7 @@ struct SettingsView: View {
             .navigationDestination(for: TuneScreen.self) { screen in
                 switch screen {
                 case .you: YouScreen()
+                case .interests: CurrentInterestsScreen()
                 case .follow: FollowScreen()
                 case .ranking: RankingScreen()
                 case .content: ContentScreen()
@@ -127,9 +131,15 @@ struct SettingsView: View {
         let s = appModel.settings
         var parts: [String] = []
         if let orcid = s.orcid, Orcid.normalised(orcid) != nil { parts.append("ORCID") }
-        if !appModel.projects.isEmpty { parts.append(appModel.projects.count == 1 ? "project" : "\(appModel.projects.count) projects") }
         if !s.profileOrcids.isEmpty { parts.append("+\(s.profileOrcids.count) learned from") }
         return parts.isEmpty ? "Not set up" : parts.joined(separator: " · ")
+    }
+
+    private var interestsStatus: String {
+        let all = appModel.projects.count
+        guard all > 0 else { return "None" }
+        let used = appModel.projectsInUse.count
+        return used == all ? "\(used) in use" : "\(used) in use · \(all - used) set aside"
     }
 
     private var followStatus: String {
@@ -567,7 +577,7 @@ struct SeedPreviewView: View {
         if p.matched == 0 { return "Nothing in the last \(days) days." }
         let count = "\(p.matched)\(p.mayHaveMore ? " or more" : "") \(p.matched == 1 ? "paper" : "papers")"
         if case .project = seed {
-            return "\(count) in the last \(days) days. Searched for your project, they are ranked with everything else: those closest to your work reach your feed."
+            return "\(count) in the last \(days) days. Searched for a current interest, they are ranked with everything else: those closest to your work reach your feed."
         }
         return isBroad
             ? "\(count) in the last \(days) days. It is broad, so they are ranked with everything else and the best reach your feed, with a small bonus."
@@ -744,8 +754,8 @@ struct SummariesSection: View {
                 Button("Stop using it", role: .destructive) { model.clearRemoteSummary() }
             } else {
                 Text(Summarizer.isAvailable
-                     ? "Optional: set up an account of your own, with Claude, ChatGPT or another model. It does not write the takeaways here, because this device does; it is offered, on request, for suggesting keywords from a project, with a warning that shows what is sent."
-                     : "This device has no on-device language model, so the sentence under each title is chosen from the abstract. Set up your own account to have a model write it, and to suggest keywords from a project on request.")
+                     ? "Optional: set up an account of your own, with Claude, ChatGPT or another model. It does not write the takeaways here, because this device does; it is offered, on request, for suggesting keywords from a current interest, with a warning that shows what is sent."
+                     : "This device has no on-device language model, so the sentence under each title is chosen from the abstract. Set up your own account to have a model write it, and to suggest keywords from a current interest on request.")
                     .font(.footnote).foregroundStyle(.secondary)
                 Picker("Account", selection: $provider) {
                     ForEach(SummaryProvider.allCases, id: \.self) { Text($0.pickerTitle).tag($0) }
@@ -766,7 +776,7 @@ struct SummariesSection: View {
         } header: {
             Text("Summaries and matching")
         } footer: {
-            Text("Matching uses a text model on this device: Apple's sentence model where it has one, otherwise its contextual model, which is fetched once and does not need Apple Intelligence; with neither, words alone. A key is not a chat subscription: it is a separate, pay-per-use account of your own (Claude or OpenAI), or one from any service that speaks OpenAI's chat format (Mistral, Gemini's compatible address, OpenRouter, or a model on your own machine, such as Ollama, at an http:// address on this device or your network). A subscription to a chat app cannot be used. When an account is set up and this device has no model of its own, the title and abstract of a paper that stays on screen are sent to that service, and nothing else, except that you can also ask it to suggest keywords from a project you pasted (under Your project): then an excerpt of the project is sent, after a warning that shows exactly what goes and to whom, each time you ask. Each takeaway costs a fraction of a cent to a cent or two, depending on the model: a smaller one costs far less, and Claude Haiku (claude-haiku-5-5) is the cheapest Claude. At most \(Summarizer.remoteLimit) are written per launch, and each is kept, so a paper is never asked for twice. The key stays in this device's Keychain and is sent only to that service. A device that has Apple's model writes the takeaways itself and sends nothing for them.")
+            Text("Matching uses a text model on this device: Apple's sentence model where it has one, otherwise its contextual model, which is fetched once and does not need Apple Intelligence; with neither, words alone. A key is not a chat subscription: it is a separate, pay-per-use account of your own (Claude or OpenAI), or one from any service that speaks OpenAI's chat format (Mistral, Gemini's compatible address, OpenRouter, or a model on your own machine, such as Ollama, at an http:// address on this device or your network). A subscription to a chat app cannot be used. When an account is set up and this device has no model of its own, the title and abstract of a paper that stays on screen are sent to that service, and nothing else, except that you can also ask it to suggest keywords from a text you pasted (under Current interests): then an excerpt of that text is sent, after a warning that shows exactly what goes and to whom, each time you ask. Each takeaway costs a fraction of a cent to a cent or two, depending on the model: a smaller one costs far less, and Claude Haiku (claude-haiku-5-5) is the cheapest Claude. At most \(Summarizer.remoteLimit) are written per launch, and each is kept, so a paper is never asked for twice. The key stays in this device's Keychain and is sent only to that service. A device that has Apple's model writes the takeaways itself and sends nothing for them.")
         }
     }
 
@@ -870,54 +880,105 @@ struct LibraryFileSection: View {
 }
 
 
-/// A research project in the user's own words (a grant proposal, a thesis plan, an abstract): what the
-/// feed is for, in the place of papers that do not exist yet. Read on the device and kept there.
-struct ProjectSection: View {
-    @Environment(AppModel.self) private var appModel
+/// Texts that say what the user is interested in now: a grant proposal, a thesis plan, an abstract, a paper being
+/// written, a conference programme. Each is dated, ticked or not, and may have a last day, so a conference can count
+/// for its week and then be set aside, kept, to tick again later. "Project" in the code; read and kept on the device.
+struct CurrentInterestsScreen: View {
+    @Environment(AppModel.self) private var model
     @State private var adding = false
-    @State private var suggestingFor: ProjectRef?
     @State private var message: String?
+    @State private var deleting: ProjectFile?
 
-    struct ProjectRef: Identifiable { let id: String }
+    /// Newest first: what was added last is most likely what matters now.
+    private var listed: [ProjectFile] { model.projects.sorted { $0.addedAt > $1.addedAt } }
 
     var body: some View {
-        Section {
-            ForEach(appModel.projects) { project in
-                NavigationLink {
-                    ProjectScreen(id: project.id)
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(project.name)
-                        Text("\(ProjectText.wordCount(project.text)) words · \(!project.enabled ? "not in use" : project.searchPhrases.isEmpty ? "ranks the feed" : "ranks and searches")")
-                            .font(.caption).foregroundStyle(.secondary)
+        let today = ProjectFile.day(Date())
+        Form {
+            Section {
+                if model.projects.isEmpty {
+                    Text("Nothing yet.").foregroundStyle(.secondary)
+                }
+                ForEach(listed) { project in
+                    HStack(spacing: 12) {
+                        Button {
+                            model.setProjectEnabled(!project.isInUse(today: today), id: project.id)
+                        } label: {
+                            Image(systemName: project.isInUse(today: today) ? "checkmark.circle.fill" : "circle")
+                                .font(.title3)
+                                .foregroundStyle(project.isInUse(today: today) ? Color.accentColor : Color.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel(project.isInUse(today: today) ? "In use. Untick to set it aside" : "Set aside. Tick to use it")
+                        NavigationLink {
+                            ProjectScreen(id: project.id)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(project.name)
+                                Text(InterestText.status(project, today: today))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .swipeActions {
+                        Button("Delete", role: .destructive) { deleting = project }
                     }
                 }
+                Button("Add a text or a document…") { adding = true }
+                    .disabled(model.projects.count >= ProjectText.maxProjects)
+                if let message { Text(message).font(.footnote).foregroundStyle(.red) }
+            } footer: {
+                Text("Paste anything that says what you are interested in now: a grant proposal, a thesis plan, an abstract, a paper you are writing, a conference programme. While one is ticked, papers close to it rank higher and its strongest phrases are searched for, so it brings in papers too. Untick it to set it aside, or give it a last day: it is kept, to tick again later. Swipe to delete one for good.")
             }
-            Button(appModel.projects.isEmpty ? "Paste your project…" : "Add a project…") { adding = true }
-                .disabled(appModel.projects.count >= ProjectText.maxProjects)
-            if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
-        } header: {
-            Text("Your projects")
-        } footer: {
-            Text("Paste a grant proposal, a thesis plan or an abstract: what you are about to work on, before there are papers to show it. Papers close to a project in use rank higher, and its strongest phrases are searched for (open it to see them, or to turn that off), so it brings in papers too. To keep everything a phrase finds, follow it as a keyword: open the project and choose Suggest keywords from it. A project is read on this device and kept only here: it is not synced and not in the settings file you can export. Its text is sent to no service (only its few search phrases go to the sources) unless you ask a model you set up (Claude, ChatGPT or another), with your own account, to suggest keywords, and then only after a warning that shows exactly what goes. Apple's on-device model, where the device has one, reads it without sending anything.")
+
+            Section {
+            } footer: {
+                Text("These texts are read on this device and kept only here: not synced, and not in the settings file you can export. A text is sent to no service: only its few search phrases go to the sources, as a followed keyword does, unless you ask a model you set up (Claude, ChatGPT or another) to suggest keywords from it, and then only after a warning that shows exactly what goes. Apple's on-device model, where the device has one, reads it without sending anything.")
+            }
         }
+        .navigationTitle("Current interests")
         .sheet(isPresented: $adding) {
-            PasteProjectSheet(replacing: false) { title, text in
-                do {
-                    let id = try appModel.addProject(title: title, text: text)
-                    message = nil
-                    // After this sheet has gone: a second one cannot open while it is leaving.
-                    Task { try? await Task.sleep(for: .milliseconds(500)); suggestingFor = ProjectRef(id: id) }
-                } catch {
-                    message = error.localizedDescription
-                }
+            PasteProjectSheet(replacing: false) { title, text, until in
+                do { try model.addProject(title: title, text: text, until: until); message = nil }
+                catch { message = error.localizedDescription }
             }
         }
-        .sheet(item: $suggestingFor) { ProjectKeywordsSheet(projectID: $0.id) }
+        .confirmationDialog("Delete “\(deleting?.name ?? "")” for good?", isPresented: Binding(
+            get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { if let d = deleting { model.removeProject(id: d.id) }; deleting = nil }
+            Button("Cancel", role: .cancel) { deleting = nil }
+        } message: {
+            Text("Its text is removed from this device and cannot be brought back. To stop it counting and keep it, untick it instead.")
+        }
     }
 }
 
-/// One project: its title, whether it ranks the feed, its text, and what can be done with it.
+/// How an interest is described in a line: when it was added, and whether it counts.
+enum InterestText {
+    static func added(_ iso: String) -> String {
+        guard let d = ISO8601DateFormatter().date(from: iso) else { return "Added earlier" }
+        return "Added " + d.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    static func day(_ day: String) -> String {
+        ProjectFile.date(ofDay: day).map { $0.formatted(date: .abbreviated, time: .omitted) } ?? day
+    }
+
+    static func status(_ p: ProjectFile, today: String) -> String {
+        var parts = [added(p.addedAt)]
+        if !p.enabled {
+            parts.append("set aside")
+        } else if p.hasEnded(today: today), let until = p.until {
+            parts.append("ended " + day(until))
+        } else {
+            if let until = p.until { parts.append("until " + day(until)) }
+            parts.append(p.searchPhrases.isEmpty ? "ranks the feed" : "ranks and searches")
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// One interest: its title, whether and until when it counts, what it searches for, its text, and deleting it.
 struct ProjectScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -930,23 +991,31 @@ struct ProjectScreen: View {
 
     var body: some View {
         if let project = model.project(id: id) {
+            let today = ProjectFile.day(Date())
+            let inUse = project.isInUse(today: today)
             Form {
                 Section {
                     TextField("Title", text: $title)
                         .onSubmit { model.renameProject(id: id, to: title) }
-                    Toggle("Use it for the feed", isOn: Binding(
-                        get: { project.enabled }, set: { model.setProjectEnabled($0, id: id) }))
-                    if project.enabled {
+                    Toggle("In use", isOn: Binding(
+                        get: { inUse }, set: { model.setProjectEnabled($0, id: id) }))
+                    if inUse {
+                        Toggle("Until a date", isOn: Binding(
+                            get: { project.until != nil },
+                            set: { model.setProjectUntil($0 ? Calendar.current.date(byAdding: .day, value: 7, to: Date()) : nil, id: id) }))
+                        if let until = project.until, let date = ProjectFile.date(ofDay: until) {
+                            DatePicker("Last day", selection: Binding(
+                                get: { date }, set: { model.setProjectUntil($0, id: id) }),
+                                       in: Date()..., displayedComponents: .date)
+                        }
                         Toggle("Search for its phrases", isOn: Binding(
                             get: { project.searches }, set: { model.setProjectSearches($0, id: id) }))
                     }
                 } footer: {
-                    Text(project.enabled
-                         ? "Papers close to the project rank higher. With Search for its phrases on, its strongest phrases are also searched for, so it brings in papers and not only orders them."
-                         : "Not in use: it neither ranks nor searches.")
+                    Text(footer(project, today: today))
                 }
 
-                if !project.searchPhrases.isEmpty {
+                if inUse && !project.searchPhrases.isEmpty {
                     Section {
                         ForEach(project.searchPhrases, id: \.self) { phrase in
                             NavigationLink { SeedPreviewView(title: phrase, seed: .project(phrase: phrase, name: project.name)) } label: { Text(phrase) }
@@ -954,9 +1023,9 @@ struct ProjectScreen: View {
                     } header: {
                         Text("Searched for")
                     } footer: {
-                        Text("The phrases it returns to most, at most \(ProjectFile.searchLimit). They go to the sources as searches, as a keyword you follow does; the text itself never leaves this device. What they find is ranked with everything else and not kept in full, and the card says \"From your project\". A phrase you already follow, or muted, is not searched again. To keep everything a phrase finds, follow it as a keyword. Tap one to see the papers it finds.")
+                        Text("The phrases it returns to most, at most \(ProjectFile.searchLimit). They go to the sources as searches, as a keyword you follow does; the text itself never leaves this device. What they find is ranked with everything else and not kept in full, and the card says \"Current interest\". A phrase you already follow, or muted, is not searched again. To keep everything a phrase finds, follow it as a keyword. Tap one to see the papers it finds.")
                     }
-                } else if project.enabled && project.searches {
+                } else if inUse && project.searches {
                     Section("Searched for") {
                         Text("Nothing: the text does not return to a phrase of several words often enough. It still ranks the feed.").foregroundStyle(.secondary)
                     }
@@ -964,7 +1033,7 @@ struct ProjectScreen: View {
 
                 Section {
                     LabeledContent("Text", value: "\(ProjectText.wordCount(project.text)) words, \(passages(project.text))")
-                    LabeledContent("Pasted", value: pasted(project.addedAt))
+                    LabeledContent("Added", value: String(InterestText.added(project.addedAt).dropFirst("Added ".count)))
                     DisclosureGroup("Show the text") {
                         Text(String(project.text.prefix(4000))).font(.footnote).textSelection(.enabled)
                     }
@@ -976,9 +1045,9 @@ struct ProjectScreen: View {
                 }
 
                 Section {
-                    Button("Delete this project", role: .destructive) { deleting = true }
+                    Button("Delete for good", role: .destructive) { deleting = true }
                 } footer: {
-                    Text("Keywords you followed from it stay followed, under Follow and mute.")
+                    Text("To stop it counting and keep it, untick In use instead. Keywords you followed from it stay followed, under Follow and mute.")
                 }
             }
             .navigationTitle(project.name)
@@ -986,41 +1055,49 @@ struct ProjectScreen: View {
             .onAppear { title = project.name }
             .onDisappear { model.renameProject(id: id, to: title) }
             .sheet(isPresented: $replacing) {
-                PasteProjectSheet(replacing: true) { _, text in
+                PasteProjectSheet(replacing: true) { _, text, _ in
                     do { try model.replaceProjectText(id: id, with: text); message = nil }
                     catch { message = error.localizedDescription }
                 }
             }
             .sheet(isPresented: $suggesting) { ProjectKeywordsSheet(projectID: id) }
-            .confirmationDialog("Delete “\(project.name)”?", isPresented: $deleting, titleVisibility: .visible) {
+            .confirmationDialog("Delete “\(project.name)” for good?", isPresented: $deleting, titleVisibility: .visible) {
                 Button("Delete", role: .destructive) { model.removeProject(id: id); dismiss() }
                 Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Its text is removed from this device and cannot be brought back.")
             }
         } else {
-            ContentUnavailableView("This project is gone", systemImage: "doc")
+            ContentUnavailableView("This interest is gone", systemImage: "doc")
         }
+    }
+
+    private func footer(_ p: ProjectFile, today: String) -> String {
+        if !p.enabled { return "Set aside: kept, but it neither ranks nor searches. Turn on In use to use it again." }
+        if p.hasEnded(today: today), let until = p.until {
+            return "Ended on \(InterestText.day(until)): kept, but it neither ranks nor searches. Turn on In use to use it again, with no last day."
+        }
+        return "Papers close to it rank higher. With Search for its phrases on, its strongest phrases are searched for too, so it brings in papers and not only orders them. With a last day, it stops counting after that day and is kept."
     }
 
     private func passages(_ text: String) -> String {
         let n = ProjectText.passages(text).count
         return n == 1 ? "1 passage" : "\(n) passages"
     }
-
-    private func pasted(_ iso: String) -> String {
-        guard let d = ISO8601DateFormatter().date(from: iso) else { return "earlier" }
-        return d.formatted(date: .abbreviated, time: .omitted)
-    }
 }
 
-/// A window to paste a project into, or to take one from a PDF or a text file. A new one has a title,
-/// suggested from the text when its first line reads as one; replacing a text leaves the title alone.
+/// A window to paste an interest into, or to take one from a PDF or a text file. A new one has a title,
+/// suggested from the text when its first line reads as one, and may have a last day; replacing a text
+/// leaves both alone.
 struct PasteProjectSheet: View {
     @Environment(\.dismiss) private var dismiss
     let replacing: Bool
-    let save: (String, String) -> Void
+    let save: (_ title: String, _ text: String, _ until: Date?) -> Void
     @State private var text = ""
     @State private var title = ""
     @State private var titleEdited = false
+    @State private var hasEnd = false
+    @State private var end = Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date()
     @State private var choosing = false
     @State private var problem: String?
 
@@ -1031,10 +1108,14 @@ struct PasteProjectSheet: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 10) {
                 if !replacing {
-                    TextField("Title (optional)", text: Binding(get: { title }, set: { title = $0; titleEdited = true }))
+                    TextField("Title (optional), e.g. Pain congress 2026", text: Binding(get: { title }, set: { title = $0; titleEdited = true }))
                         .textFieldStyle(.roundedBorder)
+                    Toggle("Until a date", isOn: $hasEnd)
+                    if hasEnd {
+                        DatePicker("Last day", selection: $end, in: Date()..., displayedComponents: .date)
+                    }
                 }
-                Text("Paste the description of your project: the aims and background of a grant proposal, a thesis plan or an abstract. The more of it that is about the subject, and the less about budgets and schedules, the better it works.")
+                Text("Paste anything that says what you are interested in now: the aims of a grant proposal, a thesis plan, an abstract, a paper you are writing, a conference programme. The more of it that is about the subject, and the less about budgets, schedules and rooms, the better it works.")
                     .font(.footnote).foregroundStyle(.secondary)
                 TextEditor(text: $text)
                     .font(.callout)
@@ -1053,12 +1134,12 @@ struct PasteProjectSheet: View {
                     .font(.footnote).foregroundStyle(problem != nil || !enough ? Color.red : Color.secondary)
             }
             .padding()
-            .navigationTitle(replacing ? "Replace the text" : "New project")
+            .navigationTitle(replacing ? "Replace the text" : "New interest")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(replacing ? "Replace" : "Add") { save(title, text); dismiss() }.disabled(!enough)
+                    Button(replacing ? "Replace" : "Add") { save(title, text, !replacing && hasEnd ? end : nil); dismiss() }.disabled(!enough)
                 }
             }
             .fileImporter(isPresented: $choosing, allowedContentTypes: [.pdf, .plainText, .text]) { result in
@@ -1113,7 +1194,7 @@ struct ProjectKeywordsSheet: View {
                 }
                 if loaded && counted.isEmpty && asked.isEmpty {
                     ContentUnavailableView("No repeated phrases", systemImage: "text.magnifyingglass",
-                                           description: Text("The project does not return to any phrase often enough to suggest it. Add keywords by hand under Follow and mute."))
+                                           description: Text("The text does not return to any phrase often enough to suggest it. Add keywords by hand under Follow and mute."))
                 }
                 let phrases = counted.filter { $0.words > 1 }
                 if !phrases.isEmpty {
@@ -1179,17 +1260,17 @@ struct ProjectKeywordsSheet: View {
                 Text("A language model can suggest better phrases than counting. This device has no Apple on-device model: set up an account of your own (Claude, ChatGPT or another model) under Summaries and AI in Tune to use one of those.")
                     .foregroundStyle(.secondary)
             }
-            if working { HStack { ProgressView(); Text("Reading your project…").foregroundStyle(.secondary) } }
+            if working { HStack { ProgressView(); Text("Reading the text…").foregroundStyle(.secondary) } }
             if let problem { Text(problem).font(.footnote).foregroundStyle(.red) }
         } header: {
             Text("Ask a language model")
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
                 if ProjectAI.onDeviceAvailable {
-                    Text("Apple's model runs on this device. It reads about \(ProjectText.wordCount(ProjectAI.excerpt(for: .onDevice, text: text))) words of your project and nothing is sent anywhere, not even to Apple.")
+                    Text("Apple's model runs on this device. It reads about \(ProjectText.wordCount(ProjectAI.excerpt(for: .onDevice, text: text))) words of the text and nothing is sent anywhere, not even to Apple.")
                 }
                 if let config = model.remoteSummary {
-                    Text((config.provider == .other ? "" : "\(config.provider.name) is run by \(config.receiver). ") + "Asking sends part of your project to \(config.provider == .other ? config.receiver : "them")\(config.key.isEmpty ? "" : ", with your key,") after showing you exactly what. Nothing is sent unless you ask, and you are asked each time.")
+                    Text((config.provider == .other ? "" : "\(config.provider.name) is run by \(config.receiver). ") + "Asking sends part of the text to \(config.provider == .other ? config.receiver : "them")\(config.key.isEmpty ? "" : ", with your key,") after showing you exactly what. Nothing is sent unless you ask, and you are asked each time.")
                 }
             }
         }
@@ -1248,8 +1329,8 @@ struct SendProjectSheet: View {
                     Label(local ? "This leaves the app" : "This leaves your device", systemImage: "exclamationmark.triangle.fill")
                         .font(.headline).foregroundStyle(.orange)
                     Text(local
-                         ? "Part of your project description will be sent to \(config.receiver), a model on this device or your own network, as you set it up. Check where that service sends it on, if the text is confidential."
-                         : "Part of your project description will be sent over the internet to \(config.receiver)\(config.provider == .other ? ", the service you set up," : " (\(config.provider.name)),") using your own account. \(config.receiver) processes it under the terms of that account; check them if the text is confidential.")
+                         ? "Part of the text will be sent to \(config.receiver), a model on this device or your own network, as you set it up. Check where that service sends it on, if the text is confidential."
+                         : "Part of the text will be sent over the internet to \(config.receiver)\(config.provider == .other ? ", the service you set up," : " (\(config.provider.name)),") using your own account. \(config.receiver) processes it under the terms of that account; check them if the text is confidential.")
                     Text("The developer of Scrollar receives nothing. Only the text below is sent, with the instructions that ask for keywords, and your key. Headings, tables, links and reference lists are left out, but names and anything else in these passages are not. Do not send text you may not share with a service like this, such as a confidential proposal or someone else's data.")
                         .foregroundStyle(.secondary)
                 }

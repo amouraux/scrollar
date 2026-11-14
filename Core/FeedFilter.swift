@@ -23,7 +23,7 @@ struct FeedFilter: Equatable {
         case .funder: return "Funders"
         case .followedTopic: return "Topics you follow"
         case .ownTopic: return "Topics from your papers"
-        case .project: return "Your projects"
+        case .project: return "Current interests"
         case .other: return "Other"
         }
     }

@@ -26,7 +26,7 @@ extension AppModel {
     }
 }
 
-/// What the feed learns from: who you are, and the project you are about to work on.
+/// Who you are: your publications, and those of anyone the feed also learns from.
 struct YouScreen: View {
     @Environment(AppModel.self) private var appModel
     @State private var suggesting = false
@@ -71,7 +71,6 @@ struct YouScreen: View {
                 Text(publicationsFooter)
             }
 
-            ProjectSection()
         }
         .navigationTitle("You")
         .sheet(isPresented: $suggesting) { SuggestionsView() }

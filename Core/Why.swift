@@ -54,7 +54,7 @@ struct Why: Equatable {
             case .funder: return "Funder you follow"
             case .followedTopic: return "Topic you follow"
             case .ownTopic: return "Topic from your own papers"
-            case .project: return "From your project"
+            case .project: return "Current interest"
             case .other: return "Other"
             }
         }

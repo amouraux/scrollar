@@ -2317,7 +2317,7 @@ let psSeed = Seed.project(phrase: "laser evoked potentials", name: "P")
 check(psSeed.query == .keyword("laser evoked potentials") && psSeed.filter(since: "2026-01-01") == Seed.keyword("laser evoked potentials").filter(since: "2026-01-01"), "project search: asked of the sources as the keyword it is")
 check(SourceRouting.targets(for: psSeed, openAlex: true, europePMC: true, arXiv: true, osf: true, hasOwnPMIDs: false) == SourceRouting.targets(for: psSeed.query, openAlex: true, europePMC: true, arXiv: true, osf: true, hasOwnPMIDs: false)
       && EuropePMCQuery.build(psSeed, since: "a", until: "b") == EuropePMCQuery.build(psSeed.query, since: "a", until: "b"), "project search: every source that answers a keyword answers it")
-check(Why.tag("Project: Pain grant", followed: false).kind == .project && Why.text(for: Why.tag("Project: Pain grant", followed: false)) == "From your project: Pain grant", "project search: the card says which project found it")
+check(Why.tag("Project: Pain grant", followed: false).kind == .project && Why.text(for: Why.tag("Project: Pain grant", followed: false)) == "Current interest: Pain grant", "project search: the card says which interest found it")
 check(ThumbBasis.facetKind(.project) == nil && FeedFilter.panelOrder.contains(.project), "project search: a thumb does not teach a keyword from it, and the panel lists it")
 check(!ok("pp") { $0.reasons = ["Project: Pain grant"] }.isPinned, "project search: what it finds is ranked, not kept in full")
 let psKeys = FeedBuilder.projectSearchKeys(FeedSettings(), projects: [psProject])
@@ -2325,6 +2325,22 @@ var psPrev = prev(); psPrev.projectSearch = psKeys
 check(Incremental.mode(previous: psPrev, settings: baseSettings, projectSearch: psKeys, now: tNow).isIncremental, "project search: the same phrases refresh only the newest days")
 check(Incremental.mode(previous: prev(), settings: baseSettings, projectSearch: psKeys, now: tNow) == .full(reason: "a project searches for something else"), "project search: a new phrase fetches the whole window")
 check(Incremental.mode(previous: psPrev, settings: baseSettings, now: tNow) == .full(reason: "a project searches for something else"), "project search: turning it off rebuilds, so its papers lose their reason")
+
+// MARK: current interests: ticked, dated, with a last day
+var ciConf = ProjectFile(name: "Congress", text: proposal, addedAt: "2026-11-01T09:00:00Z", until: "2026-11-20")
+check(ciConf.isInUse(today: "2026-11-14") && ciConf.isInUse(today: "2026-11-20"), "interests: counts up to and including its last day")
+check(!ciConf.isInUse(today: "2026-11-21") && ciConf.hasEnded(today: "2026-11-21") && ciConf.enabled, "interests: after its last day it stops counting, and is kept, still ticked")
+ciConf.enabled = false
+check(!ciConf.isInUse(today: "2026-11-14") && !ciConf.hasEnded(today: "2026-11-14"), "interests: unticked, it does not count, whatever its last day")
+check(ProjectFile(name: "n", text: "t", addedAt: "x").isInUse(today: "2099-01-01"), "interests: with no last day it counts until unticked")
+check((try! JSONDecoder().decode(ProjectFile.self, from: Data(#"{"id":"a","name":"n","text":"t","addedAt":"x","enabled":true}"#.utf8))).until == nil, "interests: one saved before a last day existed has none")
+let ciRound = try! JSONDecoder().decode(ProjectFile.self, from: JSONEncoder().encode(ProjectFile(name: "n", text: "t", addedAt: "x", until: "2026-12-01")))
+check(ciRound.until == "2026-12-01", "interests: the last day is kept")
+var ciUTC = Calendar(identifier: .gregorian); ciUTC.timeZone = TimeZone(identifier: "UTC")!
+var ciTokyo = Calendar(identifier: .gregorian); ciTokyo.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+let ciLate = Date(timeIntervalSince1970: 1_794_000_000)   // 2026-11-06 21:20 UTC, already the 7th in Tokyo
+check(ProjectFile.day(ciLate, calendar: ciUTC) == "2026-11-06" && ProjectFile.day(ciLate, calendar: ciTokyo) == "2026-11-07", "interests: a day is the user's own calendar day")
+check(ProjectFile.date(ofDay: "2026-11-20", calendar: ciUTC).map { ProjectFile.day($0, calendar: ciUTC) } == "2026-11-20" && ProjectFile.date(ofDay: "nonsense") == nil, "interests: a last day goes to a date picker and back unchanged")
 
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

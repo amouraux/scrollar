@@ -346,7 +346,7 @@ final class AppModel {
         // Going back asks for nothing from Zotero: the copy already held ranks what it fetches.
         let library = await zoteroTexts(allowNetwork: !older) + libraryFileTexts()
         let projectPassages = self.projectPassages
-        let projects = self.projects
+        let projects = self.projectsInUse
         let searchEntries = SearchLog.entries(searches, now: Date())
         // What this feed is built for, taken now: the user may change a follow
         // while it runs, and the result must not claim to match that.
@@ -832,6 +832,11 @@ final class AppModel {
         defer { resuming = false }
         await syncNow(rearrange: true)
         await fillFromProfileIfNeeded()
+        // An interest whose last day passed since the feed was built has stopped counting, and nothing else would say so.
+        if let built = updated {
+            let builtDay = ProjectFile.day(built), today = ProjectFile.day(Date())
+            if projects.contains(where: { $0.enabled && $0.hasEnded(today: today) && !$0.hasEnded(today: builtDay) }) { needsRefresh = true }
+        }
         await refreshIfStale()
     }
 
@@ -1025,8 +1030,8 @@ final class AppModel {
         case unreadable, noPapers, projectTooShort, tooManyProjects
         var errorDescription: String? {
             switch self {
-            case .tooManyProjects: return "That is the most projects there is room for (\(ProjectText.maxProjects)). Remove one to add another."
-            case .projectTooShort: return "That says too little to tell what the project is about. Paste at least a few sentences of it: the aims, the background or the abstract."
+            case .tooManyProjects: return "That is the most interests there is room for (\(ProjectText.maxProjects)). Delete one to add another."
+            case .projectTooShort: return "That says too little to tell what it is about. Paste at least a few sentences: the aims, an abstract, a programme."
             case .unreadable: return "That file could not be read."
             case .noPapers: return "No papers were found. Paste a RIS or BibTeX export, a list of references, or titles one per line (a bare DOI says nothing about the paper)."
             }
@@ -1082,7 +1087,13 @@ final class AppModel {
 
     /// The passages of the projects in use, thinned to share the budget: what stands for "my work" beside the
     /// user's papers and library.
-    var projectPassages: [String] { ProjectText.combinedPassages(projects.filter(\.enabled).map(\.text)) }
+    /// The interests that count today: ticked, and not past their last day.
+    var projectsInUse: [ProjectFile] {
+        let today = ProjectFile.day(Date())
+        return projects.filter { $0.isInUse(today: today) }
+    }
+
+    var projectPassages: [String] { ProjectText.combinedPassages(projectsInUse.map(\.text)) }
 
     /// A change to the projects changes what "close to my work" means, so the feed is ranked again
     /// (nothing is fetched again).
@@ -1099,15 +1110,16 @@ final class AppModel {
         return String(text.prefix(ProjectText.maxCharacters))
     }
 
-    /// Keep a project the user pasted, with the title they gave it (or one its text suggests, or "Project 2").
-    /// Throws if it says too little, or if there are too many. Returns its id.
+    /// Keep a text the user pasted, with the title they gave it (or one its text suggests, or "Interest 2") and,
+    /// if they gave one, its last day. Throws if it says too little, or if there are too many. Returns its id.
     @discardableResult
-    func addProject(title: String, text: String) throws -> String {
+    func addProject(title: String, text: String, until: Date? = nil) throws -> String {
         guard projects.count < ProjectText.maxProjects else { throw ImportProblem.tooManyProjects }
         let text = try checked(text)
         let given = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = !given.isEmpty ? given : (ProjectText.suggestedTitle(text) ?? "Project \(projects.count + 1)")
-        let file = ProjectFile(name: name, text: text, addedAt: ISO8601DateFormatter().string(from: Date()))
+        let name = !given.isEmpty ? given : (ProjectText.suggestedTitle(text) ?? "Interest \(projects.count + 1)")
+        let file = ProjectFile(name: name, text: text, addedAt: ISO8601DateFormatter().string(from: Date()),
+                               until: until.map { ProjectFile.day($0) })
         projects.append(file)
         projectsChanged()
         return file.id
@@ -1137,9 +1149,23 @@ final class AppModel {
         projectsChanged()
     }
 
+    /// Tick or untick. Ticking one whose last day has passed means using it again, so the last day goes; an
+    /// unticked one stays kept, to tick again later.
     func setProjectEnabled(_ enabled: Bool, id: String) {
-        guard let i = projects.firstIndex(where: { $0.id == id }), projects[i].enabled != enabled else { return }
+        guard let i = projects.firstIndex(where: { $0.id == id }) else { return }
+        let ended = projects[i].hasEnded(today: ProjectFile.day(Date()))
+        guard projects[i].enabled != enabled || (enabled && ended) else { return }
         projects[i].enabled = enabled
+        if enabled && ended { projects[i].until = nil }
+        projectsChanged()
+    }
+
+    /// Give it a last day, or take it away (nil).
+    func setProjectUntil(_ date: Date?, id: String) {
+        guard let i = projects.firstIndex(where: { $0.id == id }) else { return }
+        let day = date.map { ProjectFile.day($0) }
+        guard projects[i].until != day else { return }
+        projects[i].until = day
         projectsChanged()
     }
 

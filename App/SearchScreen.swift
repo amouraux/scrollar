@@ -181,7 +181,7 @@ struct SearchScreen: View {
                         .buttonStyle(.plain)
                     }
                     countQuestion(query)
-                    Text("\(outcome.papers.count) \(outcome.papers.count == 1 ? "paper" : "papers") from the last twelve months, ranked by your search first, then by what you keep, your library and projects, and the levels you set.")
+                    Text("\(outcome.papers.count) \(outcome.papers.count == 1 ? "paper" : "papers") from the last twelve months, ranked by your search first, then by what you keep, your library and current interests, and the levels you set.")
                         .font(.footnote).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.bottom, 4)

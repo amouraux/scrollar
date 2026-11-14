@@ -221,7 +221,7 @@ followed, to choose from; adding an iD or a person changes only the order.
 
 **What each part of Tune does to the feed.** Each screen says which of these it is. What is followed
 (Follow and mute, Levels, the thumbs) is *searched for* and kept in full. A project in use is searched for
-too, by its strongest phrases, and what they find is *ranked* with the rest (see Your project).
+too, by its strongest phrases, and what they find is *ranked* with the rest (see Current interests).
 Publications and a reference library (Zotero or an export) decide only the *order*; publications and
 projects can also *suggest* follows (Suggest what to follow, Suggest keywords from it). Either kind takes effect when the user goes back to the feed. Importing a newer
 export, pasting references or connecting Zotero asks for that refresh even when the setting that turns
@@ -549,7 +549,20 @@ and the newest are the newest. What was read (not the file) is kept in Applicati
 when each item first appeared cannot be fetched again; it is not synced (do it on each device). Adding
 by paste adds to what is held, a paper pasted twice is one, and the cap is 5,000 items.
 
-## Your project
+## Current interests (projects)
+
+**Current interests** is Tune's second row, right after You, because it says what the user is interested in *now*,
+which their publications cannot. It takes any text that says so: a grant proposal, a thesis plan, an abstract, a paper
+being written, a conference programme. On screen each is "an interest"; in the code and in `projects.json` it is still
+a project (`ProjectFile`), which is not worth a migration. Each is dated (Added …) and listed newest first, with a tick
+that turns it on or off straight from the list: unticked, it is kept and does nothing, to tick again later. It can
+also be given a last day (`ProjectFile.until`, yyyy-MM-dd in the user's own calendar, set when adding it or on its
+screen): after that day it stops counting and stays in the list as "ended", and ticking it again clears the last
+day. That is the conference case: paste the programme, until the last day of the meeting, and the feed leans that
+way for the week. What counts is `isInUse(today:)`, ticked and not past its last day; only those rank the feed
+(`AppModel.projectsInUse`) and search. An interest whose last day passed since the feed was built asks for a refresh on
+the next return to the app. Swipe or Delete for good removes one, after a confirmation that says it cannot be brought
+back and that unticking keeps it. There is room for 20.
 
 **A project selects papers, not only ranks them** (since 14 November 2026). Before, it only reordered what the
 follows had found, so a project on a subject nothing followed added nothing at all. Now each project in use searches
@@ -570,13 +583,12 @@ tracked papers and Cites your work. Publications (beyond Cites your work and the
 Also learn from, the reference library, the reading list and searches only rank: the first two suggest follows on
 request, and the library and reading list are what was already read, which says what is close but not what to look for.
 
-For someone with few papers yet (a PhD student, say), Tune, **Your project** takes the description of what
+For someone with few papers yet (a PhD student, say), Tune, **Current interests** takes the description of what
 they are about to work on: paste a grant proposal, a thesis plan or an abstract, or choose a PDF or a text file
-(`Core/Project.swift`, tested). It does two things, both on the device. **Ranking:** the text is cut into
+(`Core/Project.swift`, tested). Besides searching (below) it does two things, both on the device. **Ranking:** the text is cut into
 passages of a few sentences (line wraps and words split across a line end joined, headings, tables of numbers,
 links and reference lists left out, at most 40, spread over the whole text) and they join the profile texts like
-a library's items, so a paper close to the project ranks higher. There is no switch: the project is used while
-it is pasted, and **Remove it** stops it. **Keywords:** the phrases it keeps returning to are offered in a list
+a library's items, so a paper close to the project ranks higher, while it is in use. **Keywords:** the phrases it keeps returning to are offered in a list
 to choose from. It is plain counting, not a model: phrases of two or three words said more than once, with the
 words every proposal uses ("project", "work package", "year", "patients") never at an edge, a longer phrase
 dropped when it only extends one already offered, and single words (long, at least three times) offered
@@ -588,7 +600,7 @@ and the real proposals of anyone but the sample in the tests.
 
 ### Several projects, each with a title
 
-Tune, You, Your projects keeps up to ten projects, each with a title the user can change (suggested from the text when its first
+Tune, Current interests keeps up to twenty, each with a title the user can change (suggested from the text when its first
 line reads as a heading, else "Project 2"), a switch for whether it ranks the feed, its text (shown on request), Suggest keywords,
 and Replace the text, which discards the old text for the new and does not merge (the title and the keywords already followed stay).
 The passages of the projects in use share one budget of 40, each thinned to its share (`ProjectText.combinedPassages`), so a long
@@ -822,7 +834,7 @@ and how much there is to clear: **You** (ORCID iD, the people also learned from,
 built, as on a first launch, because `profileFilled` is reset too), **What your thumbs taught** (the events, how they fade and pull, how much kept
 and hidden papers count), **Reading list, For me and hidden papers**, **Ranking and what the feed shows** (sliders, kinds of paper, look-back,
 filters, order, highlights), **Sources** (which are on, not the OpenAlex key), **Reference managers** (not the Zotero key), **Recent searches**,
-**Your projects** and **What you have read**. The OpenAlex, Zotero and summary keys, and the link to the sync file, are never touched.
+**Current interests** and **What you have read**. The OpenAlex, Zotero and summary keys, and the link to the sync file, are never touched.
 
 A confirmation names what will go. What was there is kept in memory until the app closes, so **Undo the reset** (shown on the same screen) puts
 it back: the settings, the projects, the searches and the reading history. A backup is the only way back after that, and "Save a backup first…"
