@@ -21,6 +21,9 @@ struct PreviousFeed {
     var builtWith: FeedSettings
     /// Days held beyond the look-back, fetched when the reader scrolled to the end.
     var extraDays = 0
+    /// What the projects searched for (`FeedBuilder.projectSearchKeys`). Projects are not in the settings, which are
+    /// synced and exported and a project never is, so they are remembered beside them.
+    var projectSearch: [String] = []
 }
 
 enum Incremental {
@@ -58,7 +61,7 @@ enum Incremental {
         }
     }
 
-    static func mode(previous: PreviousFeed?, settings: FeedSettings, now: Date) -> Mode {
+    static func mode(previous: PreviousFeed?, settings: FeedSettings, projectSearch: [String] = [], now: Date) -> Mode {
         guard let p = previous else { return .full(reason: "first build") }
         // Different follows or mutes make the kept papers' reasons wrong. Feedback
         // and the ranking sliders are excluded: they reorder the kept set, they do
@@ -69,6 +72,8 @@ enum Incremental {
         if Set(Evidence.fetched(p.builtWith, now: now).map(\.key)) != Set(Evidence.fetched(settings, now: now).map(\.key)) {
             return .full(reason: "the thumbs changed what is searched for")
         }
+        // A phrase searched for the first time would otherwise be asked only for the last few days.
+        if p.projectSearch != projectSearch { return .full(reason: "a project searches for something else") }
         // Kept papers from before authors' institutions were recorded would show
         // no affiliation until the next scheduled rebuild.
         if !p.papers.isEmpty, p.papers.allSatisfy({ $0.firstInstitution == nil && $0.lastInstitution == nil }) {

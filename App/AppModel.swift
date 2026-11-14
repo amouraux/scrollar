@@ -151,6 +151,8 @@ final class AppModel {
     private var fullBuildAt: Date?
     /// Days held beyond the look-back, from scrolling to the end of the feed.
     private(set) var extraDays = 0
+    /// What the projects searched for when the feed held now was fetched.
+    private var builtProjectSearch: [String] = []
     /// The last attempt to go further back failed; the footer offers a retry instead of
     /// trying again by itself, which would loop on a broken connection.
     private(set) var olderFailed = false
@@ -215,6 +217,7 @@ final class AppModel {
             fetchedThrough = cached.fetchedThrough
             fullBuildAt = cached.fullBuildAt
             extraDays = cached.extraDays ?? 0
+            builtProjectSearch = cached.projectSearch ?? []
             // A follow added just before the app was closed must not wait six hours.
             if let built = cached.builtWith, built.forRanking != settings.forRanking { needsRefresh = true }
         }
@@ -343,6 +346,7 @@ final class AppModel {
         // Going back asks for nothing from Zotero: the copy already held ranks what it fetches.
         let library = await zoteroTexts(allowNetwork: !older) + libraryFileTexts()
         let projectPassages = self.projectPassages
+        let projects = self.projects
         let searchEntries = SearchLog.entries(searches, now: Date())
         // What this feed is built for, taken now: the user may change a follow
         // while it runs, and the result must not claim to match that.
@@ -358,7 +362,7 @@ final class AppModel {
                 // Apple's sentence model, else its contextual one (fetched once if need be), else none.
                 let cache = await TextEmbedders.best().map { CachingEmbedder($0, stored: cachedVectors) }
                 let engine = AppModel.engine(settings, openAlexKey: key, embedder: cache, log: report)
-                let result = try await engine.build(settings, previous: previous, older: older, library: library, project: projectPassages, searches: searchEntries)
+                let result = try await engine.build(settings, previous: previous, older: older, library: library, project: projectPassages, projects: projects, searches: searchEntries)
                 let used = result.profileTexts + (result.citedYou + result.forYou).map { Ranker.text($0.paper) }
                 return (result, cache?.snapshot(keeping: used))
             }.value
@@ -390,7 +394,8 @@ final class AppModel {
         guard let through = fetchedThrough, let full = fullBuildAt, let built = builtWith,
               !(citedYou.isEmpty && forYou.isEmpty) else { return nil }
         return PreviousFeed(papers: (citedYou + forYou).map(\.paper),
-                            fetchedThrough: through, fullBuildAt: full, builtWith: built, extraDays: extraDays)
+                            fetchedThrough: through, fullBuildAt: full, builtWith: built, extraDays: extraDays,
+                            projectSearch: builtProjectSearch)
     }
 
     private func apply(_ result: FeedResult, builtFor: FeedSettings) {
@@ -408,6 +413,7 @@ final class AppModel {
         // gap must be asked for again; a full build with a gap cannot be built on at all.
         builtWith = builtFor
         extraDays = result.extraDays
+        builtProjectSearch = result.projectSearch
         if case .older = result.mode {
             // Going back says nothing about how recent what is held is.
         } else if result.complete {
@@ -429,7 +435,7 @@ final class AppModel {
         store.saveFeed(CachedFeed(citedYou: citedYou, forYou: forYou, authorName: authorName,
                                   date: Date(), usedEmbeddings: result.usedEmbeddings, embedderID: result.embedderID,
                                   builtWith: builtFor, fetchedThrough: fetchedThrough, fullBuildAt: fullBuildAt,
-                                  extraDays: extraDays))
+                                  extraDays: extraDays, projectSearch: builtProjectSearch))
     }
 
     /// Keep a refresh aside and count what is new in it, without touching the screen.
@@ -1121,7 +1127,14 @@ final class AppModel {
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let i = projects.firstIndex(where: { $0.id == id }), !name.isEmpty, projects[i].name != name else { return }
         projects[i].name = name
-        store.saveProjects(projects)
+        // The name is on every card its phrases found.
+        if projects[i].enabled && projects[i].searches { projectsChanged() } else { store.saveProjects(projects) }
+    }
+
+    func setProjectSearches(_ searches: Bool, id: String) {
+        guard let i = projects.firstIndex(where: { $0.id == id }), projects[i].searches != searches else { return }
+        projects[i].searches = searches
+        projectsChanged()
     }
 
     func setProjectEnabled(_ enabled: Bool, id: String) {

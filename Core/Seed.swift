@@ -18,6 +18,16 @@ enum Seed: Hashable {
     /// New papers that cite any of these works (at most 100: an OpenAlex limit).
     /// `label` is what the card says: "Cites your work", or the tracked paper's title.
     case cites(workIDs: [String], label: String)
+    /// A phrase a project the user pasted keeps returning to, searched while the project is in use. Asked for as a
+    /// keyword, but not one the user follows: what it finds is ranked with everything else, not kept in full, and the
+    /// card names the project.
+    case project(phrase: String, name: String)
+
+    /// What the sources are asked: a project's phrase is asked as the keyword it is.
+    var query: Seed {
+        if case .project(let phrase, _) = self { return .keyword(phrase) }
+        return self
+    }
 
     /// Shown on the card, so the user can see which seed caused it and remove it.
     var reason: String {
@@ -30,6 +40,7 @@ enum Seed: Hashable {
         case .keyword(let k, let also): return "Keyword: " + ([k] + also).joined(separator: " + ")
         case .mesh(let name): return "Topic: \(name)"
         case .cites(_, let label): return label
+        case .project(_, let name): return "Project: \(name)"
         }
     }
 
@@ -59,6 +70,7 @@ enum Seed: Hashable {
                 : ([k] + also).map { "\"\(clean($0))\"" }.joined(separator: " AND "))
         case .mesh(let name): base = "title_and_abstract.search:" + name.replacingOccurrences(of: ",", with: " ")
         case .cites(let ids, _): base = "cites:" + ids.prefix(100).joined(separator: "|")
+        case .project: return query.filter(since: since, until: until)
         }
         return "\(base),from_publication_date:\(since)" + (until.map { ",to_publication_date:\($0)" } ?? "")
     }

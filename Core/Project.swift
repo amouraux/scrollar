@@ -1,9 +1,10 @@
 import Foundation
 
-// A research project in the user's own words: a grant proposal, a thesis plan, an abstract. It is
-// read on the device and never sent anywhere. It does two things: its passages stand for what the
-// user is into, as a library does, and the phrases it keeps coming back to are offered as keywords
-// to follow. Pure and tested; the screens are in SettingsView.swift.
+// A research project in the user's own words: a grant proposal, a thesis plan, an abstract. The text is
+// read on the device and never sent anywhere. It does three things: its passages stand for what the
+// user is into, as a library does; its strongest phrases are searched for, so it brings in papers and
+// not only orders them (the phrases go to the sources, the text does not); and the phrases it keeps
+// coming back to are offered as keywords to follow. Pure and tested; the screens are in SettingsView.swift.
 
 /// A project the user pasted, with a title they can change. Device-local like the library file: a proposal
 /// is the user's, and may be confidential. Several can be kept, each used for ranking or not.
@@ -16,16 +17,20 @@ struct ProjectFile: Codable, Equatable, Identifiable {
     var addedAt: String
     /// Whether its passages count toward which papers are close to the user's work.
     var enabled: Bool
+    /// Whether, while it is in use, its strongest phrases are searched for. On unless turned off: a project is
+    /// pasted to find what is about to matter, and ranking alone only reorders what something else found.
+    var searches: Bool
 
-    init(id: String = UUID().uuidString, name: String, text: String, addedAt: String, enabled: Bool = true) {
+    init(id: String = UUID().uuidString, name: String, text: String, addedAt: String, enabled: Bool = true, searches: Bool = true) {
         self.id = id
         self.name = name
         self.text = text
         self.addedAt = addedAt
         self.enabled = enabled
+        self.searches = searches
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, text, addedAt, enabled }
+    enum CodingKeys: String, CodingKey { case id, name, text, addedAt, enabled, searches }
 
     /// Tolerant like every stored type.
     init(from decoder: Decoder) throws {
@@ -35,7 +40,18 @@ struct ProjectFile: Codable, Equatable, Identifiable {
         addedAt = (try? c.decodeIfPresent(String.self, forKey: .addedAt)) ?? ""
         id = (try? c.decodeIfPresent(String.self, forKey: .id)) ?? UUID().uuidString
         enabled = (try? c.decodeIfPresent(Bool.self, forKey: .enabled)) ?? true
+        searches = (try? c.decodeIfPresent(Bool.self, forKey: .searches)) ?? true
     }
+
+    /// The phrases searched for while it is in use: those its keyword suggestions tick (several words, said more than
+    /// once), the strongest few. A single word is never searched alone: it would list far too much.
+    var searchPhrases: [String] {
+        guard enabled && searches else { return [] }
+        return Array(ProjectText.keywords(text).filter(\.selected).prefix(ProjectFile.searchLimit).map(\.phrase))
+    }
+
+    /// Each phrase is a request to every source at each refresh, so a project asks for only a few.
+    static let searchLimit = 3
 
     /// The projects in a stored file: a list, or the single project an earlier version kept, whose name was
     /// the first words of its text and is replaced by a title the text suggests.

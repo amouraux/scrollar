@@ -74,7 +74,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Your feed")
                 } footer: {
-                    Text("What you follow decides what is searched for. Your publications, projects and reference library decide only the order: they can suggest what to follow, but nothing is followed until you add it. Changes take effect when you go back to the feed.")
+                    Text("What you follow is searched for and kept in full. A project in use is searched for too, by its strongest phrases, and ranked with the rest. Your publications and reference library decide only the order, and can suggest what to follow. Changes take effect when you go back to the feed.")
                 }
                 Section("Connections and data") {
                     row(.references, status: referencesStatus)
@@ -521,8 +521,11 @@ struct SeedPreviewView: View {
     }
     @State private var load = Load.loading
 
-    /// A topic, an institution or a funder is ranked with the rest, not listed in full.
-    private var isBroad: Bool { Paper.broadReasonPrefixes.contains { seed.reason.hasPrefix($0) } }
+    /// A topic, an institution, a funder or a project's phrase is ranked with the rest, not listed in full.
+    private var isBroad: Bool {
+        if case .project = seed { return true }
+        return Paper.broadReasonPrefixes.contains { seed.reason.hasPrefix($0) }
+    }
 
     var body: some View {
         List {
@@ -563,6 +566,9 @@ struct SeedPreviewView: View {
         let days = model.settings.daysBack
         if p.matched == 0 { return "Nothing in the last \(days) days." }
         let count = "\(p.matched)\(p.mayHaveMore ? " or more" : "") \(p.matched == 1 ? "paper" : "papers")"
+        if case .project = seed {
+            return "\(count) in the last \(days) days. Searched for your project, they are ranked with everything else: those closest to your work reach your feed."
+        }
         return isBroad
             ? "\(count) in the last \(days) days. It is broad, so they are ranked with everything else and the best reach your feed, with a small bonus."
             : "\(count) in the last \(days) days, all of which would be in your feed, however low they score."
@@ -882,7 +888,7 @@ struct ProjectSection: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(project.name)
-                        Text("\(ProjectText.wordCount(project.text)) words · \(project.enabled ? "ranks the feed" : "not in use")")
+                        Text("\(ProjectText.wordCount(project.text)) words · \(!project.enabled ? "not in use" : project.searchPhrases.isEmpty ? "ranks the feed" : "ranks and searches")")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -893,7 +899,7 @@ struct ProjectSection: View {
         } header: {
             Text("Your projects")
         } footer: {
-            Text("Paste a grant proposal, a thesis plan or an abstract: what you are about to work on, before there are papers to show it. A project changes only the order: papers close to it rank higher, and nothing is searched for because of it. To search for what it is about, open it, choose Suggest keywords from it, and follow the ones you want. A project is read on this device and kept only here: it is not synced and not in the settings file you can export. It is sent to no service unless you ask a model you set up (Claude, ChatGPT or another), with your own account, to suggest keywords, and then only after a warning that shows exactly what goes. Apple's on-device model, where the device has one, reads it without sending anything.")
+            Text("Paste a grant proposal, a thesis plan or an abstract: what you are about to work on, before there are papers to show it. Papers close to a project in use rank higher, and its strongest phrases are searched for (open it to see them, or to turn that off), so it brings in papers too. To keep everything a phrase finds, follow it as a keyword: open the project and choose Suggest keywords from it. A project is read on this device and kept only here: it is not synced and not in the settings file you can export. Its text is sent to no service (only its few search phrases go to the sources) unless you ask a model you set up (Claude, ChatGPT or another), with your own account, to suggest keywords, and then only after a warning that shows exactly what goes. Apple's on-device model, where the device has one, reads it without sending anything.")
         }
         .sheet(isPresented: $adding) {
             PasteProjectSheet(replacing: false) { title, text in
@@ -928,10 +934,32 @@ struct ProjectScreen: View {
                 Section {
                     TextField("Title", text: $title)
                         .onSubmit { model.renameProject(id: id, to: title) }
-                    Toggle("Use it to rank the feed", isOn: Binding(
+                    Toggle("Use it for the feed", isOn: Binding(
                         get: { project.enabled }, set: { model.setProjectEnabled($0, id: id) }))
+                    if project.enabled {
+                        Toggle("Search for its phrases", isOn: Binding(
+                            get: { project.searches }, set: { model.setProjectSearches($0, id: id) }))
+                    }
                 } footer: {
-                    Text("Papers close to a project that is in use rank higher. The text decides how close a paper is; it does not fetch anything. Following keywords from it, with Suggest keywords from it below, is what makes it search.")
+                    Text(project.enabled
+                         ? "Papers close to the project rank higher. With Search for its phrases on, its strongest phrases are also searched for, so it brings in papers and not only orders them."
+                         : "Not in use: it neither ranks nor searches.")
+                }
+
+                if !project.searchPhrases.isEmpty {
+                    Section {
+                        ForEach(project.searchPhrases, id: \.self) { phrase in
+                            NavigationLink { SeedPreviewView(title: phrase, seed: .project(phrase: phrase, name: project.name)) } label: { Text(phrase) }
+                        }
+                    } header: {
+                        Text("Searched for")
+                    } footer: {
+                        Text("The phrases it returns to most, at most \(ProjectFile.searchLimit). They go to the sources as searches, as a keyword you follow does; the text itself never leaves this device. What they find is ranked with everything else and not kept in full, and the card says \"From your project\". A phrase you already follow, or muted, is not searched again. To keep everything a phrase finds, follow it as a keyword. Tap one to see the papers it finds.")
+                    }
+                } else if project.enabled && project.searches {
+                    Section("Searched for") {
+                        Text("Nothing: the text does not return to a phrase of several words often enough. It still ranks the feed.").foregroundStyle(.secondary)
+                    }
                 }
 
                 Section {
@@ -944,7 +972,7 @@ struct ProjectScreen: View {
                     Button("Replace the text…") { replacing = true }
                     if let message { Text(message).font(.footnote).foregroundStyle(.red) }
                 } footer: {
-                    Text("Replacing the text discards the old text for the new, and does not merge them. The title, and any keywords you already follow, stay.")
+                    Text("Suggest keywords from it offers more phrases, to follow as keywords: a keyword you follow is kept in full, wherever it ranks. Replacing the text discards the old text for the new, and does not merge them. The title, and any keywords you already follow, stay.")
                 }
 
                 Section {

@@ -14,7 +14,7 @@ enum FeedBuilder {
     /// "close to my work" means and can suggest follows (see Profile.swift), and `myWorkIDs`
     /// gives the one seed that is not a follow, "cites my work", which only counts when
     /// `useMyPublications` is on.
-    static func seeds(_ s: FeedSettings, myWorkIDs: [String], now: Date = Date()) -> [PlannedSeed] {
+    static func seeds(_ s: FeedSettings, myWorkIDs: [String], projects: [ProjectFile] = [], now: Date = Date()) -> [PlannedSeed] {
         var planned: [PlannedSeed] = []
         func add(_ seed: Seed, explicit: Bool) {
             // If a followed topic is also one of the user's own, the explicit one wins.
@@ -82,7 +82,35 @@ enum FeedBuilder {
             if let seed = seed(for: entry.ref) { add(seed, explicit: false) }
         }
         for p in s.trackedPapers { add(.cites(workIDs: [p.id], label: "Cites: \(p.name)"), explicit: true) }
+        for seed in projectSeeds(s, projects: projects) { add(seed, explicit: false) }
         return planned
+    }
+
+    /// What the projects in use search for. Not a phrase already followed as a keyword (that search runs anyway, and
+    /// keeps everything), one the user muted or set to Hide or Lower, or one an earlier project already searches for.
+    static func projectSeeds(_ s: FeedSettings, projects: [ProjectFile]) -> [Seed] {
+        let followed = Set(s.followedKeywords.map { $0.phrase.lowercased() })
+        let muted = s.mutedKeywords.map { $0.lowercased() }.filter { !$0.isEmpty }
+        var taken = Set<String>()
+        var out: [Seed] = []
+        for project in projects {
+            for phrase in project.searchPhrases {
+                let low = phrase.lowercased()
+                if followed.contains(low) || muted.contains(where: low.contains) { continue }
+                if let level = s.override(.keyword(phrase)), level < .normal { continue }
+                if !taken.insert(low).inserted { continue }
+                out.append(.project(phrase: phrase, name: project.name))
+            }
+        }
+        return out
+    }
+
+    /// The projects' searches as plain text, for telling whether they changed since the papers held were fetched.
+    static func projectSearchKeys(_ s: FeedSettings, projects: [ProjectFile]) -> [String] {
+        projectSeeds(s, projects: projects).map { seed in
+            guard case .project(let phrase, let name) = seed else { return "" }
+            return phrase.lowercased() + "\u{1F}" + name
+        }.sorted()
     }
 
     /// The texts that stand for the user's interests: see `profile`, which also says how much each counts.

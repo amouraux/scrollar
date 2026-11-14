@@ -44,6 +44,8 @@ struct FeedResult {
     var newPapers: Int
     /// Days held beyond the look-back (see `Incremental.olderStep`).
     var extraDays = 0
+    /// What the projects searched for, to keep with the feed (see `PreviousFeed.projectSearch`).
+    var projectSearch: [String] = []
 }
 
 /// The network half: settings in, a ranked feed out. The app and the command
@@ -68,7 +70,9 @@ struct FeedEngine {
     /// refreshing the recent ones. `library` is the user's reference library already turned to text
     /// (see `Zotero.profileTexts`); the engine does not fetch it, so it stays out of the command line.
     func build(_ settings: FeedSettings, previous: PreviousFeed? = nil, today: Date = Date(), older: Bool = false,
-                library: [String] = [], project: [String] = [], searches: [ProfileEntry] = []) async throws -> FeedResult {
+                library: [String] = [], project: [String] = [], projects: [ProjectFile] = [],
+                searches: [ProfileEntry] = []) async throws -> FeedResult {
+        let projectSearch = FeedBuilder.projectSearchKeys(settings, projects: projects)
         guard hasSource else { throw EngineError.noSource }
         // What is held reaches back past the look-back when the reader has scrolled to the end.
         let heldExtra = previous?.extraDays ?? 0
@@ -83,7 +87,7 @@ struct FeedEngine {
             untilOverride = range.until
             extraDays = range.extraDays
         } else {
-            mode = Incremental.mode(previous: previous, settings: settings, now: today)
+            mode = Incremental.mode(previous: previous, settings: settings, projectSearch: projectSearch, now: today)
             extraDays = mode.isIncremental ? heldExtra : 0
         }
         let since: String
@@ -137,7 +141,7 @@ struct FeedEngine {
 
         // 2. One query per seed. A seed that fails (an id that no longer exists) is
         //    reported and skipped; it must not take the rest of the feed with it.
-        let planned = FeedBuilder.seeds(settings, myWorkIDs: own.map(\.id))
+        let planned = FeedBuilder.seeds(settings, myWorkIDs: own.map(\.id), projects: projects)
         guard !planned.isEmpty else { throw EngineError.nothingToFollow }
 
         var found: [Paper] = []
@@ -244,7 +248,8 @@ struct FeedEngine {
                           fetchedAt: today,
                           newPapers: ranked.filter { !before.contains($0.paper.dedupeKey) }.count,
                           // A seed that failed leaves a gap in what was just fetched: ask for it again.
-                          extraDays: older && !complete ? heldExtra : extraDays)
+                          extraDays: older && !complete ? heldExtra : extraDays,
+                          projectSearch: projectSearch)
     }
 
     /// What a search for `phrase` finds in the last `days` days, from every source that is on, ranked by the
@@ -320,12 +325,16 @@ struct FeedEngine {
     /// One source's answer to one seed: the feed, a search and a preview all ask through here, so they cannot ask
     /// differently. nil when the source is off or cannot put the seed as a query. OpenAlex says itself why each paper
     /// was found; the other sources' papers are given the seed's reason.
-    private func fetch(_ seed: Seed, from target: SourceKind, _ ask: SourceAsk) async throws -> [Paper]? {
+    private func fetch(_ wanted: Seed, from target: SourceKind, _ ask: SourceAsk) async throws -> [Paper]? {
+        // A project's phrase is asked as a keyword, and its papers then say which project found them.
+        let seed = wanted.query
         var list: [Paper]
         switch target {
         case .openAlex:
             guard let openAlex else { return nil }
-            return try await openAlex.papers(for: seed, since: ask.since, until: ask.openAlexUntil, perPage: ask.openAlexPerPage, maxPages: ask.pages)
+            list = try await openAlex.papers(for: seed, since: ask.since, until: ask.openAlexUntil, perPage: ask.openAlexPerPage, maxPages: ask.pages)
+            if seed != wanted { for i in list.indices { list[i].reasons = [wanted.reason] } }
+            return list
         case .europePMC:
             guard let europePMC, let query = EuropePMCQuery.build(seed, since: ask.since, until: ask.until, ownPMIDs: ask.ownPMIDs) else { return nil }
             list = try await europePMC.papers(query: query, maxPages: ask.pages)
@@ -340,7 +349,7 @@ struct FeedEngine {
             guard let osf else { return nil }
             list = try await osf.papers(seed: seed, since: ask.since, until: ask.until, maxPages: ask.otherPages)
         }
-        for i in list.indices { list[i].reasons = [seed.reason] }
+        for i in list.indices { list[i].reasons = [wanted.reason] }
         return list
     }
 

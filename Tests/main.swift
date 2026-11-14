@@ -2294,5 +2294,37 @@ var pruneMerged = pruneDoc.merged(with: pruneOther)
 pruneMerged.forgetOldRemovals(now: pruneNow)
 check(pruneMerged == pruneDoc, "sync: merging with a device that still holds an old removal changes nothing")
 
+// MARK: a project searches, not only ranks
+let psProject = ProjectFile(name: "Pain grant", text: proposal, addedAt: "2026-11-09T10:00:00.000Z")
+let psTicked = ProjectText.keywords(proposal).filter(\.selected).map(\.phrase)
+check(!psTicked.isEmpty && psProject.searchPhrases == Array(psTicked.prefix(ProjectFile.searchLimit)), "project search: the strongest ticked phrases, at most three")
+check(psProject.searchPhrases.allSatisfy { $0.contains(" ") }, "project search: never a single word")
+var psOff = psProject; psOff.searches = false
+var psUnused = psProject; psUnused.enabled = false
+check(psOff.searchPhrases.isEmpty && psUnused.searchPhrases.isEmpty, "project search: nothing when it is turned off, or the project is not in use")
+check((try! JSONDecoder().decode(ProjectFile.self, from: Data(#"{"id":"a","name":"n","text":"t","addedAt":"x","enabled":true}"#.utf8))).searches, "project search: a project saved before it existed searches")
+let psSeeds = FeedBuilder.seeds(FeedSettings(), myWorkIDs: [], projects: [psProject])
+check(psSeeds.count == psProject.searchPhrases.count && psSeeds.allSatisfy { !$0.explicit } && psSeeds.allSatisfy { $0.seed.reason == "Project: Pain grant" }, "project search: each phrase is a seed, not a follow, and names the project")
+var psFollowing = FeedSettings(); psFollowing.followedKeywords = [KeywordRule(phrase: psProject.searchPhrases[0].uppercased())]
+check(!FeedBuilder.projectSeeds(psFollowing, projects: [psProject]).contains(.project(phrase: psProject.searchPhrases[0], name: "Pain grant")), "project search: a phrase already followed is not asked for twice")
+var psMuted = FeedSettings(); psMuted.mutedKeywords = [psProject.searchPhrases[0]]
+check(FeedBuilder.projectSeeds(psMuted, projects: [psProject]).count == psProject.searchPhrases.filter { !$0.lowercased().contains(psProject.searchPhrases[0].lowercased()) }.count, "project search: a phrase holding a muted word is not searched")
+var psLowered = FeedSettings(); psLowered.setLevel(.lower, for: .keyword(psProject.searchPhrases[0]))
+check(FeedBuilder.projectSeeds(psLowered, projects: [psProject]).count == psProject.searchPhrases.count - 1, "project search: a phrase set to Lower is not searched")
+var psTwin = psProject; psTwin.id = "twin"; psTwin.name = "Same text"
+check(FeedBuilder.projectSeeds(FeedSettings(), projects: [psProject, psTwin]).count == psProject.searchPhrases.count, "project search: two projects asking for one phrase ask once")
+let psSeed = Seed.project(phrase: "laser evoked potentials", name: "P")
+check(psSeed.query == .keyword("laser evoked potentials") && psSeed.filter(since: "2026-01-01") == Seed.keyword("laser evoked potentials").filter(since: "2026-01-01"), "project search: asked of the sources as the keyword it is")
+check(SourceRouting.targets(for: psSeed, openAlex: true, europePMC: true, arXiv: true, osf: true, hasOwnPMIDs: false) == SourceRouting.targets(for: psSeed.query, openAlex: true, europePMC: true, arXiv: true, osf: true, hasOwnPMIDs: false)
+      && EuropePMCQuery.build(psSeed, since: "a", until: "b") == EuropePMCQuery.build(psSeed.query, since: "a", until: "b"), "project search: every source that answers a keyword answers it")
+check(Why.tag("Project: Pain grant", followed: false).kind == .project && Why.text(for: Why.tag("Project: Pain grant", followed: false)) == "From your project: Pain grant", "project search: the card says which project found it")
+check(ThumbBasis.facetKind(.project) == nil && FeedFilter.panelOrder.contains(.project), "project search: a thumb does not teach a keyword from it, and the panel lists it")
+check(!ok("pp") { $0.reasons = ["Project: Pain grant"] }.isPinned, "project search: what it finds is ranked, not kept in full")
+let psKeys = FeedBuilder.projectSearchKeys(FeedSettings(), projects: [psProject])
+var psPrev = prev(); psPrev.projectSearch = psKeys
+check(Incremental.mode(previous: psPrev, settings: baseSettings, projectSearch: psKeys, now: tNow).isIncremental, "project search: the same phrases refresh only the newest days")
+check(Incremental.mode(previous: prev(), settings: baseSettings, projectSearch: psKeys, now: tNow) == .full(reason: "a project searches for something else"), "project search: a new phrase fetches the whole window")
+check(Incremental.mode(previous: psPrev, settings: baseSettings, now: tNow) == .full(reason: "a project searches for something else"), "project search: turning it off rebuilds, so its papers lose their reason")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

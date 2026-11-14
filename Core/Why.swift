@@ -38,7 +38,7 @@ struct Why: Equatable {
     /// The kinds of reason, in the order the user's own choices outrank one another. The raw value
     /// is the rank, so sorting by it puts the most specific first.
     enum Kind: Int, CaseIterable, Comparable {
-        case citesYou, citesTracked, author, keyword, journal, institution, funder, followedTopic, ownTopic, other
+        case citesYou, citesTracked, author, keyword, journal, institution, funder, followedTopic, ownTopic, project, other
 
         static func < (a: Kind, b: Kind) -> Bool { a.rawValue < b.rawValue }
 
@@ -54,6 +54,7 @@ struct Why: Equatable {
             case .funder: return "Funder you follow"
             case .followedTopic: return "Topic you follow"
             case .ownTopic: return "Topic from your own papers"
+            case .project: return "From your project"
             case .other: return "Other"
             }
         }
@@ -68,6 +69,7 @@ struct Why: Equatable {
             case .funder: return "banknote"
             case .followedTopic: return "tag"
             case .ownTopic: return "person.text.rectangle"
+            case .project: return "doc.text"
             case .other: return fallbackSymbol
             }
         }
@@ -100,6 +102,7 @@ struct Why: Equatable {
         if let name = after("Journal: ") { return Tag(kind: .journal, detail: name) }
         if let name = after("Institution: ") { return Tag(kind: .institution, detail: name) }
         if let name = after("Funder: ") { return Tag(kind: .funder, detail: name) }
+        if let name = after("Project: ") { return Tag(kind: .project, detail: name) }
         if let name = after("Topic: ") {
             // A followed topic and one inferred from the user's own papers read alike
             // in the reasons; the paper's `followed` flag says which.

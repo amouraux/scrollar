@@ -23,6 +23,7 @@ struct FeedFilter: Equatable {
         case .funder: return "Funders"
         case .followedTopic: return "Topics you follow"
         case .ownTopic: return "Topics from your papers"
+        case .project: return "Your projects"
         case .other: return "Other"
         }
     }
@@ -52,7 +53,7 @@ struct FeedFilter: Equatable {
     /// The order the panel lists the kinds in: what a person catches up on first (the subjects), then who and where,
     /// then the rest. Kept apart from `Why.Kind`'s own order, which the posts and the reasons use.
     static let panelOrder: [Why.Kind] = [
-        .followedTopic, .ownTopic, .keyword, .author, .journal, .citesYou, .citesTracked, .institution, .funder, .other,
+        .followedTopic, .ownTopic, .keyword, .project, .author, .journal, .citesYou, .citesTracked, .institution, .funder, .other,
     ]
 
     /// Every kind present, each followed by its names (the commonest first), in `panelOrder`. A

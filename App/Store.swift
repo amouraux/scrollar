@@ -61,6 +61,8 @@ struct CachedFeed: Codable {
     var fullBuildAt: Date?
     /// Days held beyond the look-back.
     var extraDays: Int?
+    /// What the projects searched for. Optional: a cache from before projects searched.
+    var projectSearch: [String]?
 }
 
 /// Files in the app's own container. Settings are kept; the feed and the

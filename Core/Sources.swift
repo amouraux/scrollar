@@ -42,7 +42,7 @@ enum SourceRouting {
         func offerArxiv(_ ok: Bool) { if arXiv && ok { out.append(.arXiv) } }
         func offerOsf(_ ok: Bool) { if osf && ok { out.append(.osf) } }
         switch seed {
-        case .keyword:
+        case .keyword, .project:
             if openAlex { out.append(.openAlex) }
             offerEurope(true)
             offerCrossref(true)
@@ -86,6 +86,7 @@ enum EuropePMCQuery {
         case .institution(let id, let n): base = "AFF:\(q(name(id, n)))"
         case .funder(let id, let n): base = "GRANT_AGENCY:\(q(name(id, n)))"
         case .topic: return nil
+        case .project: return build(seed.query, since: since, until: until)
         case .cites:
             guard !ownPMIDs.isEmpty else { return nil }
             base = "(" + ownPMIDs.prefix(40).map { "CITES:\($0)_MED" }.joined(separator: " OR ") + ")"

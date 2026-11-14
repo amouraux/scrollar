@@ -219,11 +219,11 @@ nothing the user removes comes back); a notice says so, and the You screen says 
 happen. After that "Suggest what to follow…", under You and under Also learn from, shows what is not yet
 followed, to choose from; adding an iD or a person changes only the order.
 
-**What each part of Tune does to the feed.** Every input is one of two kinds, and each screen says which.
-What is followed (Follow and mute, Levels, the thumbs) decides what is *searched for*. Publications,
-projects and a reference library (Zotero or an export) decide only the *order*: they never search or
-follow anything, but publications and projects can *suggest* follows (Suggest what to follow, Suggest
-keywords from it). Either kind takes effect when the user goes back to the feed. Importing a newer
+**What each part of Tune does to the feed.** Each screen says which of these it is. What is followed
+(Follow and mute, Levels, the thumbs) is *searched for* and kept in full. A project in use is searched for
+too, by its strongest phrases, and what they find is *ranked* with the rest (see Your project).
+Publications and a reference library (Zotero or an export) decide only the *order*; publications and
+projects can also *suggest* follows (Suggest what to follow, Suggest keywords from it). Either kind takes effect when the user goes back to the feed. Importing a newer
 export, pasting references or connecting Zotero asks for that refresh even when the setting that turns
 the library on was already on. Without OpenAlex the same works from the Europe PMC records that carry the
 iD (MeSH headings as topics, journals and co-authors by name; no keywords, institutions or funders). `./run.sh <orcid> --suggest [--also <orcid>]` prints the suggestions.
@@ -551,6 +551,25 @@ by paste adds to what is held, a paper pasted twice is one, and the cap is 5,000
 
 ## Your project
 
+**A project selects papers, not only ranks them** (since 14 November 2026). Before, it only reordered what the
+follows had found, so a project on a subject nothing followed added nothing at all. Now each project in use searches
+for its strongest phrases: the ones its keyword suggestions tick (several words, said more than once), at most three
+(`ProjectFile.searchPhrases`, `searchLimit`). Each becomes a `Seed.project(phrase:name:)`, asked of every source
+exactly as the keyword it is (`Seed.query`), but not a follow: what it finds is ranked with everything else and not kept
+in full, gets no follow bonus, and the card says "From your project: name" (`Why.Kind.project`; a thumb on it teaches
+no keyword). A phrase already followed as a keyword, muted, set to Hide or Lower, or searched for by an earlier project
+is skipped (`FeedBuilder.projectSeeds`). Projects are not in the settings, so what they searched for is kept with the
+feed (`PreviousFeed.projectSearch`, `CachedFeed.projectSearch`), and a change to it, renaming a searching project
+included (the name is on its cards), is a full build. The project screen lists the phrases, each with a preview,
+and has a switch, Search for its phrases (`ProjectFile.searches`, on by default and for projects saved before it),
+because the phrases, unlike the text, go to the sources. To keep everything a phrase finds, the user follows it as a
+keyword, as before.
+
+What else selects, for the record: follows, Levels at Higher or Maximum, thumbs that add up past the fetch threshold,
+tracked papers and Cites your work. Publications (beyond Cites your work and the one-time fill of empty follow lists),
+Also learn from, the reference library, the reading list and searches only rank: the first two suggest follows on
+request, and the library and reading list are what was already read, which says what is close but not what to look for.
+
 For someone with few papers yet (a PhD student, say), Tune, **Your project** takes the description of what
 they are about to work on: paste a grant proposal, a thesis plan or an abstract, or choose a PDF or a text file
 (`Core/Project.swift`, tested). It does two things, both on the device. **Ranking:** the text is cut into
@@ -561,9 +580,8 @@ it is pasted, and **Remove it** stops it. **Keywords:** the phrases it keeps ret
 to choose from. It is plain counting, not a model: phrases of two or three words said more than once, with the
 words every proposal uses ("project", "work package", "year", "patients") never at an edge, a longer phrase
 dropped when it only extends one already offered, and single words (long, at least three times) offered
-unticked, because a keyword listed alone is listed in full. Nothing is searched before the choice: the text and
-the phrases offered stay on the device, and a keyword is searched only once it is followed, like any other. The
-project is kept in `project.json` in Application Support, is not synced and is not in an exported settings
+unticked, because a keyword listed alone is listed in full. **Searching:** see below; the text itself never
+leaves the device. The project is kept in `project.json` in Application Support, is not synced and is not in an exported settings
 file, because a proposal may be confidential. Replacing or removing it re-ranks the feed without fetching.
 Not tried: a proposal in another language than English (the stop words and the sentence model are English),
 and the real proposals of anyone but the sample in the tests.
@@ -574,8 +592,7 @@ Tune, You, Your projects keeps up to ten projects, each with a title the user ca
 line reads as a heading, else "Project 2"), a switch for whether it ranks the feed, its text (shown on request), Suggest keywords,
 and Replace the text, which discards the old text for the new and does not merge (the title and the keywords already followed stay).
 The passages of the projects in use share one budget of 40, each thinned to its share (`ProjectText.combinedPassages`), so a long
-project does not drown a short one. What a project does is only to rank: what is fetched depends on what is followed, which is why
-the screen says to follow the suggested keywords. The single project an earlier version kept moves into the list on first launch
+project does not drown a short one. The single project an earlier version kept moves into the list on first launch
 (`projects.json`), its title replaced by a plain one where the old title was only the first words of its text. Tried on the
 iPhone simulator: the migration, and the list and project screens. Not tried: adding a second project, and the Mac window.
 

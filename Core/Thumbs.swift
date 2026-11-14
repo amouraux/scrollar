@@ -119,7 +119,7 @@ enum ThumbBasis {
         case .institution: return .institution
         case .funder: return .funder
         case .followedTopic, .ownTopic: return .topic
-        case .citesYou, .citesTracked, .other: return nil
+        case .citesYou, .citesTracked, .project, .other: return nil
         }
     }
 
