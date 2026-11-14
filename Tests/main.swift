@@ -2282,5 +2282,35 @@ frNew.useOpenAlex = false
 check(!FirstRun.steps(settings: frNew, hasOpenAlexKey: false, hasReferenceLibrary: true).contains { $0.target == .sources } && FirstRun.steps(settings: frNew, hasOpenAlexKey: false, hasReferenceLibrary: true).last?.done == true, "first run: a key is not asked for when OpenAlex is off, and a connected library ticks the last step")
 check(FirstRunStep.Target(rawValue: "you") == .you && Set(FirstRun.steps(settings: FeedSettings(), hasOpenAlexKey: false, hasReferenceLibrary: false).map(\.id)).count == 4, "first run: each step has its own name")
 
+// MARK: code review fixes
+let rvNow = Date(timeIntervalSince1970: 1_800_000_000)
+var rvBase = FeedSettings(); rvBase.followedKeywords = [KeywordRule(phrase: "pain")]
+var rvThumbed = rvBase; rvThumbed.recordThumb(.keyword("nociception"), up: true, at: rvNow)
+check(rvThumbed.forFetching == rvBase.forFetching, "review: a thumb is not a change of what to fetch")
+check(rvThumbed.forRanking != rvBase.forRanking, "review: a thumb still re-ranks")
+let rvPrev = PreviousFeed(papers: [], fetchedThrough: rvNow.addingTimeInterval(-3600), fullBuildAt: rvNow.addingTimeInterval(-3600),
+                          builtWith: rvBase.withoutFeedback)
+check(Incremental.mode(previous: rvPrev, settings: rvThumbed, now: rvNow).isIncremental, "review: one thumb leaves the next refresh incremental")
+var rvPulled = rvThumbed
+rvPulled.recordThumb(.keyword("nociception"), up: true, at: rvNow.addingTimeInterval(1))
+rvPulled.recordThumb(.keyword("nociception"), up: true, at: rvNow.addingTimeInterval(2))
+let rvLater = rvNow.addingTimeInterval(3)
+check(Evidence.fetched(rvPulled, now: rvLater).map(\.id) == ["nociception"], "review: thumbs that pull a thing far enough make it searched for")
+check(FeedBuilder.seeds(rvPulled, myWorkIDs: [], now: rvLater).contains { $0.seed.reason == "Keyword: nociception" }, "review: and the seeds ask for it")
+check(!Incremental.mode(previous: rvPrev, settings: rvPulled, now: rvLater).isIncremental, "review: a thing newly searched for fetches the window again")
+let rvPrevPulled = PreviousFeed(papers: [], fetchedThrough: rvLater.addingTimeInterval(-60), fullBuildAt: rvLater.addingTimeInterval(-60),
+                                builtWith: rvPulled.withoutFeedback)
+var rvMore = rvPulled; rvMore.recordThumb(.keyword("nociception"), up: true, at: rvLater)
+check(Incremental.mode(previous: rvPrevPulled, settings: rvMore, now: rvLater.addingTimeInterval(1)).isIncremental, "review: another thumb on a thing already searched for fetches nothing again")
+var rvAsk = rvBase; rvAsk.asksThumbBasis.toggle(); rvAsk.asksAboutSearches.toggle()
+check(rvAsk.forRanking == rvBase.forRanking && rvAsk.forFetching == rvBase.forFetching, "review: whether to ask is no reason to refresh")
+var rvCount = rvBase; rvCount.countsSearches.toggle()
+check(rvCount.forFetching == rvBase.forFetching && rvCount.forRanking != rvBase.forRanking, "review: counting searches re-ranks, and fetches nothing again")
+check(Identifiers.doi("https://dx.doi.org/10.1016/J.PAIN.2020") == "10.1016/j.pain.2020" && Identifiers.doi("http://dx.doi.org/10.1/x") == "10.1/x", "review: a dx.doi.org address is the same DOI")
+let rvA = ok("rvA"), rvB = ok("rvB")
+let rvOrder1 = Ranker.rank([rvB, rvA], profileTexts: ["painful heat"], today: rvNow).map(\.paper.id)
+let rvOrder2 = Ranker.rank([rvA, rvB], profileTexts: ["painful heat"], today: rvNow).map(\.paper.id)
+check(rvOrder1 == rvOrder2 && rvOrder1 == ["rvA", "rvB"], "review: two papers of one score and one day keep one order")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

@@ -259,17 +259,15 @@ enum Ranker {
             }
             ranked.append(RankedPaper(paper: paper, score: score, similarity: similarity[i]))
         }
+        // A last key, so two papers of one score and one day keep the same order every time.
         return ranked.sorted {
-            $0.score != $1.score ? $0.score > $1.score : $0.paper.date > $1.paper.date
+            if $0.score != $1.score { return $0.score > $1.score }
+            if $0.paper.date != $1.paper.date { return $0.paper.date > $1.paper.date }
+            return $0.paper.dedupeKey < $1.paper.dedupeKey
         }
     }
 
     // MARK: Similarity
-
-    static func similarities(_ candidates: [Paper], profileTexts: [String],
-                             embedder: TextEmbedder?) -> [Double] {
-        similarities(candidates, profile: profileTexts.map { ProfileEntry(text: $0) }, embedder: embedder)
-    }
 
     static func similarities(_ candidates: [Paper], profile: [ProfileEntry], embedder: TextEmbedder?) -> [Double] {
         let lexical = percentiles(lexicalScores(candidates, profile: profile))

@@ -14,7 +14,7 @@ struct OsfClient {
             comps.queryItems = items
             guard let url = comps.url else { return found }
             await Self.gate.wait()
-            let data = try await PoliteFetch.data(url, session: session)
+            let data = try await PoliteFetch.data(url, source: SourceKind.osf.rawValue, session: session)
             found += OsfParser.papers(from: data, seed: seed)
             if !OsfParser.hasNext(in: data) { break }
         }

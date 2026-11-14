@@ -9,14 +9,14 @@ struct PubMedClient {
 
     private func fetch(_ endpoint: String, _ query: [String: String]) async throws -> Data {
         try await Task.sleep(nanoseconds: pause)
-        guard var comps = URLComponents(string: base + endpoint) else { throw OpenAlexError.notFound(endpoint) }
+        guard var comps = URLComponents(string: base + endpoint) else { throw SourceError.notFound(source: "PubMed", what: endpoint) }
         var items = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         items.append(URLQueryItem(name: "tool", value: "scrollar"))
         comps.queryItems = items
-        guard let url = comps.url else { throw OpenAlexError.notFound(endpoint) }
+        guard let url = comps.url else { throw SourceError.notFound(source: "PubMed", what: endpoint) }
         let (data, response) = try await session.data(from: url)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else { throw OpenAlexError.http(status, String(decoding: data, as: UTF8.self)) }
+        guard status == 200 else { throw SourceError.http(source: "PubMed", status: status, body: String(decoding: data, as: UTF8.self)) }
         return data
     }
 

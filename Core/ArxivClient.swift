@@ -14,7 +14,7 @@ struct ArxivClient {
             comps.queryItems = items
             guard let url = comps.url else { return found }
             await Self.gate.wait()
-            let data = try await PoliteFetch.data(url, session: session)
+            let data = try await PoliteFetch.data(url, source: SourceKind.arXiv.rawValue, session: session)
             let batch = ArxivParser.papers(from: data, seed: seed)
             found += batch
             // A full page of entries (before the name check) means there may be more.

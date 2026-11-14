@@ -484,6 +484,15 @@ struct FeedSettings: Codable, Equatable {
         s.useZotero = d.useZotero
         s.useLibraryFile = d.useLibraryFile
         s.zoteroRecent = d.zoteroRecent
+        // A thumb changes the ranking, and changes what is searched for only when a thing crosses
+        // `Evidence.fetchBonus`. Comparing every event here made each thumb cost a full rebuild of the
+        // window; `Incremental.mode` compares what the thumbs make searched for instead.
+        s.thumbEvents = d.thumbEvents
+        s.evidence = d.evidence
+        // Recent searches only add to what stands for the user's work, which ranks.
+        s.countsSearches = d.countsSearches
+        s.asksThumbBasis = d.asksThumbBasis
+        s.asksAboutSearches = d.asksAboutSearches
         return s
     }
 
@@ -503,6 +512,9 @@ struct FeedSettings: Codable, Equatable {
         s.highlightAuthorH = d.highlightAuthorH
         s.dwellSeconds = d.dwellSeconds
         s.profileFilled = d.profileFilled
+        // Whether to ask is how the app talks to the user, not what the feed holds.
+        s.asksThumbBasis = d.asksThumbBasis
+        s.asksAboutSearches = d.asksAboutSearches
         return s
     }
 

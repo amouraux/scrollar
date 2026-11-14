@@ -4,6 +4,8 @@ import UIKit
 import os
 
 private let log = Logger(subsystem: "com.andremouraux.scrollar", category: "feed")
+// An error is logged in brief in public and in full as private: a failed OpenAlex request carries its
+// address, and the user's key is part of that address.
 
 @MainActor
 @Observable
@@ -14,9 +16,6 @@ final class AppModel {
         case failed(String)
     }
 
-    /// What is on screen: the feed sorted into new, earlier and read. It changes
-    /// when a feed is loaded or the user asks for the new papers, never as they
-    /// scroll, so no card moves while it is being looked at.
     /// What is on screen: highlights, then the feed in the order the user chose, sorted into new,
     /// earlier and read. It changes when a feed is loaded or the user asks for the new papers,
     /// never as they scroll, so no card moves while it is being looked at.
@@ -29,6 +28,9 @@ final class AppModel {
             ledger.reconcile(settings, at: Date())
             store.saveLedger(ledger)
             if !applyingSync { syncSoon(after: 3) }
+            if settings.feedback.saved != oldValue.feedback.saved || settings.feedback.liked != oldValue.feedback.liked {
+                PDFCache.setSavedKeys(settings.feedback.saved.map(\.id) + settings.feedback.liked.map(\.id))
+            }
             // Following something new or muting something means fetching again;
             // hiding one paper does not.
             if settings.forRanking != oldValue.forRanking { needsRefresh = true }
@@ -249,10 +251,7 @@ final class AppModel {
             UserDefaults.standard.set(true, forKey: "scrappedThumbLevels")
             if !settings.levels.isEmpty { settings.levels = []; store.saveSettings(settings) }
         }
-        PDFCache.savedKeys = { [weak self] in
-            guard let f = self?.settings.feedback else { return [] }
-            return f.saved.map(\.id) + f.liked.map(\.id)
-        }
+        PDFCache.setSavedKeys(settings.feedback.saved.map(\.id) + settings.feedback.liked.map(\.id))
     }
 
     /// The key to use. In a debug build an environment variable stands in when
@@ -279,6 +278,21 @@ final class AppModel {
     }
 
     var openAlex: OpenAlexClient { OpenAlexClient(apiKey: effectiveKey) }
+
+    /// The engine for these settings: each source the user has on, OpenAlex only with a key. Static and
+    /// nonisolated so a detached task can build one from values taken on the main actor.
+    nonisolated static func engine(_ settings: FeedSettings, openAlexKey: String?, embedder: TextEmbedder?,
+                                   log: @escaping (String) -> Void = { _ in }) -> FeedEngine {
+        FeedEngine(openAlex: openAlexKey.map { OpenAlexClient(apiKey: $0) },
+                   europePMC: settings.useEuropePMC ? EuropePMCClient() : nil,
+                   crossref: settings.useCrossref ? CrossrefClient() : nil,
+                   arXiv: settings.useArXiv ? ArxivClient() : nil,
+                   osf: settings.useOSF ? OsfClient() : nil,
+                   embedder: embedder, log: log)
+    }
+
+    /// The OpenAlex key to give an engine: nil when OpenAlex is not to be asked.
+    private var engineKey: String? { usesOpenAlex ? effectiveKey : nil }
 
     // MARK: Feed
 
@@ -317,7 +331,7 @@ final class AppModel {
 
     func refresh(userInitiated: Bool = true, older: Bool = false) async {
         if isLoading { return }
-        let key = effectiveKey
+        let key = engineKey
         guard canBuild else {
             phase = .failed("No source is on. Turn one on in Tune, under Sources.")
             return
@@ -331,7 +345,6 @@ final class AppModel {
         let library = await zoteroTexts(allowNetwork: !older) + libraryFileTexts()
         let projectPassages = self.projectPassages
         let searchEntries = SearchLog.entries(searches, now: Date())
-        let useOpenAlex = usesOpenAlex
         // What this feed is built for, taken now: the user may change a follow
         // while it runs, and the result must not claim to match that.
         let builtFor = settings.withoutFeedback
@@ -345,12 +358,7 @@ final class AppModel {
             let (result, vectors) = try await Task.detached(priority: .userInitiated) { () -> (FeedResult, Data?) in
                 // Apple's sentence model, else its contextual one (fetched once if need be), else none.
                 let cache = await TextEmbedders.best().map { CachingEmbedder($0, stored: cachedVectors) }
-                let engine = FeedEngine(openAlex: useOpenAlex ? OpenAlexClient(apiKey: key) : nil,
-                                        europePMC: settings.useEuropePMC ? EuropePMCClient() : nil,
-                                        crossref: settings.useCrossref ? CrossrefClient() : nil,
-                                        arXiv: settings.useArXiv ? ArxivClient() : nil,
-                                        osf: settings.useOSF ? OsfClient() : nil,
-                                        embedder: cache, log: report)
+                let engine = AppModel.engine(settings, openAlexKey: key, embedder: cache, log: report)
                 let result = try await engine.build(settings, previous: previous, older: older, library: library, project: projectPassages, searches: searchEntries)
                 let used = result.profileTexts + (result.citedYou + result.forYou).map { Ranker.text($0.paper) }
                 return (result, cache?.snapshot(keeping: used))
@@ -366,7 +374,7 @@ final class AppModel {
             }
         } catch {
             // Keep showing the last feed; only say what went wrong.
-            log.error("refresh failed: \(String(describing: error), privacy: .public)")
+            log.error("refresh failed: \(ErrorText.brief(error), privacy: .public) \(String(describing: error), privacy: .private)")
             if older { olderFailed = true }
             phase = .failed("\(ErrorText.brief(error))")
         }
@@ -544,8 +552,6 @@ final class AppModel {
         }
     }
 
-    // MARK: Sync between devices
-
     // MARK: Backup and preview
 
     /// The settings as a file to keep. Not the key, the feed or the read record: see `SettingsBackup`.
@@ -600,12 +606,7 @@ final class AppModel {
 
     /// What following `seed` would find, without following it.
     func preview(_ seed: Seed, rule: KeywordRule? = nil) async throws -> SeedPreview {
-        let engine = FeedEngine(openAlex: usesOpenAlex ? openAlex : nil,
-                                europePMC: settings.useEuropePMC ? EuropePMCClient() : nil,
-                                crossref: settings.useCrossref ? CrossrefClient() : nil,
-                                arXiv: settings.useArXiv ? ArxivClient() : nil,
-                                osf: settings.useOSF ? OsfClient() : nil, embedder: nil)
-        return try await engine.preview(seed, rule: rule, settings: settings)
+        return try await Self.engine(settings, openAlexKey: engineKey, embedder: nil).preview(seed, rule: rule, settings: settings)
     }
 
     // MARK: Search
@@ -659,16 +660,11 @@ final class AppModel {
         let library = await zoteroTexts(allowNetwork: false) + libraryFileTexts()
         let extra = FeedBuilder.profile(settings, own: [], library: library, project: projectPassages,
                                         searches: SearchLog.entries(searches, now: Date()), now: Date())
-        let useOpenAlex = usesOpenAlex
-        let key = apiKey
+        let key = engineKey
         let cached = store.loadEmbeddings()
         let (ranked, vectors) = try await Task.detached(priority: .userInitiated) { () -> ([RankedPaper], Data?) in
             let cache = await TextEmbedders.best().map { CachingEmbedder($0, stored: cached) }
-            let engine = FeedEngine(openAlex: useOpenAlex ? OpenAlexClient(apiKey: key) : nil,
-                                    europePMC: settings.useEuropePMC ? EuropePMCClient() : nil,
-                                    crossref: settings.useCrossref ? CrossrefClient() : nil,
-                                    arXiv: settings.useArXiv ? ArxivClient() : nil,
-                                    osf: settings.useOSF ? OsfClient() : nil, embedder: cache)
+            let engine = AppModel.engine(settings, openAlexKey: key, embedder: cache)
             let found = try await engine.search(text, settings: settings, extra: extra)
             return (found, cache?.snapshot(keeping: found.map { Ranker.text($0.paper) } + extra.map(\.text)))
         }.value
@@ -717,6 +713,8 @@ final class AppModel {
         store.saveSearches([])
         needsRefresh = true
     }
+
+    // MARK: Sync between devices
 
     /// What the "create the sync file" dialog saves: everything, as it is now.
     func initialSyncData() -> Data {
@@ -941,7 +939,7 @@ final class AppModel {
             follow(chosen)
             notice = "Filled what you follow from \(found.paperCount) publications: \(chosen.count) topics, keywords, journals and researchers. They are under Follow and mute in Tune, where you can change them."
         } catch {
-            log.error("could not fill the follows from the publications: \(String(describing: error), privacy: .public)")
+            log.error("could not fill the follows from the publications: \(ErrorText.brief(error), privacy: .public) \(String(describing: error), privacy: .private)")
         }
     }
 
@@ -1005,7 +1003,7 @@ final class AppModel {
                 cache = fresh
                 zoteroStatus = "Read \(min(fresh.items.count, settings.zoteroRecent)) items at \(Date().formatted(date: .omitted, time: .shortened))."
             } catch {
-                log.error("zotero read failed: \(String(describing: error), privacy: .public)")
+                log.error("zotero read failed: \(ErrorText.brief(error), privacy: .public) \(String(describing: error), privacy: .private)")
                 zoteroStatus = "\(ErrorText.brief(error))" + (cache == nil ? "" : " The last copy is in use.")
                 if cache == nil { notice = "Your Zotero library could not be read, so the feed was ranked without it. \(ErrorText.brief(error))" }
             }
@@ -1422,17 +1420,19 @@ final class AppModel {
     /// Take from the screen whatever the settings now exclude, using the same
     /// rule as a rebuild so the two cannot disagree.
     private func dropExcluded() {
-        let settings = self.settings
+        // One pass of the filter over everything on screen, then the lists keep what it kept.
+        let kept = Set(FeedBuilder.keep(layout.all.map(\.paper), settings: settings).map(\.dedupeKey))
+        func keeps(_ r: RankedPaper) -> Bool { kept.contains(r.paper.dedupeKey) }
         func drop(_ a: inout Arranged) {
-            func kept(_ r: RankedPaper) -> Bool { !FeedBuilder.keep([r.paper], settings: settings).isEmpty }
-            a.fresh.removeAll { !kept($0) }
-            a.earlier.removeAll { !kept($0) }
-            a.read.removeAll { !kept($0) }
+            a.fresh.removeAll { !keeps($0) }
+            a.earlier.removeAll { !keeps($0) }
+            a.read.removeAll { !keeps($0) }
         }
         drop(&layout.feed)
         drop(&layout.citedYou)
         drop(&layout.following)
         drop(&layout.forYou)
-        layout.highlights.removeAll { FeedBuilder.keep([$0.ranked.paper], settings: settings).isEmpty }
+        layout.older.removeAll { !keeps($0) }
+        layout.highlights.removeAll { !keeps($0.ranked) }
     }
 }

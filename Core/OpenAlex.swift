@@ -10,14 +10,16 @@ struct AuthorProfile {
     var topics: [(id: String, name: String, count: Int)]
 }
 
-enum OpenAlexError: Error, CustomStringConvertible {
-    case http(Int, String)
-    case notFound(String)
+/// A source that answered with an error, or could not be asked. Every client uses it, with its own name,
+/// so a failure says which service it was: Europe PMC's used to be reported as OpenAlex's.
+enum SourceError: Error, CustomStringConvertible {
+    case http(source: String, status: Int, body: String)
+    case notFound(source: String, what: String)
 
     var description: String {
         switch self {
-        case .http(let code, let body): return "OpenAlex answered HTTP \(code): \(body.prefix(200))"
-        case .notFound(let what): return "OpenAlex has no record of \(what)"
+        case .http(let source, let code, let body): return "\(source) answered HTTP \(code): \(body.prefix(200))"
+        case .notFound(let source, let what): return "\(source) has no record of \(what)"
         }
     }
 }
@@ -38,17 +40,17 @@ struct OpenAlexClient {
 
     private func fetch(_ path: String, _ query: [String: String]) async throws -> Data {
         guard var comps = URLComponents(string: "https://api.openalex.org/" + path) else {
-            throw OpenAlexError.notFound(path)
+            throw SourceError.notFound(source: "OpenAlex", what: path)
         }
         var items = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         items.append(URLQueryItem(name: "api_key", value: apiKey))
         comps.queryItems = items
-        guard let url = comps.url else { throw OpenAlexError.notFound(path) }
+        guard let url = comps.url else { throw SourceError.notFound(source: "OpenAlex", what: path) }
 
         let (data, response) = try await session.data(from: url)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 else {
-            throw OpenAlexError.http(status, String(decoding: data, as: UTF8.self))
+            throw SourceError.http(source: "OpenAlex", status: status, body: String(decoding: data, as: UTF8.self))
         }
         return data
     }

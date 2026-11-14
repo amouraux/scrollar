@@ -13,7 +13,7 @@ enum Identifiers {
     /// once both are reduced to the bare lowercase form.
     static func doi(_ s: String?) -> String? {
         guard var d = s?.trimmingCharacters(in: .whitespaces).lowercased(), !d.isEmpty else { return nil }
-        for prefix in ["https://doi.org/", "http://doi.org/", "doi:"] where d.hasPrefix(prefix) {
+        for prefix in ["https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/", "doi:"] where d.hasPrefix(prefix) {
             d.removeFirst(prefix.count)
         }
         return d

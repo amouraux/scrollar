@@ -64,6 +64,11 @@ enum Incremental {
         // and the ranking sliders are excluded: they reorder the kept set, they do
         // not change what must be fetched.
         if p.builtWith.forFetching != settings.forFetching { return .full(reason: "settings changed") }
+        // Thumbs are left out of that comparison; what they make searched for is not. Both read at `now`,
+        // so a thumb fading over the weeks is not mistaken for a change.
+        if Set(Evidence.fetched(p.builtWith, now: now).map(\.key)) != Set(Evidence.fetched(settings, now: now).map(\.key)) {
+            return .full(reason: "the thumbs changed what is searched for")
+        }
         // Kept papers from before authors' institutions were recorded would show
         // no affiliation until the next scheduled rebuild.
         if !p.papers.isEmpty, p.papers.allSatisfy({ $0.firstInstitution == nil && $0.lastInstitution == nil }) {

@@ -8,7 +8,12 @@ import CryptoKit
 enum PDFCache {
     /// The dedupeKeys of papers the user saved or marked For me, whose PDFs are the last to go and
     /// the ones that go to the shared folder. Set by the model.
-    nonisolated(unsafe) static var savedKeys: () -> [String] = { [] }
+    /// The papers on the reading list or marked For me, whose PDFs are trimmed last. A copy the model hands over
+    /// when they change, behind a lock: the cache is used off the main thread, where the model's settings may not be read.
+    private static let savedLock = NSLock()
+    nonisolated(unsafe) private static var savedKeyList: [String] = []
+    static func setSavedKeys(_ keys: [String]) { savedLock.lock(); savedKeyList = keys; savedLock.unlock() }
+    static func savedKeys() -> [String] { savedLock.lock(); defer { savedLock.unlock() }; return savedKeyList }
 
     private static let limitKey = "pdfCacheLimit"
     private static let largest = 80_000_000

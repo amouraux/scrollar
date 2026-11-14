@@ -360,6 +360,22 @@ struct FeedFacetPanel: View {
 
     private func row(_ title: String, symbol: String?, count: Int, new: Int, selected: Bool, indent: Bool,
                      action: @escaping () -> Void) -> some View {
+        ReasonFilterRow(title: title, symbol: symbol, count: count, new: new, selected: selected, indent: indent, action: action)
+    }
+}
+
+/// One line of a panel of reasons (the feed's, and the reading list's filter): a reason or a name within it, how
+/// many papers carry it and how many of those are new. One view, so the two panels look and read alike.
+struct ReasonFilterRow: View {
+    let title: String
+    let symbol: String?
+    let count: Int
+    var new: Int = 0
+    let selected: Bool
+    let indent: Bool
+    let action: () -> Void
+
+    var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
                 if let symbol { Image(systemName: symbol).frame(width: 20) }

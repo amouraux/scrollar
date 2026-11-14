@@ -92,17 +92,7 @@ enum ThumbBasis {
             out.append(Candidate(ref: ref, level: s.level(of: ref), group: group))
         }
         for tag in Why.tags(reasons: paper.reasons, followed: paper.followed) where !tag.detail.isEmpty {
-            let kind: FacetKind?
-            switch tag.kind {
-            case .author: kind = .author
-            case .keyword: kind = .keyword
-            case .journal: kind = .journal
-            case .institution: kind = .institution
-            case .funder: kind = .funder
-            case .followedTopic, .ownTopic: kind = .topic
-            case .citesYou, .citesTracked, .other: kind = nil
-            }
-            if let kind { add(ref(kind, name: tag.detail, paper: paper, settings: s), .why) }
+            if let kind = facetKind(tag.kind) { add(ref(kind, name: tag.detail, paper: paper, settings: s), .why) }
         }
         if let journal = paper.journal, !paper.isRepository { add(ref(.journal, name: journal, paper: paper, settings: s), .journal) }
         // First, last, then the others nearest the ends: the first and last are usually who the work is by.
@@ -120,23 +110,25 @@ enum ThumbBasis {
         return out
     }
 
+    /// The kind of thing a reason names, for those a thumb can be about: not a citation, nor an unknown reason.
+    static func facetKind(_ kind: Why.Kind) -> FacetKind? {
+        switch kind {
+        case .author: return .author
+        case .keyword: return .keyword
+        case .journal: return .journal
+        case .institution: return .institution
+        case .funder: return .funder
+        case .followedTopic, .ownTopic: return .topic
+        case .citesYou, .citesTracked, .other: return nil
+        }
+    }
+
     /// What is chosen to begin with: the first reason the paper is in the feed for, if it has one, which is the one
     /// the post itself names. One only: the thumb is about the best reason, not a handful, because with several
     /// people end up with the first and whatever else they touched on the way.
     static func preselected(_ candidates: [Candidate], paper: Paper) -> String? {
         let named = Why.tags(reasons: paper.reasons, followed: paper.followed).first { !$0.detail.isEmpty }
-        guard let named else { return nil }
-        let kind: FacetKind?
-        switch named.kind {
-        case .author: kind = .author
-        case .keyword: kind = .keyword
-        case .journal: kind = .journal
-        case .institution: kind = .institution
-        case .funder: kind = .funder
-        case .followedTopic, .ownTopic: kind = .topic
-        default: kind = nil
-        }
-        guard let kind, let first = candidates.first(where: { $0.ref.kind == kind && $0.ref.name.lowercased() == named.detail.lowercased() }) else { return nil }
+        guard let named, let kind = facetKind(named.kind), let first = candidates.first(where: { $0.ref.kind == kind && $0.ref.name.lowercased() == named.detail.lowercased() }) else { return nil }
         return first.ref.key
     }
 }

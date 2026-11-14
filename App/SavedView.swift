@@ -236,19 +236,6 @@ private struct SavedFilterPanel: View {
 
     private func row(_ title: String, symbol: String?, count: Int, selected: Bool, indent: Bool,
                      action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                if let symbol { Image(systemName: symbol).frame(width: 20) }
-                Text(title).lineLimit(1)
-                Spacer(minLength: 4)
-                Text("\(count)").font(.caption).foregroundStyle(.secondary).monospacedDigit()
-            }
-            .padding(.leading, indent ? 28 : 0)
-            .fontWeight(selected ? .semibold : .regular)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .listRowBackground(selected ? Color.accentColor.opacity(0.18) : nil)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        ReasonFilterRow(title: title, symbol: symbol, count: count, selected: selected, indent: indent, action: action)
     }
 }

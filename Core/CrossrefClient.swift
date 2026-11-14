@@ -6,11 +6,11 @@ import Foundation
 enum PoliteFetch {
     static let agent = "Scrollar/0.1 (+https://amouraux.github.io/scrollar/)"
 
-    static func data(_ url: URL, session: URLSession) async throws -> Data {
+    static func data(_ url: URL, source: String, session: URLSession) async throws -> Data {
         var request = URLRequest(url: url)
         request.timeoutInterval = 30
         request.setValue(agent, forHTTPHeaderField: "User-Agent")
-        var lastError: Error = OpenAlexError.notFound(url.host ?? "")
+        var lastError: Error = SourceError.notFound(source: source, what: url.host ?? "")
         var pause: UInt64 = 1_000_000_000
         for attempt in 0..<3 {
             if attempt > 0 { try await Task.sleep(nanoseconds: pause) }
@@ -19,7 +19,7 @@ enum PoliteFetch {
                 let http = response as? HTTPURLResponse
                 let status = http?.statusCode ?? 0
                 if status == 200 { return data }
-                lastError = OpenAlexError.http(status, String(decoding: data.prefix(200), as: UTF8.self))
+                lastError = SourceError.http(source: source, status: status, body: String(decoding: data.prefix(200), as: UTF8.self))
                 if status == 429 {
                     let asked = http?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init) ?? 2
                     pause = UInt64(min(max(asked, 1), 10) * 1_000_000_000)
@@ -48,7 +48,7 @@ struct CrossrefClient {
             comps.queryItems = items
             guard let url = comps.url else { return found }
             await Self.gate.wait()
-            let data = try await PoliteFetch.data(url, session: session)
+            let data = try await PoliteFetch.data(url, source: SourceKind.crossref.rawValue, session: session)
             found += CrossrefParser.papers(from: data, seed: seed)
             if CrossrefParser.total(in: data) <= (page + 1) * 100 { break }
         }

@@ -169,6 +169,16 @@ enum Evidence {
         }
     }
 
+    /// What the thumbs have pulled up far enough to be searched for, and the lists do not already search for. An
+    /// institution known only by name cannot be asked for, so it only ranks. One rule for the seeds and for
+    /// deciding whether a refresh must fetch everything again.
+    static func fetched(_ s: FeedSettings, now: Date) -> [LevelEntry] {
+        active(s, now: now).filter { entry, bonus in
+            bonus >= fetchBonus && !s.defaultLevel(entry.ref).fetches
+                && !(entry.kind == .institution && SourceRouting.isNamed(entry.id))
+        }.map(\.entry)
+    }
+
     /// What the thumbs add for one thing now (0 where it is pinned or has no clicks).
     static func bonus(_ ref: FacetRef, _ s: FeedSettings, now: Date) -> Double {
         active(s, now: now).first { $0.entry.key == ref.key }?.bonus ?? 0
