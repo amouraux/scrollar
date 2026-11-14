@@ -954,8 +954,10 @@ final class AppModel {
         zotero = account
         zoteroStatus = nil
         zoteroCheck = ("Connected: Zotero accepted the key, and it can \(account.canWrite ? "read and write" : "only read").", true)
-        // Pasting a key is asking to use the library.
+        // Pasting a key is asking to use the library, and the library ranks the next feed even if the setting was
+        // already on (synced from another device).
         settings.useZotero = true
+        needsRefresh = true
     }
 
     /// What the last check of the Zotero key found, for the screen: nil until one is made.
@@ -1039,8 +1041,10 @@ final class AppModel {
         let file = LibraryImport.merged(previous: libraryFile, parsed: parsed, name: url.lastPathComponent, now: Date())
         store.saveLibraryFile(file)
         libraryFile = file
-        // Importing a file is asking to use it.
+        // Importing a file is asking to use it. It ranks the next feed even when it was already in use, and the
+        // setting did not change.
         settings.useLibraryFile = true
+        needsRefresh = true
         return (file.items.count, file.items.filter { !before.contains($0.key) }.count)
     }
 
@@ -1055,6 +1059,7 @@ final class AppModel {
         store.saveLibraryFile(file)
         libraryFile = file
         settings.useLibraryFile = true
+        needsRefresh = true
         return (file.items.count, file.items.filter { !before.contains($0.key) }.count)
     }
 
@@ -1062,6 +1067,7 @@ final class AppModel {
         store.saveLibraryFile(nil)
         libraryFile = nil
         settings.useLibraryFile = false
+        needsRefresh = true
     }
 
     // MARK: Projects

@@ -215,8 +215,17 @@ consortium paper's authors are ignored as co-authors; repositories are not journ
 
 The first time, and only then, when the follow lists are all empty and there is an iD, the ticked
 suggestions fill the lists (`profileFilled`, synced, so a second device does not repeat it, and
-nothing the user removes comes back); a notice says so. After that "Suggest what to follow…" in Tune
-shows what is not yet followed, to choose from. Without OpenAlex the same works from the Europe PMC records that carry the
+nothing the user removes comes back); a notice says so, and the You screen says beforehand that it will
+happen. After that "Suggest what to follow…", under You and under Also learn from, shows what is not yet
+followed, to choose from; adding an iD or a person changes only the order.
+
+**What each part of Tune does to the feed.** Every input is one of two kinds, and each screen says which.
+What is followed (Follow and mute, Levels, the thumbs) decides what is *searched for*. Publications,
+projects and a reference library (Zotero or an export) decide only the *order*: they never search or
+follow anything, but publications and projects can *suggest* follows (Suggest what to follow, Suggest
+keywords from it). Either kind takes effect when the user goes back to the feed. Importing a newer
+export, pasting references or connecting Zotero asks for that refresh even when the setting that turns
+the library on was already on. Without OpenAlex the same works from the Europe PMC records that carry the
 iD (MeSH headings as topics, journals and co-authors by name; no keywords, institutions or funders). `./run.sh <orcid> --suggest [--also <orcid>]` prints the suggestions.
 
 **Finding an iD by name.** Nobody should have to know their iD. Under You, "Find my iD by name…", and when

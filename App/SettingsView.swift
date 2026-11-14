@@ -66,11 +66,15 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             Form {
-                Section("Your feed") {
+                Section {
                     row(.you, status: youStatus)
                     row(.follow, status: followStatus)
                     row(.ranking, status: rankingStatus)
                     row(.content, status: contentStatus)
+                } header: {
+                    Text("Your feed")
+                } footer: {
+                    Text("What you follow decides what is searched for. Your publications, projects and reference library decide only the order: they can suggest what to follow, but nothing is followed until you add it. Changes take effect when you go back to the feed.")
                 }
                 Section("Connections and data") {
                     row(.references, status: referencesStatus)
@@ -678,7 +682,7 @@ struct ZoteroSection: View {
         } header: {
             Text("Zotero library")
         } footer: {
-            Text("Your most recently added items (title, abstract and tags) are read and compared on this device, as your reading list is, to judge which new papers are close to your work. Only the newest ones count, so what you are reading now outweighs what you filed years ago. Nothing is followed because of it: Follow lists stay yours. The key stays in this device's Keychain and is sent only to Zotero. A read-only key is enough to learn from the library; to also save papers from a post it must be allowed to write. A PDF attached to an item is stored in your Zotero file storage and counts against its quota (300 MB on the free plan); if it is full the paper is still saved, without the PDF.")
+            Text("Your most recently added items (title, abstract and tags) are read and compared on this device, as your reading list is, to judge which new papers are close to your work. Only the newest ones count, so what you are reading now outweighs what you filed years ago. It changes only the order: nothing is searched for or followed because of it. The key stays in this device's Keychain and is sent only to Zotero. A read-only key is enough to learn from the library; to also save papers from a post it must be allowed to write. A PDF attached to an item is stored in your Zotero file storage and counts against its quota (300 MB on the free plan); if it is full the paper is still saved, without the PDF.")
         }
         .task(id: model.zotero?.userID) { await loadCollections() }
     }
@@ -815,7 +819,7 @@ struct LibraryFileSection: View {
         } header: {
             Text("Reference export (EndNote, Mendeley and others)")
         } footer: {
-            Text("For a manager that has no connection of its own: EndNote, Mendeley, Papers, Citavi. Paste references: copy from your manager (select papers, Copy, or Copy as reference list) or from any bibliography, and paste; an export in RIS or BibTeX pasted works too. Or export your library as RIS or BibTeX and choose the file. Replace with a newer export takes the new file as your whole library: papers no longer in it are dropped, those already here keep the date they first appeared, and the others count as the newest. Add references by pasting only adds, and drops nothing; a paper pasted twice is one. What was read, not the file, is kept on this device and is not synced: do it on each device. If you use Zotero, connect it instead.")
+            Text("For a manager that has no connection of its own: EndNote, Mendeley, Papers, Citavi. Like a Zotero library, what you import changes only the order of the feed: papers close to it rank higher, and nothing is searched for or followed because of it. Paste references: copy from your manager (select papers, Copy, or Copy as reference list) or from any bibliography, and paste; an export in RIS or BibTeX pasted works too. Or export your library as RIS or BibTeX and choose the file. Replace with a newer export takes the new file as your whole library: papers no longer in it are dropped, those already here keep the date they first appeared, and the others count as the newest. Add references by pasting only adds, and drops nothing; a paper pasted twice is one. What was read, not the file, is kept on this device and is not synced: do it on each device. If you use Zotero, connect it instead.")
         }
         .sheet(isPresented: $pasting) { PasteReferencesSheet { paste($0) } }
     }
@@ -889,7 +893,7 @@ struct ProjectSection: View {
         } header: {
             Text("Your projects")
         } footer: {
-            Text("Paste a grant proposal, a thesis plan or an abstract: what you are about to work on, before there are papers to show it. Papers close to a project that is in use rank higher; what is fetched depends only on what you follow, so open a project and suggest keywords from it, and follow the ones you choose. A project is read on this device and kept only here: it is not synced and not in the settings file you can export. It is sent to no service unless you ask a model you set up (Claude, ChatGPT or another), with your own account, to suggest keywords, and then only after a warning that shows exactly what goes. Apple's on-device model, where the device has one, reads it without sending anything.")
+            Text("Paste a grant proposal, a thesis plan or an abstract: what you are about to work on, before there are papers to show it. A project changes only the order: papers close to it rank higher, and nothing is searched for because of it. To search for what it is about, open it, choose Suggest keywords from it, and follow the ones you want. A project is read on this device and kept only here: it is not synced and not in the settings file you can export. It is sent to no service unless you ask a model you set up (Claude, ChatGPT or another), with your own account, to suggest keywords, and then only after a warning that shows exactly what goes. Apple's on-device model, where the device has one, reads it without sending anything.")
         }
         .sheet(isPresented: $adding) {
             PasteProjectSheet(replacing: false) { title, text in
@@ -927,7 +931,7 @@ struct ProjectScreen: View {
                     Toggle("Use it to rank the feed", isOn: Binding(
                         get: { project.enabled }, set: { model.setProjectEnabled($0, id: id) }))
                 } footer: {
-                    Text("Papers close to a project that is in use rank higher. The text decides how close a paper is; it does not fetch anything. Following keywords from it is what makes it search.")
+                    Text("Papers close to a project that is in use rank higher. The text decides how close a paper is; it does not fetch anything. Following keywords from it, with Suggest keywords from it below, is what makes it search.")
                 }
 
                 Section {

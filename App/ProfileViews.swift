@@ -4,6 +4,7 @@ import SwiftUI
 struct ProfileSourcesView: View {
     @Environment(AppModel.self) private var model
     @State private var adding = false
+    @State private var suggesting = false
 
     var body: some View {
         @Bindable var model = model
@@ -20,10 +21,17 @@ struct ProfileSourcesView: View {
                 }
                 .onDelete { model.settings.profileOrcids.remove(atOffsets: $0) }
             } footer: {
-                Text("Their publications are read with yours: they set what \"close to my work\" means and can suggest what to follow. Most useful when you have few papers yet, with a supervisor or a group leader. Their new papers are not hidden from you. Up to three.")
+                Text("Their publications are read with yours to set what \"close to my work\" means. Most useful when you have few papers yet, with a supervisor or a group leader. Their new papers are not hidden from you. Up to three.")
+            }
+            Section {
+                Button("Suggest what to follow…") { suggesting = true }
+                    .disabled(model.settings.profileOrcids.isEmpty && model.settings.orcid.flatMap(Orcid.normalised) == nil)
+            } footer: {
+                Text("Adding someone changes only the order of the feed: nothing they work on is followed until you choose it here.")
             }
         }
         .navigationTitle("Also learn from")
+        .sheet(isPresented: $suggesting) { SuggestionsView() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Add", systemImage: "plus") { adding = true }

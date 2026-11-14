@@ -68,7 +68,7 @@ struct YouScreen: View {
             } header: {
                 Text("Your publications")
             } footer: {
-                Text("Your publications, and those of anyone you add under Also learn from (a supervisor, say, if you have few papers yet), set what \"close to my work\" means, and \"Cited you\" tells you when someone cites yours. They can suggest what to follow, but nothing is followed unless it is in the Follow lists (Tune, Follow and mute), where you can remove it.")
+                Text(publicationsFooter)
             }
 
             ProjectSection()
@@ -83,6 +83,19 @@ struct YouScreen: View {
                 }
             }
         }
+    }
+}
+
+extension YouScreen {
+    /// Whether changing the iD follows anything depends on one thing the screen can see: an empty follow list is filled
+    /// once from the publications, and after that nothing is followed without the user choosing it.
+    var publicationsFooter: String {
+        let s = appModel.settings
+        let what = "Your publications, and those of anyone under Also learn from (a supervisor, say, if you have few papers yet), set what \"close to my work\" means, and Cited you tells you when someone cites yours."
+        if s.useMyPublications && !s.profileFilled && appModel.followListsAreEmpty {
+            return what + " You follow nothing yet, so when you go back to the feed, what they suggest is followed for you, once. You can change it under Follow and mute."
+        }
+        return what + " They change only the order: changing them follows nothing new. To follow what they work on, use Suggest what to follow."
     }
 }
 
@@ -126,7 +139,7 @@ struct FollowScreen: View {
             } header: {
                 Text("Follow")
             } footer: {
-                Text("Each follow searches for new papers. Everything that a journal, a researcher or a keyword you follow found is always in your feed, however low it scores. Topics, institutions and funders are too broad for that, so what they find is ranked with all the rest and gets a small bonus.")
+                Text("Each follow searches for new papers, from when you go back to the feed. Everything that a journal, a researcher or a keyword you follow found is always in your feed, however low it scores. Topics, institutions and funders are too broad for that, so what they find is ranked with all the rest and gets a small bonus.")
             }
 
             Section("Mute") {
@@ -288,7 +301,7 @@ struct ContentScreen: View {
             } header: {
                 Text("Content")
             } footer: {
-                Text("English only is the same as typing en below. A paper whose language the source does not state is kept, because most do not say and dropping them would empty the feed.")
+                Text("These filters apply when you go back to the feed. English only is the same as typing en below. A paper whose language the source does not state is kept, because most do not say and dropping them would empty the feed.")
             }
 
             Section {
