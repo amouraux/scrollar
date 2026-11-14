@@ -6,29 +6,11 @@ struct EuropePMCClient {
     var session: URLSession = .shared
     private let base = "https://www.ebi.ac.uk/europepmc/webservices/rest/"
 
-    /// One retry, a second later, for what is usually momentary: a timeout or a 5xx.
-    /// Europe PMC is free and sometimes slow; a feed should not fail on one hiccup,
-    /// nor hammer a service that is down.
     private func fetch(_ endpoint: String, _ query: [String: String]) async throws -> Data {
         guard var comps = URLComponents(string: base + endpoint) else { throw SourceError.notFound(source: "Europe PMC", what: endpoint) }
         comps.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         guard let url = comps.url else { throw SourceError.notFound(source: "Europe PMC", what: endpoint) }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 30
-        var lastError: Error = SourceError.notFound(source: "Europe PMC", what: endpoint)
-        for attempt in 0..<2 {
-            if attempt > 0 { try await Task.sleep(nanoseconds: 1_000_000_000) }
-            do {
-                let (data, response) = try await session.data(for: request)
-                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                if status == 200 { return data }
-                lastError = SourceError.http(source: "Europe PMC", status: status, body: String(decoding: data.prefix(200), as: UTF8.self))
-                if status < 500 { throw lastError }
-            } catch let error as URLError where error.code == .timedOut || error.code == .networkConnectionLost {
-                lastError = error
-            }
-        }
-        throw lastError
+        return try await PoliteFetch.data(url, source: "Europe PMC", session: session)
     }
 
     /// The papers matching a query, newest first, up to `maxPages` of a hundred.

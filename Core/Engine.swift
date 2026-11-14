@@ -69,7 +69,7 @@ struct FeedEngine {
     /// (see `Zotero.profileTexts`); the engine does not fetch it, so it stays out of the command line.
     func build(_ settings: FeedSettings, previous: PreviousFeed? = nil, today: Date = Date(), older: Bool = false,
                 library: [String] = [], project: [String] = [], searches: [ProfileEntry] = []) async throws -> FeedResult {
-        guard openAlex != nil || europePMC != nil || crossref != nil || arXiv != nil || osf != nil else { throw EngineError.noSource }
+        guard hasSource else { throw EngineError.noSource }
         // What is held reaches back past the look-back when the reader has scrolled to the end.
         let heldExtra = previous?.extraDays ?? 0
         let windowStart = Ranker.dayString(today.addingTimeInterval(-Double(settings.daysBack + heldExtra) * 86_400))
@@ -149,34 +149,10 @@ struct FeedEngine {
                                                 crossref: crossref != nil, arXiv: arXiv != nil, osf: osf != nil,
                                                 hasOwnPMIDs: !ownPMIDs.isEmpty)
             if targets.isEmpty { log("  no source answers \(step.seed.reason)"); continue }
+            let ask = SourceAsk(since: since, until: until, openAlexUntil: untilOverride, pages: maxPages, otherPages: min(maxPages, 2), ownPMIDs: ownPMIDs)
             for target in targets {
                 do {
-                    var list: [Paper] = []
-                    switch target {
-                    case .openAlex:
-                        guard let openAlex else { continue }
-                        list = try await openAlex.papers(for: step.seed, since: since, until: untilOverride, maxPages: maxPages)
-                    case .europePMC:
-                        guard let europePMC,
-                              let query = EuropePMCQuery.build(step.seed, since: since, until: until, ownPMIDs: ownPMIDs) else { continue }
-                        list = try await europePMC.papers(query: query, maxPages: maxPages)
-                        for i in list.indices {
-                            list[i].reasons = [step.seed.reason]
-                            list[i].citesYou = step.seed.citesYou
-                        }
-                    case .crossref:
-                        guard let crossref else { continue }
-                        list = try await crossref.papers(seed: step.seed, since: since, until: until, maxPages: min(maxPages, 2))
-                        for i in list.indices { list[i].reasons = [step.seed.reason] }
-                    case .arXiv:
-                        guard let arXiv else { continue }
-                        list = try await arXiv.papers(seed: step.seed, since: since, until: until, maxPages: min(maxPages, 2))
-                        for i in list.indices { list[i].reasons = [step.seed.reason] }
-                    case .osf:
-                        guard let osf else { continue }
-                        list = try await osf.papers(seed: step.seed, since: since, until: until, maxPages: min(maxPages, 2))
-                        for i in list.indices { list[i].reasons = [step.seed.reason] }
-                    }
+                    guard var list = try await fetch(step.seed, from: target, ask) else { continue }
                     for i in list.indices { list[i].sources = [target.rawValue] }
                     if step.explicit && !step.seed.citesYou {
                         for i in list.indices { list[i].followed = true }
@@ -275,7 +251,7 @@ struct FeedEngine {
     /// phrase, by `extra` (what stands for the user's work) and by the user's levels. Nothing is stored.
     func search(_ phrase: String, settings: FeedSettings, extra: [ProfileEntry], days: Int = 365,
                 today: Date = Date()) async throws -> [RankedPaper] {
-        guard openAlex != nil || europePMC != nil || crossref != nil || arXiv != nil || osf != nil else { throw EngineError.noSource }
+        guard hasSource else { throw EngineError.noSource }
         let seed = SearchTerms.seed(phrase)
         let since = Ranker.dayString(today.addingTimeInterval(-Double(days) * 86_400))
         let until = Ranker.dayString(today)
@@ -284,25 +260,10 @@ struct FeedEngine {
         guard !targets.isEmpty else { throw EngineError.cannotSearch }
         var found: [Paper] = []
         var firstError: Error?
+        let ask = SourceAsk(since: since, until: until, openAlexPerPage: Previews.pageSize, pages: 2, otherPages: 1)
         for target in targets {
             do {
-                switch target {
-                case .openAlex:
-                    guard let openAlex else { continue }
-                    found += try await openAlex.papers(for: seed, since: since, perPage: Previews.pageSize, maxPages: 2)
-                case .europePMC:
-                    guard let europePMC, let query = EuropePMCQuery.build(seed, since: since, until: until) else { continue }
-                    found += try await europePMC.papers(query: query, maxPages: 2)
-                case .crossref:
-                    guard let crossref else { continue }
-                    found += try await crossref.papers(seed: seed, since: since, until: until, maxPages: 1)
-                case .arXiv:
-                    guard let arXiv else { continue }
-                    found += try await arXiv.papers(seed: seed, since: since, until: until, maxPages: 1)
-                case .osf:
-                    guard let osf else { continue }
-                    found += try await osf.papers(seed: seed, since: since, until: until, maxPages: 1)
-                }
+                found += try await fetch(seed, from: target, ask) ?? []
             } catch {
                 firstError = firstError ?? error
             }
@@ -317,7 +278,7 @@ struct FeedEngine {
     /// What following `seed` would find: one request per source that can answer it, over the
     /// look-back, run through the same words, mutes and filters as the feed. Nothing is stored.
     func preview(_ seed: Seed, rule: KeywordRule? = nil, settings: FeedSettings, today: Date = Date()) async throws -> SeedPreview {
-        guard openAlex != nil || europePMC != nil || crossref != nil || arXiv != nil || osf != nil else { throw EngineError.noSource }
+        guard hasSource else { throw EngineError.noSource }
         let since = Ranker.dayString(today.addingTimeInterval(-Double(settings.daysBack) * 86_400))
         let until = Ranker.dayString(today)
         let targets = SourceRouting.targets(for: seed, openAlex: openAlex != nil, europePMC: europePMC != nil,
@@ -326,26 +287,10 @@ struct FeedEngine {
         var found: [Paper] = []
         var fullPage = false
         var firstError: Error?
+        let ask = SourceAsk(since: since, until: until, openAlexPerPage: Previews.pageSize, pages: 1, otherPages: 1)
         for target in targets {
             do {
-                var list: [Paper] = []
-                switch target {
-                case .openAlex:
-                    guard let openAlex else { continue }
-                    list = try await openAlex.papers(for: seed, since: since, perPage: Previews.pageSize, maxPages: 1)
-                case .europePMC:
-                    guard let europePMC, let query = EuropePMCQuery.build(seed, since: since, until: until) else { continue }
-                    list = try await europePMC.papers(query: query, maxPages: 1)
-                case .crossref:
-                    guard let crossref else { continue }
-                    list = try await crossref.papers(seed: seed, since: since, until: until, maxPages: 1)
-                case .arXiv:
-                    guard let arXiv else { continue }
-                    list = try await arXiv.papers(seed: seed, since: since, until: until, maxPages: 1)
-                case .osf:
-                    guard let osf else { continue }
-                    list = try await osf.papers(seed: seed, since: since, until: until, maxPages: 1)
-                }
+                guard let list = try await fetch(seed, from: target, ask) else { continue }
                 fullPage = fullPage || list.count >= Previews.pageSize
                 found += list
             } catch {
@@ -355,6 +300,48 @@ struct FeedEngine {
         // One source failing leaves the other's answer; both failing is an error to show.
         if found.isEmpty, let firstError { throw firstError }
         return Previews.make(found, seed: seed, rule: rule, settings: settings, fullPage: fullPage)
+    }
+
+    private var hasSource: Bool { openAlex != nil || europePMC != nil || crossref != nil || arXiv != nil || osf != nil }
+
+    /// How much to ask each source for. Crossref, arXiv and OSF are slower to page, so they are asked for fewer.
+    private struct SourceAsk {
+        var since: String
+        var until: String
+        /// OpenAlex is given an end only when going back; otherwise it answers up to today.
+        var openAlexUntil: String? = nil
+        var openAlexPerPage = 100
+        /// For OpenAlex and Europe PMC.
+        var pages: Int
+        var otherPages: Int
+        var ownPMIDs: [String] = []
+    }
+
+    /// One source's answer to one seed: the feed, a search and a preview all ask through here, so they cannot ask
+    /// differently. nil when the source is off or cannot put the seed as a query. OpenAlex says itself why each paper
+    /// was found; the other sources' papers are given the seed's reason.
+    private func fetch(_ seed: Seed, from target: SourceKind, _ ask: SourceAsk) async throws -> [Paper]? {
+        var list: [Paper]
+        switch target {
+        case .openAlex:
+            guard let openAlex else { return nil }
+            return try await openAlex.papers(for: seed, since: ask.since, until: ask.openAlexUntil, perPage: ask.openAlexPerPage, maxPages: ask.pages)
+        case .europePMC:
+            guard let europePMC, let query = EuropePMCQuery.build(seed, since: ask.since, until: ask.until, ownPMIDs: ask.ownPMIDs) else { return nil }
+            list = try await europePMC.papers(query: query, maxPages: ask.pages)
+            for i in list.indices { list[i].citesYou = seed.citesYou }
+        case .crossref:
+            guard let crossref else { return nil }
+            list = try await crossref.papers(seed: seed, since: ask.since, until: ask.until, maxPages: ask.otherPages)
+        case .arXiv:
+            guard let arXiv else { return nil }
+            list = try await arXiv.papers(seed: seed, since: ask.since, until: ask.until, maxPages: ask.otherPages)
+        case .osf:
+            guard let osf else { return nil }
+            list = try await osf.papers(seed: seed, since: ask.since, until: ask.until, maxPages: ask.otherPages)
+        }
+        for i in list.indices { list[i].reasons = [seed.reason] }
+        return list
     }
 
     /// One person's papers: OpenAlex when it is on and answers, else the Europe PMC records that

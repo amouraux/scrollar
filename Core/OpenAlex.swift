@@ -10,20 +10,6 @@ struct AuthorProfile {
     var topics: [(id: String, name: String, count: Int)]
 }
 
-/// A source that answered with an error, or could not be asked. Every client uses it, with its own name,
-/// so a failure says which service it was: Europe PMC's used to be reported as OpenAlex's.
-enum SourceError: Error, CustomStringConvertible {
-    case http(source: String, status: Int, body: String)
-    case notFound(source: String, what: String)
-
-    var description: String {
-        switch self {
-        case .http(let source, let code, let body): return "\(source) answered HTTP \(code): \(body.prefix(200))"
-        case .notFound(let source, let what): return "\(source) has no record of \(what)"
-        }
-    }
-}
-
 /// The only file that talks to the network. The key goes in a query item and
 /// is never part of an error message or a log line.
 struct OpenAlexClient {
@@ -46,13 +32,7 @@ struct OpenAlexClient {
         items.append(URLQueryItem(name: "api_key", value: apiKey))
         comps.queryItems = items
         guard let url = comps.url else { throw SourceError.notFound(source: "OpenAlex", what: path) }
-
-        let (data, response) = try await session.data(from: url)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else {
-            throw SourceError.http(source: "OpenAlex", status: status, body: String(decoding: data, as: UTF8.self))
-        }
-        return data
+        return try await PoliteFetch.data(url, source: "OpenAlex", session: session)
     }
 
     func author(orcid: String) async throws -> AuthorProfile {

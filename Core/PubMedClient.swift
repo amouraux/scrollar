@@ -14,10 +14,7 @@ struct PubMedClient {
         items.append(URLQueryItem(name: "tool", value: "scrollar"))
         comps.queryItems = items
         guard let url = comps.url else { throw SourceError.notFound(source: "PubMed", what: endpoint) }
-        let (data, response) = try await session.data(from: url)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else { throw SourceError.http(source: "PubMed", status: status, body: String(decoding: data, as: UTF8.self)) }
-        return data
+        return try await PoliteFetch.data(url, source: "PubMed", session: session)
     }
 
     /// Abstracts and publication types for these PMIDs, 100 to a request.
