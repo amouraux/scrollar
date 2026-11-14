@@ -93,3 +93,47 @@ enum ProjectBrief {
         return n
     }
 }
+
+/// A short name for a current interest, asked of Apple's on-device model when the user gives none. Only the
+/// on-device model: the text may be a confidential proposal, and a title is not worth sending it anywhere.
+enum InterestTitle {
+    static let instructions = """
+        You name a text a researcher saved to say what they are interested in now: a grant proposal, \
+        an abstract, a paper in progress, a conference programme, notes. Give it a short title, the way \
+        they would label a folder: three to seven words naming the scientific subject or question it is \
+        about, specific enough to tell it apart from their other interests. Name the subject, not the \
+        method alone and not the kind of text: no words such as project, proposal, programme, conference \
+        or study unless they are part of a name the text gives. Use only names, dates and years the text \
+        itself states; never add one. Answer with the title alone: no quotation marks, no full stop, no \
+        other text.
+        """
+
+    /// The opening of the text, where a programme or a paper says what it is, and then passages from the rest.
+    static func prompt(_ text: String, limit: Int = 3_000) -> String {
+        let opening = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(600))
+        let rest = ProjectBrief.excerpt(text, limit: max(limit - opening.count, 500))
+        return "The beginning of the text:\n\n" + opening + (rest.isEmpty ? "" : "\n\nPassages from it:\n\n" + rest)
+    }
+
+    /// The title in a model's answer, or nil if it gave something that is not one: what a model wraps around a
+    /// title ("Title:", quotes, bold, a full stop) taken off, and a sentence or a paragraph refused. A year the
+    /// text never states is taken off too: told not to, the on-device model still added "2024" to a programme
+    /// that gave none, so the rule is kept here rather than trusted to the instructions.
+    static func clean(_ answer: String, text: String) -> String? {
+        guard var line = answer.split(whereSeparator: \.isNewline)
+            .map({ $0.trimmingCharacters(in: .whitespaces) }).first(where: { !$0.isEmpty }) else { return nil }
+        line = line.replacingOccurrences(of: #"^(?i:(?:suggested\s+)?title)\s*:\s*"#, with: "", options: .regularExpression)
+        line = line.replacingOccurrences(of: #"^#+\s*"#, with: "", options: .regularExpression)
+        line = line.trimmingCharacters(in: CharacterSet(charactersIn: "\"“”'‘’`*_ ."))
+        let found = try? NSRegularExpression(pattern: #"\b(?:19|20)\d\d\b"#)
+        let years = (found?.matches(in: line, range: NSRange(line.startIndex..., in: line)) ?? [])
+            .compactMap { Range($0.range, in: line).map { String(line[$0]) } }
+        for year in Set(years) where !text.contains(year) {
+            line = line.replacingOccurrences(of: #"\s*[(,–-]?\s*\b"# + year + #"\b\)?"#, with: "", options: .regularExpression)
+        }
+        line = line.trimmingCharacters(in: CharacterSet(charactersIn: " ,–-"))
+        let words = line.split(separator: " ").count
+        guard line.count >= 3, line.count <= 70, words <= 10, !line.contains(". "), !line.hasSuffix(":") else { return nil }
+        return line.prefix(1).uppercased() + line.dropFirst()
+    }
+}

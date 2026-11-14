@@ -600,13 +600,22 @@ and the real proposals of anyone but the sample in the tests.
 
 ### Several projects, each with a title
 
-Tune, Current interests keeps up to twenty, each with a title the user can change (suggested from the text when its first
-line reads as a heading, else "Project 2"), a switch for whether it ranks the feed, its text (shown on request), Suggest keywords,
+Tune, Current interests keeps up to twenty, each with a title the user can change (where the device has Apple's on-device
+model, it reads the text and names the subject while the user is still in the New interest sheet, and a typed title is never
+replaced; else the first line when it reads as a heading, else "Interest 2"), a switch for whether it ranks the feed, its text (shown on request), Suggest keywords,
 and Replace the text, which discards the old text for the new and does not merge (the title and the keywords already followed stay).
 The passages of the projects in use share one budget of 40, each thinned to its share (`ProjectText.combinedPassages`), so a long
 project does not drown a short one. The single project an earlier version kept moves into the list on first launch
 (`projects.json`), its title replaced by a plain one where the old title was only the first words of its text. Tried on the
 iPhone simulator: the migration, and the list and project screens. Not tried: adding a second project, and the Mac window.
+
+The title comes from Apple's model only, never from a Claude or ChatGPT account set up for summaries: a title is not worth
+sending a confidential proposal anywhere. The prompt sends the opening of the text, where a programme names its meeting, then
+passages from the rest (`InterestTitle`). Its first wording invented years ("Neuropathic Pain Conference 2024" from a programme
+that gives none) and named the method ("Laser heat pulses project"); it now names the subject, uses only names and years the
+text states, and leaves out words such as project and programme. If the user taps Add before the answer arrives, the interest is
+kept with the stand-in and renamed when the answer comes, unless the user renamed it first. Its screen has Suggest a title for
+interests added before.
 
 ### Asking a language model
 

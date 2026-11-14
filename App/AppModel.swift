@@ -1112,8 +1112,9 @@ final class AppModel {
 
     /// Keep a text the user pasted, with the title they gave it (or one its text suggests, or "Interest 2") and,
     /// if they gave one, its last day. Throws if it says too little, or if there are too many. Returns its id.
+    /// `nameLater`: the title is only a stand-in, so Apple's on-device model is asked for a better one.
     @discardableResult
-    func addProject(title: String, text: String, until: Date? = nil) throws -> String {
+    func addProject(title: String, text: String, until: Date? = nil, nameLater: Bool = false) throws -> String {
         guard projects.count < ProjectText.maxProjects else { throw ImportProblem.tooManyProjects }
         let text = try checked(text)
         let given = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1122,7 +1123,21 @@ final class AppModel {
                                until: until.map { ProjectFile.day($0) })
         projects.append(file)
         projectsChanged()
+        if nameLater { Task { await nameProject(id: file.id, unless: name) } }
         return file.id
+    }
+
+    /// The model's title replaces the stand-in, unless the user renamed it while the model was reading.
+    private func nameProject(id: String, unless standIn: String) async {
+        guard let text = project(id: id)?.text, let title = await ProjectAI.title(for: text),
+              project(id: id)?.name == standIn else { return }
+        renameProject(id: id, to: title)
+    }
+
+    /// A title from Apple's on-device model, for an interest already kept; nil if there is no model or no answer.
+    func suggestProjectTitle(id: String) async -> String? {
+        guard let text = project(id: id)?.text else { return nil }
+        return await ProjectAI.title(for: text)
     }
 
     /// The text of a project is replaced by a new one: the old text is discarded, not merged. The title,

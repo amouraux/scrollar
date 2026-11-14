@@ -60,6 +60,21 @@ enum ProjectAI {
         }
     }
 
+    /// A title for an interest, from Apple's on-device model only, or nil: no model on this device, a refusal,
+    /// or an answer that is not a title. Never a service, even one set up: a title is not worth sending the text.
+    static func title(for text: String) async -> String? {
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            guard SystemLanguageModel.default.isAvailable else { return nil }
+            let session = LanguageModelSession(model: .default, instructions: InterestTitle.instructions)
+            guard let response = try? await session.respond(to: InterestTitle.prompt(text),
+                                                            options: GenerationOptions(temperature: 0.3)) else { return nil }
+            return InterestTitle.clean(response.content, text: text)
+        }
+        #endif
+        return nil
+    }
+
     private static func onDevice(text: String) async throws -> [ProjectKeyword] {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {

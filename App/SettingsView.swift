@@ -938,8 +938,8 @@ struct CurrentInterestsScreen: View {
         }
         .navigationTitle("Current interests")
         .sheet(isPresented: $adding) {
-            PasteProjectSheet(replacing: false) { title, text, until in
-                do { try model.addProject(title: title, text: text, until: until); message = nil }
+            PasteProjectSheet(replacing: false) { title, text, until, settled in
+                do { try model.addProject(title: title, text: text, until: until, nameLater: !settled); message = nil }
                 catch { message = error.localizedDescription }
             }
         }
@@ -986,6 +986,7 @@ struct ProjectScreen: View {
     @State private var title = ""
     @State private var replacing = false
     @State private var suggesting = false
+    @State private var naming = false
     @State private var deleting = false
     @State private var message: String?
 
@@ -997,6 +998,21 @@ struct ProjectScreen: View {
                 Section {
                     TextField("Title", text: $title)
                         .onSubmit { model.renameProject(id: id, to: title) }
+                    if ProjectAI.onDeviceAvailable {
+                        Button {
+                            naming = true
+                            Task {
+                                if let suggested = await model.suggestProjectTitle(id: id) {
+                                    title = suggested
+                                    model.renameProject(id: id, to: suggested)
+                                }
+                                naming = false
+                            }
+                        } label: {
+                            HStack { Text("Suggest a title"); if naming { Spacer(); ProgressView() } }
+                        }
+                        .disabled(naming)
+                    }
                     Toggle("In use", isOn: Binding(
                         get: { inUse }, set: { model.setProjectEnabled($0, id: id) }))
                     if inUse {
@@ -1053,9 +1069,11 @@ struct ProjectScreen: View {
             .navigationTitle(project.name)
             .navigationBarTitleDisplayMode(.inline)
             .onAppear { title = project.name }
+            // The model's title can arrive after this screen opened; a title being typed is left alone.
+            .onChange(of: project.name) { old, new in if title == old { title = new } }
             .onDisappear { model.renameProject(id: id, to: title) }
             .sheet(isPresented: $replacing) {
-                PasteProjectSheet(replacing: true) { _, text, _ in
+                PasteProjectSheet(replacing: true) { _, text, _, _ in
                     do { try model.replaceProjectText(id: id, with: text); message = nil }
                     catch { message = error.localizedDescription }
                 }
@@ -1092,10 +1110,13 @@ struct ProjectScreen: View {
 struct PasteProjectSheet: View {
     @Environment(\.dismiss) private var dismiss
     let replacing: Bool
-    let save: (_ title: String, _ text: String, _ until: Date?) -> Void
+    /// `settled`: the title was typed, or came from the model; otherwise it is a stand-in, and the model is asked again.
+    let save: (_ title: String, _ text: String, _ until: Date?, _ settled: Bool) -> Void
     @State private var text = ""
     @State private var title = ""
     @State private var titleEdited = false
+    @State private var titledByModel = false
+    @State private var naming = false
     @State private var hasEnd = false
     @State private var end = Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date()
     @State private var choosing = false
@@ -1110,6 +1131,11 @@ struct PasteProjectSheet: View {
                 if !replacing {
                     TextField("Title (optional), e.g. Pain congress 2026", text: Binding(get: { title }, set: { title = $0; titleEdited = true }))
                         .textFieldStyle(.roundedBorder)
+                        .overlay(alignment: .trailing) { if naming { ProgressView().padding(.trailing, 8) } }
+                    if ProjectAI.onDeviceAvailable && !titleEdited {
+                        Text(naming ? "Apple's model is reading it for a title, on this device." : "Apple's model suggests a title, on this device. Type one to keep your own.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
                     Toggle("Until a date", isOn: $hasEnd)
                     if hasEnd {
                         DatePicker("Last day", selection: $end, in: Date()..., displayedComponents: .date)
@@ -1122,7 +1148,19 @@ struct PasteProjectSheet: View {
                     .padding(6)
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.3)))
                     .frame(minHeight: 220)
-                    .onChange(of: text) { if !titleEdited { title = ProjectText.suggestedTitle(text) ?? "" } }
+                    .onChange(of: text) { if !titleEdited { title = ProjectText.suggestedTitle(text) ?? ""; titledByModel = false } }
+                    // Typing restarts the wait, so the model reads the text once it stops changing, not every keystroke.
+                    .task(id: text) {
+                        naming = false
+                        guard !replacing, !titleEdited, enough, ProjectAI.onDeviceAvailable else { return }
+                        try? await Task.sleep(for: .milliseconds(800))
+                        guard !Task.isCancelled else { return }
+                        naming = true
+                        let suggested = await ProjectAI.title(for: text)
+                        guard !Task.isCancelled else { return }
+                        naming = false
+                        if !titleEdited, let suggested { title = suggested; titledByModel = true }
+                    }
                 HStack {
                     Button("Paste from clipboard", systemImage: "doc.on.clipboard") {
                         if let clip = UIPasteboard.general.string { text = clip }
@@ -1139,7 +1177,7 @@ struct PasteProjectSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(replacing ? "Replace" : "Add") { save(title, text, !replacing && hasEnd ? end : nil); dismiss() }.disabled(!enough)
+                    Button(replacing ? "Replace" : "Add") { save(title, text, !replacing && hasEnd ? end : nil, titleEdited || titledByModel); dismiss() }.disabled(!enough)
                 }
             }
             .fileImporter(isPresented: $choosing, allowedContentTypes: [.pdf, .plainText, .text]) { result in
