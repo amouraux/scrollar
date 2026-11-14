@@ -783,6 +783,7 @@ final class AppModel {
         saveSettingsNow()
         var merged = ledger
         for doc in [outcome.main].compactMap({ $0 }) + outcome.conflicts { merged = merged.merged(with: doc) }
+        merged.forgetOldRemovals(now: Date())
         var mergedHistory = history.merged(with: merged.history)
         mergedHistory.prune(now: Date())
 

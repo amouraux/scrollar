@@ -275,4 +275,16 @@ extension SyncDocument {
     func apply(to settings: FeedSettings) -> FeedSettings {
         SyncProjection.apply(entries, to: settings)
     }
+
+    /// How long a removal is remembered. Every faded thumb and every unsaved paper leaves one, so kept for ever
+    /// they would make up most of the file. Past this, the other devices have long since heard of it; the cost is
+    /// that a device not opened for longer than this could put back what was removed while it was away.
+    static let removalMemoryDays = 183
+
+    /// Forget removals older than `removalMemoryDays`. Every device applies the same rule, so a removal one of them
+    /// still holds is merged back and dropped again, and nothing that is present is touched.
+    mutating func forgetOldRemovals(now: Date) {
+        let cutoff = now.addingTimeInterval(-Double(SyncDocument.removalMemoryDays) * 86_400)
+        entries = entries.filter { $0.value.present || $0.value.at >= cutoff }
+    }
 }

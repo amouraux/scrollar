@@ -2312,5 +2312,22 @@ let rvOrder1 = Ranker.rank([rvB, rvA], profileTexts: ["painful heat"], today: rv
 let rvOrder2 = Ranker.rank([rvA, rvB], profileTexts: ["painful heat"], today: rvNow).map(\.paper.id)
 check(rvOrder1 == rvOrder2 && rvOrder1 == ["rvA", "rvB"], "review: two papers of one score and one day keep one order")
 
+// Old removals are forgotten; recent ones and anything present are kept.
+let pruneNow = Date(timeIntervalSince1970: 1_800_000_000)
+var pruneDoc = SyncDocument()
+pruneDoc.entries["old-gone"] = SyncEntry(at: pruneNow.addingTimeInterval(-200 * 86_400), present: false, value: nil)
+pruneDoc.entries["new-gone"] = SyncEntry(at: pruneNow.addingTimeInterval(-30 * 86_400), present: false, value: nil)
+pruneDoc.entries["old-here"] = SyncEntry(at: pruneNow.addingTimeInterval(-900 * 86_400), present: true, value: "x")
+pruneDoc.forgetOldRemovals(now: pruneNow)
+check(pruneDoc.entries["old-gone"] == nil, "sync: a removal older than six months is forgotten")
+check(pruneDoc.entries["new-gone"] != nil, "sync: a recent removal is kept, so other devices still hear of it")
+check(pruneDoc.entries["old-here"] != nil, "sync: something present is never forgotten, however old")
+// A device that still holds the old removal merges it back, and it is dropped again.
+var pruneOther = SyncDocument()
+pruneOther.entries["old-gone"] = SyncEntry(at: pruneNow.addingTimeInterval(-200 * 86_400), present: false, value: nil)
+var pruneMerged = pruneDoc.merged(with: pruneOther)
+pruneMerged.forgetOldRemovals(now: pruneNow)
+check(pruneMerged == pruneDoc, "sync: merging with a device that still holds an old removal changes nothing")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)
