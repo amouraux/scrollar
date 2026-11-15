@@ -139,11 +139,18 @@ struct ProjectKeyword: Equatable, Identifiable {
     /// Ticked to begin with: a phrase of several words, said more than once. A single word searched
     /// alone lists far too much, so it is offered and never ticked.
     var selected: Bool
-    /// How many papers a month match it on OpenAlex, where that was asked.
+    /// How many papers matched it on OpenAlex over the last year, where that was asked.
     var volume: Int? = nil
     /// For a keyword taken from papers like the text's: on how many of them it was found.
     var papers: Int? = nil
-    var id: String { phrase.lowercased() }
+    /// Words that must appear too, as a followed keyword's conditions: a phrase too narrow to find anything
+    /// is offered as its main words ANDed ("rTMS" with "hypoalgesia").
+    var also: [String] = []
+    /// The phrase of the text it was shortened from.
+    var shortenedFrom: String? = nil
+    /// As shown and as followed: the phrase, then each word required with it.
+    var label: String { ([phrase] + also).joined(separator: " + ") }
+    var id: String { label.lowercased() }
 }
 
 enum ProjectText {

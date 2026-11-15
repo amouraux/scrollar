@@ -44,7 +44,8 @@ enum KeywordPick {
         var out: [ProjectKeyword] = []
         for k in raw {
             let phrase = Abbreviations.expand(k.phrase, defs)
-            guard seen.insert(key(phrase)).inserted else { continue }
+            // Six words is a description, not something a title says.
+            guard phrase.split(separator: " ").count <= 5, seen.insert(key(phrase)).inserted else { continue }
             out.append(ProjectKeyword(phrase: phrase, count: k.count, words: phrase.split(separator: " ").count, selected: false))
             if out.count >= limit { break }
         }
@@ -88,21 +89,83 @@ enum KeywordPick {
         return out
     }
 
-    /// Each phrase with how many papers a month match it, where known, and a broad one unticked: a followed
-    /// keyword is listed in full, and one that lists hundreds a month buries the rest.
+    /// Counted over a year: a month says too little about a narrow phrase, where one paper more or less is
+    /// the whole difference.
+    static let volumeDays = 365
+    /// Fewer papers than this in a year and a keyword finds next to nothing: it describes the text perfectly
+    /// and is no use as a search ("M1-rTMS induced hypoalgesia").
+    static let narrowPerYear = 6
+
+    /// Broad on the same line as Suggest what to follow: hundreds of papers a month.
+    static func isBroad(_ perYear: Int) -> Bool { perYear >= ProfileAnalysis.broadKeyword * 12 }
+    static func isNarrow(_ perYear: Int) -> Bool { perYear < narrowPerYear }
+
+    /// Each phrase with how many papers a year match it, where known, and a broad or narrow one unticked: a
+    /// followed keyword is listed in full, and one that lists hundreds a month buries the rest, while one
+    /// that lists nothing only looks useful. `volumes` is by `ProjectKeyword.id`.
     static func checked(_ words: [ProjectKeyword], volumes: [String: Int]) -> [ProjectKeyword] {
         words.map { k in
             var k = k
-            k.volume = volumes[k.phrase.lowercased()]
-            if let v = k.volume, v >= ProfileAnalysis.broadKeyword { k.selected = false }
+            k.volume = volumes[k.id] ?? k.volume
+            if let v = k.volume, isBroad(v) || isNarrow(v) { k.selected = false }
             return k
         }
+    }
+
+    /// Words that carry no subject of their own, left out when a phrase is cut down to its main words.
+    private static let connective: Set<String> = [
+        "a", "an", "the", "of", "in", "on", "at", "to", "for", "from", "by", "with", "without", "and", "or", "as",
+        "versus", "vs", "via", "during", "after", "before", "following", "using", "induced", "related", "associated",
+        "based", "mediated", "dependent", "specific", "driven", "evoked", "elicited", "response", "responses",
+    ]
+
+    /// A phrase too narrow to find anything, cut down to its main words: each a term, the phrase becoming a
+    /// keyword with the others required, which every source searches as all of them anywhere in the title
+    /// or abstract. A hyphenated word with an acronym in it is taken apart, and a short code in it ("M1")
+    /// dropped. The longest forms first; the whole phrase is not one of them.
+    static func shorterForms(_ phrase: String, limit: Int = 8) -> [(phrase: String, also: [String])] {
+        var terms: [String] = []
+        for word in phrase.split(separator: " ").map(String.init) {
+            let parts = word.split(separator: "-").map(String.init)
+            let pieces = parts.count > 1 && parts.contains(where: { $0.filter(\.isUppercase).count >= 2 }) ? parts : [word]
+            for p in pieces {
+                let bare = p.trimmingCharacters(in: .punctuationCharacters)
+                let code = bare.count <= 2 || (bare.count <= 3 && bare.contains(where: \.isNumber))
+                guard !code, !connective.contains(bare.lowercased()),
+                      !terms.contains(where: { $0.lowercased() == bare.lowercased() }) else { continue }
+                terms.append(bare)
+            }
+        }
+        guard terms.count >= 2 else { return [] }
+        var out: [[String]] = []
+        func combos(_ k: Int, from start: Int, _ chosen: [String]) {
+            if chosen.count == k { out.append(chosen); return }
+            guard start < terms.count else { return }
+            for i in start..<terms.count { combos(k, from: i + 1, chosen + [terms[i]]) }
+        }
+        for k in stride(from: min(terms.count, 3), through: 2, by: -1) { combos(k, from: 0, []) }
+        let whole = phrase.lowercased()
+        return out.filter { $0.joined(separator: " ").lowercased() != whole }
+            .prefix(limit).map { (phrase: $0[0], also: Array($0.dropFirst())) }
+    }
+
+    /// The narrow phrase replaced by its most specific shorter form that is neither narrow nor broad, ticked
+    /// if the phrase was; or nil, and the phrase stays as it is, unticked. `volumes` is per form, nil unknown.
+    static func shortened(_ k: ProjectKeyword, wasSelected: Bool, forms: [(phrase: String, also: [String])],
+                          volumes: [Int?]) -> ProjectKeyword? {
+        let usable = zip(forms, volumes).compactMap { form, v -> (form: (phrase: String, also: [String]), volume: Int)? in
+            guard let v, !isNarrow(v), !isBroad(v) else { return nil }
+            return (form, v)
+        }
+        guard let best = usable.min(by: { $0.volume < $1.volume }) else { return nil }
+        return ProjectKeyword(phrase: best.form.phrase, count: k.count, words: 1 + best.form.also.count,
+                              selected: wasSelected, volume: best.volume, also: best.form.also, shortenedFrom: k.phrase)
     }
 
     /// What to search OpenAlex for, to find papers like the text's: the first ticked phrases, which are the
     /// model's strongest and not broad.
     static func literatureQueries(_ words: [ProjectKeyword]) -> [String] {
-        Array(words.filter(\.selected).prefix(literatureQueries).map(\.phrase))
+        Array(words.filter(\.selected).prefix(literatureQueries).map { ([$0.phrase] + $0.also).joined(separator: " ") })
     }
 
     /// The keywords OpenAlex gives the papers found, kept where papers found for different phrases agree

@@ -96,6 +96,25 @@ struct OpenAlexClient {
         return out
     }
 
+    /// How many papers each search would find since `since`, searched exactly as following it searches
+    /// (`Seed.filter`), in the order given; nil where the request failed. A few at a time.
+    func volumes(of seeds: [Seed], since: String) async -> [Int?] {
+        var out = [Int?](repeating: nil, count: seeds.count)
+        for start in stride(from: 0, to: seeds.count, by: 5) {
+            await withTaskGroup(of: (Int, Int?).self) { group in
+                for i in start..<min(start + 5, seeds.count) {
+                    group.addTask {
+                        guard let data = try? await self.fetch("works", ["filter": seeds[i].filter(since: since), "per-page": "1", "select": "id"]),
+                              let count = try? JSONDecoder().decode(CountDTO.self, from: data).meta.count else { return (i, nil) }
+                        return (i, count)
+                    }
+                }
+                for await (i, count) in group { out[i] = count }
+            }
+        }
+        return out
+    }
+
     /// The keywords OpenAlex gives each of the papers that best match a phrase (in titles and abstracts), to
     /// read how the literature names a subject. Nothing on a failure: this only adds suggestions.
     func keywordsOfWorks(matching phrase: String, perPage: Int) async -> [[String]] {

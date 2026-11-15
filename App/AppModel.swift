@@ -1258,8 +1258,22 @@ final class AppModel {
     func checkKeywords(_ words: [ProjectKeyword], text: String, offered: [String]) async -> (checked: [ProjectKeyword], fromPapers: [ProjectKeyword])? {
         guard usesOpenAlex, !words.isEmpty else { return nil }
         let client = openAlex
-        let monthAgo = Ranker.dayString(Date().addingTimeInterval(-30 * 86_400))
-        let checked = KeywordPick.checked(words, volumes: await client.keywordVolumes(phrases: words.map(\.phrase), since: monthAgo))
+        let since = Ranker.dayString(Date().addingTimeInterval(-Double(KeywordPick.volumeDays) * 86_400))
+        let counts = await client.volumes(of: words.map { Seed.keyword($0.phrase, also: $0.also) }, since: since)
+        var volumes: [String: Int] = [:]
+        for (k, n) in zip(words, counts) { if let n { volumes[k.id] = n } }
+        var checked = KeywordPick.checked(words, volumes: volumes)
+        // A phrase that finds next to nothing is cut to its main words, each form counted as it would be followed.
+        for i in checked.indices {
+            guard let v = checked[i].volume, KeywordPick.isNarrow(v), checked[i].also.isEmpty else { continue }
+            let forms = KeywordPick.shorterForms(checked[i].phrase)
+            guard !forms.isEmpty else { continue }
+            let formCounts = await client.volumes(of: forms.map { Seed.keyword($0.phrase, also: $0.also) }, since: since)
+            if let short = KeywordPick.shortened(checked[i], wasSelected: words[i].selected, forms: forms, volumes: formCounts),
+               !checked.contains(where: { $0.id == short.id }) {
+                checked[i] = short
+            }
+        }
         let queries = KeywordPick.literatureQueries(checked)
         let found = await withTaskGroup(of: (Int, String, [[String]]).self) { group in
             for (i, q) in queries.enumerated() {
@@ -1274,10 +1288,16 @@ final class AppModel {
     }
 
     func followKeywords(_ phrases: [String]) -> Int {
+        followKeywords(phrases.map { (phrase: $0, also: []) })
+    }
+
+    /// Keywords with the words each requires (none for a plain phrase), leaving out any followed already.
+    @discardableResult
+    func followKeywords(_ rules: [(phrase: String, also: [String])]) -> Int {
         var s = settings
         var added = 0
-        for phrase in phrases where !s.followedKeywords.contains(where: { $0.phrase.lowercased() == phrase.lowercased() }) {
-            s.addKeyword(phrase)
+        for rule in rules where !s.followsKeyword(rule.phrase, alsoRequire: rule.also) {
+            s.addKeyword(rule.phrase, alsoRequire: rule.also)
             added += 1
         }
         if added > 0 { settings = s }

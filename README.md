@@ -639,8 +639,9 @@ interests added before.
 ### Asking a language model
 
 Counting cannot tell a topic from a frequent phrase, so **Suggested keywords** can also ask a language model
-(`Core/ProjectBrief.swift`, tested; the calls are in `App/ProjectAI.swift`). It is only ever on request, and
-nothing is asked or sent when the sheet opens.
+(`Core/ProjectBrief.swift`, tested; the calls are in `App/ProjectAI.swift`). Apple's on-device model is asked as
+the sheet opens, since nothing of the text leaves the device and the button only made the user wait; asked again,
+it says so. A service is asked only on request, after its warning, every time.
 
 - **Apple's on-device model**, where the device has one, asked two things (`Core/KeywordPick.swift`, tested). First it
   *chooses* six to ten phrases from a list of up to 50 found in the text: the counted phrases, runs of adjectives and
@@ -658,8 +659,17 @@ nothing is asked or sent when the sheet opens.
   paper it chose offset analgesia, onset hyperalgesia, pain modulation, conditioned pain, pain inhibition and temporal
   summation.
 - **Checked on OpenAlex**, after either model answers and only with OpenAlex on and a key. Each suggested phrase is
-  counted over the last month; one with 150 papers a month or more (the same line as "Broad" in Suggest what to follow) is
-  shown with its count and not ticked. Then the first four ticked phrases are searched, fifteen papers each, and the
+  counted over the last year, searched exactly as following it would search. One with 150 papers a month or more (the
+  same line as "Broad" in Suggest what to follow) is shown with its count and not ticked. One with fewer than six a year
+  is **narrow**: it may describe the text perfectly ("M1-rTMS induced hypoalgesia") and still find nothing. It is cut to
+  its main words, a hyphenated word with an acronym taken apart, short codes ("M1") and connectives ("induced") dropped,
+  and each combination of two or three of them is counted as a keyword whose other words are required (the conditions
+  Follow and mute already has, searched as all of them anywhere in title or abstract by every source). The most
+  specific one that is neither narrow nor broad takes the phrase's place and its tick, shown as "rTMS + hypoalgesia"
+  with the phrase it came from; if none is, the phrase stays, unticked, marked narrow. It cannot change a word for a
+  commoner one: "rTMS + hypoalgesia" found no paper in a year in OpenAlex or Europe PMC, where "rTMS + analgesia" found
+  16 and "rTMS + pain" 198. Asking Apple's model for commoner wordings was tried and dropped: it offered "M1
+  hypoalgesia", and for other phrases repeated the words of its instructions. Then the first four ticked phrases are searched, fifteen papers each, and the
   keywords OpenAlex gives those papers are offered as **Used in papers like these**, kept only where papers found for
   different phrases agree (one search alone drifts with any word it shares with another field), unticked. They are how
   the literature names the subject: for the offset analgesia paper, descending pain modulation, conditioned pain

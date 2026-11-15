@@ -2417,9 +2417,20 @@ let kpCombined = KeywordPick.combine(picked: KeywordPick.matched(kpAnswer, candi
 check(kpCombined.map(\.phrase) == ["offset analgesia response", "thermal probe", "NSSI group", "gamma-band oscillations", "onset hyperalgesia"], "keywords: chosen phrases first, then what the model wrote that the text uses; invented ones and repeats dropped")
 check(KeywordPick.asWritten("nssi group", in: kpText) == "NSSI group" && KeywordPick.asWritten("Thermal Probe", in: kpText) == "thermal probe", "keywords: a written phrase takes the text's capitals for an acronym and lower case for the rest")
 check(kpCombined.prefix(3).allSatisfy(\.selected) && !kpCombined[3].selected, "keywords: the chosen phrases of several words are ticked, the written ones are not")
-let kpChecked = KeywordPick.checked(kpCombined, volumes: ["thermal probe": 12, "nssi group": 400])
-check(kpChecked[1].selected && kpChecked[1].volume == 12 && !kpChecked[2].selected && kpChecked[2].volume == 400 && kpChecked[0].volume == nil, "keywords: a phrase hundreds of papers a month match is unticked, and the count is kept to show")
-check(KeywordPick.literatureQueries(kpChecked) == ["offset analgesia response", "thermal probe"], "keywords: papers are searched for the ticked phrases only")
+let kpChecked = KeywordPick.checked(kpCombined, volumes: ["thermal probe": 120, "nssi group": 5_000, "offset analgesia response": 2])
+check(kpChecked[1].selected && kpChecked[1].volume == 120 && !kpChecked[2].selected && kpChecked[2].volume == 5_000, "keywords: a phrase hundreds of papers a month match is unticked, and the count is kept to show")
+check(!kpChecked[0].selected && kpChecked[0].volume == 2 && kpChecked[3].volume == nil, "keywords: a phrase that finds a few papers a year is unticked too; one not counted keeps its tick")
+check(KeywordPick.literatureQueries(kpChecked) == ["thermal probe"], "keywords: papers are searched for the ticked phrases only")
+let kpForms = KeywordPick.shorterForms("M1-rTMS induced hypoalgesia")
+check(kpForms.count == 1 && kpForms[0].phrase == "rTMS" && kpForms[0].also == ["hypoalgesia"], "keywords: a narrow phrase is cut to its main words, an acronym taken out of a hyphenated word and a code and a connective dropped")
+let kpForms3 = KeywordPick.shorterForms("conditioned pain modulation in women").map { ([$0.phrase] + $0.also).joined(separator: " + ") }
+check(kpForms3.first == "conditioned + pain + modulation" && kpForms3.contains("conditioned + women") && !kpForms3.contains("conditioned + pain + modulation + women"), "keywords: shorter forms, the longest first, never the whole phrase")
+check(KeywordPick.shorterForms("non-suicidal self-injury").isEmpty && KeywordPick.shorterForms("hypoalgesia").isEmpty, "keywords: a hyphenated word without an acronym stays whole; one word cannot be cut down")
+let kpNarrow = ProjectKeyword(phrase: "M1-rTMS induced hypoalgesia", count: 3, words: 3, selected: false, volume: 1)
+let kpShort = KeywordPick.shortened(kpNarrow, wasSelected: true, forms: [("rTMS", ["hypoalgesia"]), ("rTMS", ["pain"]), ("M1", ["hypoalgesia"])], volumes: [40, 30_000, 2])
+check(kpShort?.label == "rTMS + hypoalgesia" && kpShort?.selected == true && kpShort?.shortenedFrom == "M1-rTMS induced hypoalgesia" && kpShort?.count == 3 && kpShort?.volume == 40, "keywords: a narrow phrase becomes its most specific shorter form that is neither narrow nor broad, ticked if it was")
+check(KeywordPick.shortened(kpNarrow, wasSelected: true, forms: [("rTMS", ["pain"])], volumes: [30_000]) == nil, "keywords: with no usable shorter form the phrase stays as it is")
+check(kpShort?.id == "rtms + hypoalgesia" && kpShort?.id != ProjectKeyword(phrase: "rTMS", count: 0, words: 1, selected: false).id, "keywords: a keyword with words required is told apart from the same phrase alone")
 let kpFound: [(query: String, keywords: [[String]])] = [
     ("offset analgesia", [["Offset Analgesia", "Conditioned Pain Modulation"], ["Conditioned Pain Modulation", "Open Access"], ["Conditioned pain modulation", "Open Access"], ["Thermal Pain"]]),
     ("thermal probe", [["Conditioned Pain Modulation", "Thermal pain"], ["Thermal Pain", "EEG"], ["Thermal Pain"]]),

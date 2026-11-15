@@ -939,7 +939,7 @@ struct CurrentInterestsScreen: View {
 
             Section {
             } footer: {
-                Text("These texts are read on this device and kept only here: not synced, and not in the settings file you can export. A text is sent to no service: only its few search phrases go to the sources, as a followed keyword does, unless you ask a model you set up (Claude, ChatGPT or another) to suggest keywords from it, and then only after a warning that shows exactly what goes. Apple's on-device model, where the device has one, reads it without sending anything.")
+                Text("These texts are read on this device and kept only here: not synced, and not in the settings file you can export. A text is sent to no service: only its few search phrases go to the sources, as a followed keyword does, and the keywords suggested from it go to OpenAlex to be checked, unless you ask a model you set up (Claude, ChatGPT or another) to suggest keywords from it, and then only after a warning that shows exactly what goes. Apple's on-device model, where the device has one, reads it without sending anything.")
             }
         }
         .navigationTitle("Current interests")
@@ -1223,7 +1223,7 @@ struct ProjectKeywordsSheet: View {
     private var text: String { model.project(id: projectID)?.text ?? "" }
 
     private func fresh(_ words: [ProjectKeyword]) -> [ProjectKeyword] {
-        words.filter { k in !model.settings.followedKeywords.contains { $0.phrase.lowercased() == k.id } }
+        words.filter { !model.settings.followsKeyword($0.phrase, alsoRequire: $0.also) }
     }
 
     var body: some View {
@@ -1284,7 +1284,7 @@ struct ProjectKeywordsSheet: View {
                     Button("Add \(chosen.count)") {
                         let all = asked + fromPapers + counted
                         var seen: Set<String> = []
-                        model.followKeywords(all.filter { chosen.contains($0.id) && seen.insert($0.id).inserted }.map(\.phrase))
+                        model.followKeywords(all.filter { chosen.contains($0.id) && seen.insert($0.id).inserted }.map { (phrase: $0.phrase, also: $0.also) })
                         dismiss()
                     }
                     .disabled(chosen.isEmpty)
@@ -1294,6 +1294,9 @@ struct ProjectKeywordsSheet: View {
                 counted = fresh(ProjectText.keywords(text))
                 chosen = Set(counted.filter(\.selected).map(\.id))
                 loaded = true
+                // On the device nothing of the text leaves it, so there is nothing to ask first: the model is
+                // asked as the sheet opens. A service is still asked only on request, after its warning.
+                if ProjectAI.onDeviceAvailable && asked.isEmpty && !working { ask(.onDevice, excerpt: "") }
             }
             .sheet(isPresented: $confirming) {
                 if let config = model.remoteSummary {
@@ -1308,7 +1311,9 @@ struct ProjectKeywordsSheet: View {
     @ViewBuilder private var askSection: some View {
         Section {
             if ProjectAI.onDeviceAvailable {
-                Button { ask(.onDevice, excerpt: "") } label: { Label("Ask Apple's on-device model", systemImage: "sparkles") }
+                Button { ask(.onDevice, excerpt: "") } label: {
+                    Label(askedBy == ProjectAI.Route.onDevice.name ? "Ask Apple's on-device model again" : "Ask Apple's on-device model", systemImage: "sparkles")
+                }
                     .disabled(working)
             }
             if let config = model.remoteSummary {
@@ -1326,10 +1331,10 @@ struct ProjectKeywordsSheet: View {
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
                 if ProjectAI.onDeviceAvailable {
-                    Text("Apple's model runs on this device. It reads about \(ProjectText.wordCount(ProjectAI.excerpt(for: .onDevice, text: text))) words of the text, chooses among the phrases found in it, and adds any it finds that the text uses. The text is not sent anywhere, not even to Apple.")
+                    Text("Apple's model is asked as this opens. It runs on this device, reads about \(ProjectText.wordCount(ProjectAI.excerpt(for: .onDevice, text: text))) words of the text, chooses among the phrases found in it, and adds any it finds that the text uses. The text is not sent anywhere, not even to Apple.")
                 }
                 if model.usesOpenAlex {
-                    Text("The phrases suggested, and not the text, are then looked up on OpenAlex: how many papers a month each would list, and which keywords papers like these carry.")
+                    Text("The phrases suggested, and not the text, are then looked up on OpenAlex: how many papers each would list, a shorter form for one that would list almost none, and which keywords papers like these carry.")
                 }
                 if let config = model.remoteSummary {
                     Text((config.provider == .other ? "" : "\(config.provider.name) is run by \(config.receiver). ") + "Asking sends part of the text to \(config.provider == .other ? config.receiver : "them")\(config.key.isEmpty ? "" : ", with your key,") after showing you exactly what. Nothing is sent unless you ask, and you are asked each time.")
@@ -1341,7 +1346,10 @@ struct ProjectKeywordsSheet: View {
     private var askedFooter: String {
         var s = "A language model can be wrong: the count is how often your text uses each phrase."
         if asked.contains(where: { $0.volume != nil }) {
-            s += " A phrase that hundreds of papers a month match would list a great many, so it is not ticked; add conditions to it afterwards if you keep it."
+            s += " A phrase that hundreds of papers a month match would list a great many, and one that a handful a year match would list almost nothing, so neither is ticked."
+        }
+        if asked.contains(where: { $0.shortenedFrom != nil }) {
+            s += " A phrase that describes the text too exactly to find papers is offered as its main words, all of which must appear: “rTMS + hypoalgesia”."
         }
         return s
     }
@@ -1364,10 +1372,18 @@ struct ProjectKeywordsSheet: View {
             guard !asked.isEmpty, model.usesOpenAlex else { return }
             checking = true
             let followed = model.settings.followedKeywords.map(\.phrase)
-            if let result = await model.checkKeywords(asked, text: source, offered: counted.map(\.phrase) + followed) {
-                // Untick only what the check found broad; a phrase the user ticked or unticked meanwhile is theirs.
-                for k in result.checked where k.volume.map({ $0 >= ProfileAnalysis.broadKeyword }) == true { chosen.remove(k.id) }
-                asked = result.checked
+            let before = asked
+            if let result = await model.checkKeywords(before, text: source, offered: counted.map(\.phrase) + followed) {
+                // Only what the check changed: a broad or narrow phrase unticked, a shortened one taking its place
+                // and its tick. A phrase the user ticked or unticked meanwhile is otherwise theirs.
+                for (old, new) in zip(before, result.checked) {
+                    if new.id != old.id {
+                        if chosen.remove(old.id) != nil { chosen.insert(new.id) }
+                    } else if let v = new.volume, KeywordPick.isBroad(v) || KeywordPick.isNarrow(v) {
+                        chosen.remove(new.id)
+                    }
+                }
+                asked = fresh(result.checked)
                 fromPapers = fresh(result.fromPapers)
             }
             checking = false
@@ -1376,12 +1392,16 @@ struct ProjectKeywordsSheet: View {
 
     private func caption(_ k: ProjectKeyword) -> String {
         var parts: [String] = []
+        if let from = k.shortenedFrom { parts.append("from “\(from)”") }
         if let n = k.papers { parts.append(n == 1 ? "on 1 of the papers found" : "on \(n) of the papers found") }
-        if k.papers == nil || k.count > 0 {
+        if k.shortenedFrom == nil && (k.papers == nil || k.count > 0) {
             parts.append(k.count == 0 ? "not in your text" : k.count == 1 ? "1 time in your text" : "\(k.count) times in your text")
         }
         if let v = k.volume {
-            parts.append(v >= ProfileAnalysis.broadKeyword ? "broad: about \(v) papers a month" : v == 1 ? "about 1 paper a month" : "about \(v) papers a month")
+            if KeywordPick.isBroad(v) { parts.append("broad: about \(v / 12) papers a month") }
+            else if KeywordPick.isNarrow(v) { parts.append(v == 0 ? "narrow: no papers in the last year" : v == 1 ? "narrow: 1 paper in the last year" : "narrow: \(v) papers in the last year") }
+            else if v >= 24 { parts.append("about \(v / 12) papers a month") }
+            else { parts.append("about \(v) papers a year") }
         }
         return parts.joined(separator: " · ")
     }
@@ -1394,7 +1414,7 @@ struct ProjectKeywordsSheet: View {
                 Image(systemName: chosen.contains(k.id) ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(chosen.contains(k.id) ? Color.accentColor : Color.secondary)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(k.phrase).foregroundStyle(.primary)
+                    Text(k.label).foregroundStyle(.primary)
                     Text(caption(k))
                         .font(.caption).foregroundStyle(.secondary)
                 }

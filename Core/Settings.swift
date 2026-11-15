@@ -417,9 +417,15 @@ struct FeedSettings: Codable, Equatable {
 
     /// A new rule on `phrase`. It takes the phrase as its id unless something already has it,
     /// so two devices that add the same word at once agree; a second rule gets its own.
-    mutating func addKeyword(_ phrase: String) {
+    mutating func addKeyword(_ phrase: String, alsoRequire: [String] = []) {
         let taken = Set(followedKeywords.map(\.id))
-        followedKeywords.append(KeywordRule(phrase: phrase, id: taken.contains(phrase) ? UUID().uuidString : phrase))
+        followedKeywords.append(KeywordRule(phrase: phrase, alsoRequire: alsoRequire, id: taken.contains(phrase) ? UUID().uuidString : phrase))
+    }
+
+    /// Whether this exact keyword, with these words required, is followed already.
+    func followsKeyword(_ phrase: String, alsoRequire: [String] = []) -> Bool {
+        let also = Set(alsoRequire.map { $0.lowercased() })
+        return followedKeywords.contains { $0.phrase.lowercased() == phrase.lowercased() && Set($0.alsoRequire.map { $0.lowercased() }) == also }
     }
 
     /// Everything except what the user did with the feed. Changing a follow or a
