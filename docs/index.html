@@ -55,13 +55,13 @@
   .shot img { max-width: min(100%, 620px); height: auto; border-radius: 18px; box-shadow: var(--shadow); border: 1px solid var(--line); }
   .shot figcaption { margin-top: 10px; color: var(--ink-soft); font-size: 15px; }
 
-  .steps { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); counter-reset: s; }
+  .steps { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); counter-reset: s; }
   .step { background: var(--panel); border-radius: 18px; padding: 20px 20px 18px; box-shadow: var(--shadow); border: 1px solid var(--line); }
   .step::before { counter-increment: s; content: counter(s); display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 15px; margin-bottom: 10px; }
   .step h3 { margin: 0 0 4px; font-size: 19px; }
   .step p { margin: 0; color: var(--ink-soft); font-size: 16px; }
 
-  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(290px, 100%), 1fr)); }
   .card { background: var(--panel); border-radius: 18px; padding: 20px; box-shadow: var(--shadow); border: 1px solid var(--line); }
   .card h3 { margin: 0 0 6px; font-size: 19px; letter-spacing: -.01em; }
   .card p { margin: 0; color: var(--ink-soft); font-size: 16px; }
@@ -124,7 +124,7 @@
       <li><strong>Each follow is searched.</strong> Every source that is on is asked for papers published in your look-back, 30 days by default.</li>
       <li><strong>Duplicates are merged.</strong> A paper found by several sources is shown once, and a preprint and its article are one paper.</li>
       <li><strong>Your filters apply.</strong> Mutes, kinds of paper, language, open access, and whether an abstract is required.</li>
-      <li><strong>Narrow follows are never cut.</strong> Everything from a journal, researcher or keyword you follow stays in the feed, however low it ranks, unless you lower its level. Topics, institutions and funders are too broad for that, so they only help the ranking.</li>
+      <li><strong>Narrow follows are never cut.</strong> Everything from a journal, researcher or keyword you follow stays in the feed, however low it ranks, unless you lower its level. Topics, institutions and funders are too broad for that, so they only help the ranking. A keyword can be set the same way, or not searched at all and used only to rank: a broad word such as “pain” would bring in too much.</li>
       <li><strong>It does not run out.</strong> Scroll to the end and it fetches the 30 days before, up to a year.</li>
     </ul>
   </div>
@@ -136,7 +136,7 @@
     <p>One list, best first. A paper’s score adds up:</p>
     <ul class="plain">
       <li><strong>Closeness to your work.</strong> How like your papers, library, reading list and current interests it is, by meaning and by shared words. A slider sets how much this counts.</li>
-      <li><strong>What you follow.</strong> A bonus for each follow that found it, and more if it cites your work. A higher level counts more, a lower one less.</li>
+      <li><strong>What you follow.</strong> A bonus for each follow that found it, and more if it cites your work. A higher level counts more, a lower one less. A keyword can raise or lower every paper that mentions it, whatever found it.</li>
       <li><strong>Newness.</strong> Newer papers rank higher; the bonus halves every two weeks. A slider sets it.</li>
       <li><strong>Your thumbs.</strong> For me pulls toward similar papers and what they were about, Not for me pushes away. Both fade with time.</li>
       <li><strong>Kind of paper.</strong> You can lower or boost reviews, preprints and the rest. Case reports and conference abstracts start lowered.</li>

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>What is new in the Scrollar beta</title>
-<meta name="description" content="What changed in the latest Scrollar beta on TestFlight: thumbs with reasons, levels, search, projects, more sources, PDFs and reference managers, and more.">
+<meta name="description" content="What changed in the latest Scrollar beta on TestFlight: keywords that select, rank or both, current interests, better keyword suggestions checked against the literature, headlines, and more.">
 <link rel="icon" href="icon.png">
 <link rel="canonical" href="https://amouraux.github.io/scrollar/whats-new.html">
 <style>
@@ -51,13 +51,13 @@
   .shot img { max-width: min(100%, 620px); height: auto; border-radius: 18px; box-shadow: var(--shadow); border: 1px solid var(--line); }
   .shot figcaption { margin-top: 10px; color: var(--ink-soft); font-size: 15px; }
 
-  .steps { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); counter-reset: s; }
+  .steps { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); counter-reset: s; }
   .step { background: var(--panel); border-radius: 18px; padding: 20px 20px 18px; box-shadow: var(--shadow); border: 1px solid var(--line); }
   .step::before { counter-increment: s; content: counter(s); display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 15px; margin-bottom: 10px; }
   .step h3 { margin: 0 0 4px; font-size: 19px; }
   .step p { margin: 0; color: var(--ink-soft); font-size: 16px; }
 
-  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(290px, 100%), 1fr)); }
   .card { background: var(--panel); border-radius: 18px; padding: 20px; box-shadow: var(--shadow); border: 1px solid var(--line); }
   .card h3 { margin: 0 0 6px; font-size: 19px; letter-spacing: -.01em; }
   .card p { margin: 0; color: var(--ink-soft); font-size: 16px; }
@@ -78,6 +78,9 @@
   .card li { margin: 4px 0; }
   footer.wrap { padding: 44px 16px 60px; text-align: center; color: var(--ink-soft); font-size: 15px; }
   footer a { color: var(--ink-soft); }
+  details summary { cursor: pointer; list-style-position: outside; margin-bottom: 14px; }
+  details summary::marker { color: var(--accent); }
+  .earlier-h { margin: 22px 0 10px; font-size: 21px; letter-spacing: -.01em; }
   footer .links { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; margin-bottom: 10px; }
 </style>
 </head>
@@ -86,7 +89,7 @@
 <header class="wrap">
   <img class="icon" src="icon.png" alt="Scrollar app icon">
   <h1>What is new</h1>
-  <p class="tagline">Beta of 11 November 2026</p>
+  <p class="tagline">Beta of 15 November 2026</p>
   <a class="join" href="https://testflight.apple.com/join/87XHYHuj">Open the beta on TestFlight</a>
   <p class="join-note">Free. Needs the TestFlight app on an iPhone, iPad or Mac.</p>
 </header>
@@ -94,22 +97,67 @@
 <section class="wrap">
   <a class="back" href="./">&larr; Back to Scrollar</a>
   <div class="note">
-    <p><strong>Before you update.</strong> This beta writes a newer sync file. Update every device you sync first; an older build leaves the file alone but does not see the new data.</p>
+    <p><strong>Before you update.</strong> This beta writes a newer sync file again, because a keyword can now rank without being searched for. Update every device you sync; an older build leaves the file alone and stops syncing until it is updated. Nothing is lost.</p>
   </div>
 </section>
 
 <section class="wrap">
-  <h2>Teach the feed</h2>
+  <h2>Keywords</h2>
+  <div class="grid">
+    <div class="card"><span class="tag">New</span><h3>Select, rank, or both</h3><p>Each keyword is searched with everything kept, searched and ranked with the rest, or not searched and used only to rank. A broad word such as “pain” can lift what your other follows find.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Three lists, one tap to move</h3><p>Keywords are listed by how they are used. Tap one to move it, raise or lower what mentions it, edit or delete it.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Where each keyword came from</h3><p>Added by hand, suggested from your publications, from a current interest or from a search: it says so under the keyword.</p></div>
+    <div class="card"><span class="tag">Changed</span><h3>Raise or lower what mentions it</h3><p>Ranking now applies to every paper whose title or abstract mentions the keyword, whatever found it. Lower never sinks a paper a journal or researcher you follow found.</p></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>Current interests</h2>
+  <div class="grid">
+    <div class="card"><span class="tag">Changed</span><h3>Projects are now current interests</h3><p>Second in Tune, each with a switch on its row, the day it was added, and an optional last day. A text in use brings in papers, not only orders them.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Twenty places, or keep them all</h3><p>A new interest replaces the oldest when the list is full, one not in use first. Turn on Keep them all to delete only by hand.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Keep a search as an interest</h3><p>After a search, add it to current interests for two weeks, follow it as a keyword, or let it go.</p></div>
+    <div class="card"><span class="tag">New</span><h3>A title from Apple’s model</h3><p>A pasted text gets a short, meaningful name, written on your device.</p></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>Suggested keywords</h2>
+  <div class="grid">
+    <div class="card"><span class="tag">Better</span><h3>Chosen from your text</h3><p>Apple’s model now picks from phrases that are in the text, so it no longer invents any, and starts as soon as the sheet opens.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Checked against the literature</h3><p>With OpenAlex on, each phrase shows how many papers it would find. Broad ones are added to rank only; too narrow ones are cut to their main words.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Used in papers like these</h3><p>The keywords OpenAlex gives the papers your phrases find: how the field names your subject. Only the phrases leave the device, never the text.</p></div>
+    <div class="card"><span class="tag">New</span><h3>Edit or type your own</h3><p>Tap a suggestion’s pencil, or type a keyword. Join words that must all appear with +, as in “rTMS + analgesia”, and it is counted again.</p></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>Around the edges</h2>
+  <div class="grid">
+    <div class="card"><span class="tag">New</span><h3>Headlines instead of titles</h3><p>An option in Tune: a short headline over each paper’s title, written with its takeaway.</p></div>
+    <div class="card"><span class="tag">New</span><h3>An easier first setup</h3><p>Find your ORCID iD by name, see what to tick where a key is made, and follow a short first-run list.</p></div>
+    <div class="card"><span class="tag">Clearer</span><h3>Each Tune screen says what it does</h3><p>Whether it searches for papers or only orders the feed.</p></div>
+    <div class="card"><span class="tag">Fixed</span><h3>Keys kept on the Mac</h3><p>The Mac app now keeps your OpenAlex, Zotero and model keys after a restart.</p></div>
+    <div class="card"><span class="tag">Fixed</span><h3>Quicker after a thumb or a slider</h3><p>A thumb no longer rebuilds the whole feed, and settings are saved once a slider stops.</p></div>
+    <div class="card"><span class="tag">Removed</span><h3>The In sections layout</h3><p>The feed is one ranked list. Why each paper is there is still on every post and in the panel of reasons.</p></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <details>
+    <summary><h2 style="display:inline">In the beta of 11 November</h2></summary>
+<div class="earlier-group">
+  <h3 class="earlier-h">Teach the feed</h3>
   <div class="grid">
     <div class="card"><span class="tag">New</span><h3>A thumb asks what it was about</h3><p>Pick the one reason: a keyword, journal, author, institution, topic or title phrase. Only that moves.</p></div>
     <div class="card"><span class="tag">New</span><h3>Thumbs are counted, and fade</h3><p>Each thumb fades over weeks, and a change of mind counts for more. The numbers are in Tune, and you can pin any one.</p></div>
     <div class="card"><span class="tag">New</span><h3>Not for me now teaches the feed</h3><p>It also pushes down similar papers, never what you follow or what cites you. Your reading list and For me teach it too.</p></div>
     <div class="card"><span class="tag">New</span><h3>Five levels for every follow</h3><p>Hide, Lower, Normal, Higher or Maximum for each keyword, journal, researcher and topic. Maximum keeps everything it finds.</p></div>
   </div>
-</section>
+</div>
 
-<section class="wrap">
-  <h2>Finding and filling the feed</h2>
+<div class="earlier-group">
+  <h3 class="earlier-h">Finding and filling the feed</h3>
   <div class="grid">
     <div class="card"><span class="tag">New</span><h3>Search</h3><p>Search every source for a phrase. Afterwards you choose whether it counts toward your feed. Searches stay on your device.</p></div>
     <div class="card"><span class="tag">New</span><h3>Your project</h3><p>Paste a grant proposal or thesis plan, up to ten, to rank the feed and suggest keywords. It stays on your device.</p></div>
@@ -117,10 +165,10 @@
     <div class="card"><span class="tag">New</span><h3>Crossref, arXiv and OSF preprints</h3><p>Three more free sources, no key. arXiv and OSF are off until you switch them on in Tune.</p></div>
     <div class="card"><span class="tag">Clearer</span><h3>Your OpenAlex key says what it is doing</h3><p>Tune shows whether it is saved and in use, and tells you if the device would not keep it.</p></div>
   </div>
-</section>
+</div>
 
-<section class="wrap">
-  <h2>Reading and keeping</h2>
+<div class="earlier-group">
+  <h3 class="earlier-h">Reading and keeping</h3>
   <div class="grid">
     <div class="card"><span class="tag">Changed</span><h3>Read later, separate from Zotero</h3><p>Read later adds to your Reading list. Add to Zotero is its own action, in the Share menu and on every row.</p></div>
     <div class="card"><span class="tag">New</span><h3>Lists look like the feed</h3><p>Reading list, For me and Read use the same posts, and open in the reader beside the list on a wide window.</p></div>
@@ -132,10 +180,10 @@
     <div class="card"><span class="tag">New</span><h3>Zotero with the PDF, EndNote and Mendeley</h3><p>Add to Zotero in a collection you choose, with the PDF. Also EndNote files, a watched folder, and copy as text. Tried against a stand-in for Zotero, not yet a real library: tell me if it fails.</p></div>
     <div class="card"><span class="tag">Clearer</span><h3>Reference managers and PDFs</h3><p>Say which managers you use and see only what works for them. The Zotero key shows whether it works.</p></div>
   </div>
-</section>
+</div>
 
-<section class="wrap">
-  <h2>Around the edges</h2>
+<div class="earlier-group">
+  <h3 class="earlier-h">Around the edges</h3>
   <div class="grid">
     <div class="card"><span class="tag">Changed</span><h3>Tune is eight screens</h3><p>Instead of one scroll of twenty sections. Nothing was removed.</p></div>
     <div class="card"><span class="tag">New</span><h3>Start again, in parts</h3><p>Clear the follows, thumbs, reading list, sliders, searches, projects or history, one at a time or all. Keys are never touched, and the last reset can be undone.</p></div>
@@ -143,6 +191,9 @@
     <div class="card"><span class="tag">New</span><h3>A privacy policy and a licence</h3><p>The policy lists every service the app contacts. The developer receives nothing. The source is public to read, under a view-only licence.</p></div>
     <div class="card"><span class="tag">Fixed</span><h3>Steadier ranking</h3><p>The same feed now ranks the same way twice.</p></div>
   </div>
+</div>
+
+  </details>
 </section>
 
 <footer class="wrap">
