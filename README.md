@@ -177,6 +177,15 @@ Maximum, a searched-and-ranked one at Higher and a rank-only one at Normal. A pr
 is followed only to rank. Changing how a keyword ranks re-ranks; changing whether it is searched fetches again. A paper
 that a journal or researcher also found is at least No change, whatever its keywords say.
 
+**The keyword list is three lists**, one per way of being used (searched and all kept; searched and ranked with the
+rest; rank only), each with a line saying what it does, so how every keyword is used reads at a glance. A tap on a
+keyword opens one set of choices: move it to another list, raise or lower what mentions it, edit it, or delete it.
+Moving a keyword to rank only with no ranking set makes it raise what mentions it, since otherwise it would do
+nothing; a rank-only keyword left at No change is marked so in orange. The choices are an action sheet rather than a
+menu: a menu in a list row did not open from the simulator's taps, and the sheet works the same on the phone and the
+Mac. In Suggested keywords each suggestion has a pencil, in sight, to edit it; swiping or touching and holding still
+works.
+
 **Where each keyword came from** is kept with it (`KeywordOrigin`: by hand, suggested from publications, a current
 interest by name, a search) and shown under it in the list. A keyword followed before this has none.
 

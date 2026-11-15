@@ -379,31 +379,57 @@ struct KeywordListView: View {
     @Binding var rules: [KeywordRule]
     @State private var adding = false
     @State private var newPhrase = ""
+    @State private var editing: Int?
+    @State private var acting: Int?
 
     var body: some View {
         List {
-            Section {
-                if rules.isEmpty {
+            if rules.isEmpty {
+                Section {
                     Text("Nothing yet. A phrase is searched in titles and abstracts.").foregroundStyle(.secondary)
                 }
-                ForEach(Array(rules.enumerated()), id: \.offset) { index, rule in
-                    NavigationLink {
-                        KeywordRuleEditor(rule: $rules[index])
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(rule.phrase)
-                            if !detail(rule).isEmpty {
-                                Text(detail(rule)).font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
+            }
+            // One list per way of being used, so it reads at a glance; a keyword's menu moves it between them.
+            ForEach(KeywordSearch.allCases, id: \.self) { use in
+                let indices = rules.indices.filter { rules[$0].search == use }
+                if !indices.isEmpty {
+                    Section {
+                        ForEach(indices, id: \.self) { row($0) }
+                            .onDelete { offsets in rules.remove(atOffsets: IndexSet(offsets.map { indices[$0] })) }
+                    } header: {
+                        Text(Self.heading(use))
+                    } footer: {
+                        Text(Self.explanation(use))
                     }
                 }
-                .onDelete { rules.remove(atOffsets: $0) }
-            } footer: {
-                Text("A keyword does two things, set separately when you open it. It can select papers: searched in titles and abstracts, with everything it finds kept in your feed (the usual), or ranked with the rest; or not searched at all. And it can rank: raise or lower every paper that mentions it, whatever found it. A broad word such as \"pain\" selects too much to search for, and can still rank. Add the same phrase again to follow it with different words: \"pain\" requiring EEG and \"pain\" requiring MRI are two rules, and a paper needs to pass only one of them.")
+            }
+            if !rules.isEmpty {
+                Section {} footer: {
+                    Text("Tap a keyword to move it to another list, to raise or lower what mentions it, or to edit it. A broad word such as \"pain\" selects too much to search for, and can still rank. Add the same phrase again to follow it with different words: \"pain\" requiring EEG and \"pain\" requiring MRI are two rules, and a paper needs to pass only one of them.")
+                }
             }
         }
         .navigationTitle("Keywords")
+        .confirmationDialog(acting.flatMap { rules.indices.contains($0) ? rules[$0].phrase : nil } ?? "Keyword",
+                            isPresented: Binding(get: { acting != nil }, set: { if !$0 { acting = nil } }),
+                            titleVisibility: .visible, presenting: acting) { i in
+            if rules.indices.contains(i) {
+                ForEach(KeywordSearch.allCases.filter { $0 != rules[i].search }, id: \.self) { use in
+                    Button("Move to “\(Self.heading(use))”") { move(i, to: use) }
+                }
+                ForEach(Importance.allCases.reversed().filter { $0 != rules[i].importance }, id: \.self) { rank in
+                    Button(Self.rankAction(rank)) { rules[i].importance = rank }
+                }
+                Button("Edit…") { editing = i }
+                Button("Delete", role: .destructive) { rules.remove(at: i) }
+                Button("Cancel", role: .cancel) {}
+            }
+        } message: { i in
+            if rules.indices.contains(i) { Text(Self.state(rules[i])) }
+        }
+        .navigationDestination(item: $editing) { i in
+            if rules.indices.contains(i) { KeywordRuleEditor(rule: $rules[i]) }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Add", systemImage: "plus") { newPhrase = ""; adding = true }
@@ -420,19 +446,80 @@ struct KeywordListView: View {
                 }
             }
             Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("It is searched and everything it finds kept; move it to another list afterwards if it finds too much.")
+        }
+    }
+
+    static func heading(_ use: KeywordSearch) -> String {
+        switch use {
+        case .keepAll: return "Searched, all kept"
+        case .ranked: return "Searched, ranked with the rest"
+        case .rankOnly: return "Rank only"
+        }
+    }
+
+    static func explanation(_ use: KeywordSearch) -> String {
+        switch use {
+        case .keepAll: return "Searched in titles and abstracts; everything they find is in your feed, however low it scores."
+        case .ranked: return "Searched, but what they find competes with everything else: the best of it reaches your feed."
+        case .rankOnly: return "Not searched. They raise or lower the papers your other follows find that mention them."
+        }
+    }
+
+    static func rankAction(_ rank: Importance) -> String {
+        switch rank {
+        case .high: return "Raise what mentions it"
+        case .normal: return "Don't change its ranking"
+        case .low: return "Lower what mentions it"
+        }
+    }
+
+    static func state(_ rule: KeywordRule) -> String {
+        let ranking: String
+        switch rule.importance {
+        case .high: ranking = "raises what mentions it"
+        case .normal: ranking = "does not change the ranking"
+        case .low: ranking = "lowers what mentions it"
+        }
+        return "In “\(heading(rule.search))”; it \(ranking)."
+    }
+
+    /// A tap on the row opens one set of choices: which list, how it ranks, edit, delete.
+    private func row(_ index: Int) -> some View {
+        let rule = rules[index]
+        return Button { acting = index } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(rule.phrase + rule.alsoRequire.map { " + " + $0 }.joined()).foregroundStyle(.primary)
+                    let d = detail(rule)
+                    if !d.isEmpty {
+                        Text(d).font(.caption)
+                            .foregroundStyle(rule.search == .rankOnly && rule.importance == .normal ? Color.orange : Color.secondary)
+                    }
+                }
+                Spacer()
+                Image(systemName: "ellipsis.circle").foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// A keyword moved to rank only with no ranking would do nothing, so it starts raising what mentions it.
+    private func move(_ index: Int, to use: KeywordSearch) {
+        guard rules.indices.contains(index) else { return }
+        withAnimation {
+            rules[index].search = use
+            if use == .rankOnly && rules[index].importance == .normal { rules[index].importance = .high }
         }
     }
 
     private func detail(_ rule: KeywordRule) -> String {
         var parts: [String] = []
-        switch rule.search {
-        case .keepAll: break
-        case .ranked: parts.append("searched, ranked with the rest")
-        case .rankOnly: parts.append("not searched")
-        }
         if rule.importance == .high { parts.append("raises what mentions it") }
         if rule.importance == .low { parts.append("lowers what mentions it") }
-        if !rule.alsoRequire.isEmpty { parts.append("also: " + rule.alsoRequire.joined(separator: ", ")) }
+        if rule.search == .rankOnly && rule.importance == .normal { parts.append("does nothing: raise or lower it") }
         if !rule.exclude.isEmpty { parts.append("not: " + rule.exclude.joined(separator: ", ")) }
         if let origin = rule.origin { parts.append(origin.label.prefix(1).lowercased() + origin.label.dropFirst()) }
         return parts.joined(separator: " · ")
@@ -1477,8 +1564,8 @@ struct ProjectKeywordsSheet: View {
             Text("Your keywords")
         } footer: {
             Text(model.usesOpenAlex
-                 ? "Type a keyword, or edit a suggestion (swipe it, or touch and hold), and it is counted on OpenAlex: how many papers it would have found in the last year. Join words that must all appear with +, as in rTMS + analgesia."
-                 : "Type a keyword, or edit a suggestion (swipe it, or touch and hold). Join words that must all appear with +, as in rTMS + analgesia. With OpenAlex on, each would also be counted.")
+                 ? "Type a keyword, or edit a suggestion with its pencil, and it is counted on OpenAlex: how many papers it would have found in the last year. Join words that must all appear with +, as in rTMS + analgesia."
+                 : "Type a keyword, or edit a suggestion with its pencil. Join words that must all appear with +, as in rTMS + analgesia. With OpenAlex on, each would also be counted.")
         }
     }
 
@@ -1511,21 +1598,30 @@ struct ProjectKeywordsSheet: View {
     }
 
     private func row(_ k: ProjectKeyword, suggested: Bool) -> some View {
-        Button {
-            if chosen.contains(k.id) { chosen.remove(k.id) } else { chosen.insert(k.id) }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: chosen.contains(k.id) ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(chosen.contains(k.id) ? Color.accentColor : Color.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(k.label).foregroundStyle(.primary)
-                    Text(counting.contains(k.id) ? "counting on OpenAlex…" : caption(k))
-                        .font(.caption).foregroundStyle(.secondary)
+        HStack(spacing: 8) {
+            Button {
+                if chosen.contains(k.id) { chosen.remove(k.id) } else { chosen.insert(k.id) }
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: chosen.contains(k.id) ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(chosen.contains(k.id) ? Color.accentColor : Color.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(k.label).foregroundStyle(.primary)
+                        Text(counting.contains(k.id) ? "counting on OpenAlex…" : caption(k))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
                 }
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            // In sight, not only behind a swipe: editing a suggestion is half of what this sheet is for.
+            Button { edit(k) } label: {
+                Image(systemName: "pencil.circle").font(.title3).foregroundStyle(Color.accentColor)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Edit \(k.label)")
         }
-        .buttonStyle(.plain)
         .swipeActions(edge: .leading) {
             Button("Edit") { edit(k) }.tint(.accentColor)
         }
