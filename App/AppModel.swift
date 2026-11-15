@@ -971,7 +971,9 @@ final class AppModel {
         for item in chosen where !isFollowed(item) {
             switch item.kind {
             case .topic: s.followedTopics.append(item.entity)
-            case .keyword: s.addKeyword(item.entity.name)
+            case .keyword:
+                s.addKeyword(item.entity.name, search: item.broad ? .rankOnly : .keepAll, importance: item.broad ? .high : .normal,
+                             origin: .publications)
             case .journal: s.followedJournals.append(item.entity)
             case .researcher: s.followedAuthors.append(item.entity)
             case .institution: s.followedInstitutions.append(item.entity)
@@ -1295,17 +1297,19 @@ final class AppModel {
         return (checked, fromPapers)
     }
 
-    func followKeywords(_ phrases: [String]) -> Int {
-        followKeywords(phrases.map { (phrase: $0, also: []) })
+    func followKeywords(_ phrases: [String], origin: KeywordOrigin) -> Int {
+        followKeywords(phrases.map { (phrase: $0, also: [], broad: false) }, origin: origin)
     }
 
-    /// Keywords with the words each requires (none for a plain phrase), leaving out any followed already.
+    /// Keywords with the words each requires (none for a plain phrase), leaving out any followed already. A broad one
+    /// (hundreds of papers a month) is followed to rank only: searched for, it would bury the rest.
     @discardableResult
-    func followKeywords(_ rules: [(phrase: String, also: [String])]) -> Int {
+    func followKeywords(_ rules: [(phrase: String, also: [String], broad: Bool)], origin: KeywordOrigin) -> Int {
         var s = settings
         var added = 0
         for rule in rules where !s.followsKeyword(rule.phrase, alsoRequire: rule.also) {
-            s.addKeyword(rule.phrase, alsoRequire: rule.also)
+            s.addKeyword(rule.phrase, alsoRequire: rule.also, search: rule.broad ? .rankOnly : .keepAll,
+                         importance: rule.broad ? .high : .normal, origin: origin)
             added += 1
         }
         if added > 0 { settings = s }

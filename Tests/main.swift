@@ -395,10 +395,10 @@ check(Incremental.mode(previous: prev(), settings: onlyFeedback, now: tNow).isIn
 check(!Incremental.mode(previous: prev(full: 4), settings: baseSettings, now: tNow).isIncremental, "a full build is repeated after three days")
 check(Incremental.mode(previous: prev(full: 2.9), settings: baseSettings, now: tNow).isIncremental, "and not before")
 check(!Incremental.mode(previous: prev(fetched: 31), settings: baseSettings, now: tNow).isIncremental, "away longer than the look-back: full build")
+var week = baseSettings; week.daysBack = 7
 check(Incremental.mode(previous: prev(fetched: 1, with: week), settings: baseSettings, now: tNow) == .full(reason: "settings changed"), "a different look-back is a different feed: full build")
 let fetchedOneDayAgo = Incremental.mode(previous: prev(fetched: 1), settings: baseSettings, now: tNow)
 check(fetchedOneDayAgo == .incremental(since: Ranker.dayString(tNow.addingTimeInterval(-4 * day))), "starts three days before the last fetch, to catch late records")
-var week = baseSettings; week.daysBack = 7
 check(Incremental.mode(previous: prev(fetched: 6, with: week), settings: week, now: tNow) == .incremental(since: Ranker.dayString(tNow.addingTimeInterval(-7 * day))),
       "never reaches back past the look-back window")
 
@@ -847,6 +847,7 @@ check(keywordSuggestions[.keyword]?.first(where: { $0.entity.id == "nociception"
 check(keywordSuggestions[.keyword]?.first(where: { $0.entity.id == "laser-evoked potentials" })?.selected == true, "keywords: a specific recurrent keyword is ticked")
 check(keywordSuggestions[.keyword]?.first(where: { $0.entity.id == "pain perception" })?.selected == false && keywordSuggestions[.keyword]?.first(where: { $0.entity.id == "pain perception" })?.note != nil, "keywords: one matching hundreds of papers a month is offered with a warning, unticked")
 check(keywordSuggestions[.keyword]?.first(where: { $0.entity.id == "old method" })?.selected == false, "keywords: an old one is not ticked")
+check(keywordSuggestions[.keyword]?.first(where: { $0.entity.id == "pain perception" })?.broad == true && keywordSuggestions[.keyword]?.first(where: { $0.entity.id == "nociception" })?.broad == false, "keywords: a broad one is marked so, to be followed for ranking only")
 let onceKeyword = ProfileAnalysis.suggestions([ProfileSourceWorks(label: "you", works: [ProfileWork(year: 2026, keywords: [kw("rare"), kw("rare")]), ProfileWork(year: 2026, keywords: [kw("rare")])])], currentYear: 2026)
 check(onceKeyword[.keyword]?.first?.count == 2 && onceKeyword[.keyword]?.first?.selected == false, "keywords: a phrase in two papers is not enough to tick")
 check(ProfileAnalysis.suggestions([ProfileSourceWorks(label: "you", works: keywordWorks)], currentYear: 2026)[.keyword]?.allSatisfy { $0.note == nil } == true, "keywords: without volumes there is no warning")
@@ -1368,7 +1369,7 @@ check(FeedBuilder.profileTexts(fmSettings, own: []).contains { $0.hasPrefix("A p
 check(device(fmSettings, stamp: at(1)).apply(to: FeedSettings()).feedback.liked.map(\.id) == [fmPaper.dedupeKey], "for me: it syncs")
 fmFeedback.unlike(fmPaper.dedupeKey)
 check(!fmFeedback.isLiked(fmPaper) && (try? JSONDecoder().decode(Feedback.self, from: Data(#"{"saved":[],"hidden":[]}"#.utf8)))?.liked.isEmpty == true, "for me: it can be taken back, and a settings file from before it still loads")
-check(SyncDocument.currentFormat == 6, "sync: the format is raised, so an app that does not know the newer entries leaves the file alone instead of erasing them")
+check(SyncDocument.currentFormat == 7, "sync: the format is raised, so an app that does not know the newer entries leaves the file alone instead of erasing them")
 
 func keptPaper(_ id: String, _ reasons: [String], followed: Bool = true, age: Int = 3) -> SavedPaper {
     var p = paper(id, "Paper \(id)", age: age); p.reasons = reasons; p.followed = followed
@@ -2443,6 +2444,42 @@ let kpLit = KeywordPick.literature(kpFound, excluding: ["offset analgesia"], tex
 check(kpLit.map(\.phrase) == ["conditioned pain modulation", "thermal pain"], "keywords from papers: kept where papers found for different phrases agree, title case undone, ones already offered left out")
 check(kpLit[0].papers == 4 && kpLit[0].count == 1 && !kpLit[0].selected, "keywords from papers: say how many papers carry them and how often the text does, and start unticked")
 check(KeywordPick.literature([kpFound[0]], excluding: [], text: "").map(\.phrase) == ["conditioned pain modulation"], "keywords from papers: with one search, only what at least three of its papers share")
+
+
+// MARK: keywords: searched, ranked, or both; and where each came from
+let ksOld = try! JSONDecoder().decode(KeywordRule.self, from: Data(#"{"phrase":"pain","importance":"high","id":"pain"}"#.utf8))
+check(ksOld.search == .keepAll && ksOld.origin == nil && ksOld.importance == .high, "keyword choice: one saved before is searched and kept in full, as it was, keeping its ranking")
+let ksEnc = { (r: KeywordRule) -> String in let e = JSONEncoder(); e.outputFormatting = [.sortedKeys]; return String(data: try! e.encode(r), encoding: .utf8)! }
+check(ksEnc(KeywordRule(phrase: "pain")) == #"{"alsoRequire":[],"exclude":[],"id":"pain","importance":"normal","phrase":"pain"}"#, "keyword choice: a keyword with neither new setting is written exactly as before, so an update does not look like an edit")
+let ksNew = KeywordRule(phrase: "pain", importance: .high, search: .rankOnly, origin: .interest("Offset analgesia"))
+let ksBack = try! JSONDecoder().decode(KeywordRule.self, from: Data(ksEnc(ksNew).utf8))
+check(ksBack.search == .rankOnly && ksBack.origin == .interest("Offset analgesia") && ksBack.origin?.label == "From “Offset analgesia”", "keyword choice: rank only and the origin are kept")
+check((try! JSONDecoder().decode(KeywordRule.self, from: Data(#"{"phrase":"x","search":"someday","origin":"martians"}"#.utf8))).search == .keepAll, "keyword choice: a choice or origin from a newer app is read as the default, not an error")
+var ksS = FeedSettings()
+ksS.followedKeywords = [KeywordRule(phrase: "offset analgesia"), KeywordRule(phrase: "rTMS", search: .ranked),
+                        KeywordRule(phrase: "pain", importance: .high, search: .rankOnly)]
+let ksPlan = FeedBuilder.seeds(ksS, myWorkIDs: [])
+func ksStep(_ k: String) -> PlannedSeed? { ksPlan.first { $0.seed == .keyword(k) } }
+check(ksStep("offset analgesia")?.explicit == true && ksStep("rTMS")?.explicit == false && ksStep("pain") == nil, "keyword choice: kept in full is searched and pinned, ranked is searched and not pinned, rank only is not searched")
+check(ksS.level(of: .keyword("pain")) == .normal && ksS.level(of: .keyword("rTMS")) == .higher && ksS.level(of: .keyword("offset analgesia")) == .maximum, "keyword choice: the levels screen shows what each choice amounts to")
+var ksLevel = ksS; ksLevel.setLevel(.maximum, for: .keyword("pain"))
+check(FeedBuilder.seeds(ksLevel, myWorkIDs: []).first { $0.seed == .keyword("pain") }?.explicit == true, "keyword choice: a level the user set on the phrase still wins")
+var ksPaper = Paper(id: "k1", title: "Chronic pain after surgery", date: "2026-11-01", reasons: ["Journal: J"])
+check(ksS.keywordImportance(of: ksPaper) == .high, "keyword choice: a rank-only keyword raises a paper another follow found, when its title or abstract mentions it")
+ksPaper.title = "Spinal cord injury"
+check(ksS.keywordImportance(of: ksPaper) == nil, "keyword choice: and leaves alone one that does not mention it")
+var ksLow = FeedSettings(); ksLow.followedKeywords = [KeywordRule(phrase: "pain", importance: .low, search: .rankOnly)]
+check(ksLow.keywordImportance(of: Paper(id: "k3", title: "Chronic pain", date: "2026-11-01", reasons: ["Journal: J"])) == .normal && ksLow.keywordImportance(of: Paper(id: "k2", title: "Chronic pain", date: "2026-11-01", reasons: ["Topic: Pain"])) == .low, "keyword choice: a lowering keyword does not sink a paper a followed journal found, and does sink one a topic found")
+var ksExcl = FeedSettings(); ksExcl.followedKeywords = [KeywordRule(phrase: "pain", exclude: ["chronic"], importance: .high, search: .rankOnly)]
+ksPaper.title = "Chronic pain after surgery"
+check(ksExcl.keywordImportance(of: ksPaper) == nil, "keyword choice: a word the keyword excludes keeps it from ranking the paper")
+let ksProject = ProjectFile(name: "P", text: String(repeating: "Offset analgesia was tested with thermal pain stimuli in healthy volunteers. ", count: 6), addedAt: "x")
+var ksProj = FeedSettings(); ksProj.followedKeywords = ksProject.searchPhrases.map { KeywordRule(phrase: $0, search: .rankOnly) }
+check(!ksProject.searchPhrases.isEmpty && FeedBuilder.projectSeeds(ksProj, projects: [ksProject]).count == ksProject.searchPhrases.count, "keyword choice: a phrase followed to rank only is still searched for by a current interest")
+var ksRank = ksS; ksRank.followedKeywords[0].importance = .high; ksRank.followedKeywords[0].origin = .hand
+check(ksRank.forFetching == ksS.forFetching, "keyword choice: changing how a keyword ranks, or its origin, fetches nothing again")
+var ksSearch = ksS; ksSearch.followedKeywords[2].search = .keepAll
+check(ksSearch.forFetching != ksS.forFetching, "keyword choice: changing whether it is searched does")
 
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

@@ -18,15 +18,16 @@ struct Entity: Codable, Hashable {
     var name: String
 }
 
-/// How much a followed keyword matters to the user: it moves the papers it finds up or down the ranking.
+/// How a followed keyword ranks the papers that mention it: up, down, or not at all. Stored as `importance`, its
+/// old name, so a keyword saved before keeps its setting.
 enum Importance: String, Codable, CaseIterable {
     case low, normal, high
 
     var title: String {
         switch self {
-        case .low: return "Low"
-        case .normal: return "Normal"
-        case .high: return "High"
+        case .low: return "Lower"
+        case .normal: return "No change"
+        case .high: return "Raise"
         }
     }
 
@@ -40,6 +41,71 @@ enum Importance: String, Codable, CaseIterable {
     }
 }
 
+/// Whether a followed keyword selects papers, and how. A broad keyword selects too much to be worth searching for
+/// (hundreds of papers a month) and can still be worth ranking with; that is `rankOnly`.
+enum KeywordSearch: String, Codable, CaseIterable {
+    /// Searched for, and everything it finds is kept, however low it scores: what following a keyword always meant.
+    case keepAll
+    /// Searched for, and what it finds is ranked with everything else.
+    case ranked
+    /// Not searched for: it only moves papers that other follows found and that mention it.
+    case rankOnly
+
+    var title: String {
+        switch self {
+        case .keepAll: return "Search, keep everything"
+        case .ranked: return "Search, rank with the rest"
+        case .rankOnly: return "Don't search, rank only"
+        }
+    }
+
+    /// The level it stands for where levels are shown: a keyword kept in full is at Maximum, one searched and
+    /// ranked at Higher, one that only ranks is not searched for at all.
+    var level: Level {
+        switch self {
+        case .keepAll: return .maximum
+        case .ranked: return .higher
+        case .rankOnly: return .normal
+        }
+    }
+}
+
+/// Where a followed keyword came from, so the list can say. Stored as text ("interest:Offset analgesia") and read
+/// tolerantly: one this version does not know is simply not shown.
+enum KeywordOrigin: Hashable {
+    case hand, publications, search
+    case interest(String)
+
+    init?(raw: String) {
+        switch raw {
+        case "hand": self = .hand
+        case "publications": self = .publications
+        case "search": self = .search
+        default:
+            guard raw.hasPrefix("interest:") else { return nil }
+            self = .interest(String(raw.dropFirst("interest:".count)))
+        }
+    }
+
+    var raw: String {
+        switch self {
+        case .hand: return "hand"
+        case .publications: return "publications"
+        case .search: return "search"
+        case .interest(let name): return "interest:" + name
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .hand: return "Added by hand"
+        case .publications: return "Suggested from publications"
+        case .search: return "From a search"
+        case .interest(let name): return "From “\(name)”"
+        }
+    }
+}
+
 struct KeywordRule: Codable, Hashable {
     var phrase: String
     /// Every one of these must appear in the title or abstract.
@@ -47,21 +113,39 @@ struct KeywordRule: Codable, Hashable {
     /// None of these may appear. "attention" without "deficit" is a different literature.
     var exclude: [String] = []
     var importance = Importance.normal
+    var search = KeywordSearch.keepAll
+    var origin: KeywordOrigin?
     /// What identifies this rule in the sync file. Not the phrase: the same phrase may carry
     /// several rules ("pain" with EEG, "pain" with MRI), and renaming one must not look like
     /// deleting it and adding another. A rule saved before this existed takes its phrase, which
     /// is the key it was already synced under.
     var id: String
 
-    init(phrase: String, alsoRequire: [String] = [], exclude: [String] = [], importance: Importance = .normal, id: String? = nil) {
+    init(phrase: String, alsoRequire: [String] = [], exclude: [String] = [], importance: Importance = .normal,
+         search: KeywordSearch = .keepAll, origin: KeywordOrigin? = nil, id: String? = nil) {
         self.id = id ?? phrase
         self.phrase = phrase
         self.alsoRequire = alsoRequire
         self.exclude = exclude
         self.importance = importance
+        self.search = search
+        self.origin = origin
     }
 
-    enum CodingKeys: String, CodingKey { case phrase, alsoRequire, exclude, importance, id }
+    enum CodingKeys: String, CodingKey { case phrase, alsoRequire, exclude, importance, search, origin, id }
+
+    /// Written by hand so that a keyword with neither new setting encodes exactly as it did before them: the sync
+    /// file compares each rule's text, and every rule changing at once on an update would look like an edit made now.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(phrase, forKey: .phrase)
+        try c.encode(alsoRequire, forKey: .alsoRequire)
+        try c.encode(exclude, forKey: .exclude)
+        try c.encode(importance, forKey: .importance)
+        if search != .keepAll { try c.encode(search, forKey: .search) }
+        if let origin { try c.encode(origin.raw, forKey: .origin) }
+        try c.encode(id, forKey: .id)
+    }
 
     /// Tolerant like every stored type: a keyword saved before importance existed is Normal.
     init(from decoder: Decoder) throws {
@@ -71,6 +155,14 @@ struct KeywordRule: Codable, Hashable {
         alsoRequire = (try? c.decodeIfPresent([String].self, forKey: .alsoRequire)) ?? []
         exclude = (try? c.decodeIfPresent([String].self, forKey: .exclude)) ?? []
         importance = (try? c.decodeIfPresent(Importance.self, forKey: .importance)) ?? .normal
+        search = (try? c.decodeIfPresent(KeywordSearch.self, forKey: .search)) ?? .keepAll
+        origin = ((try? c.decodeIfPresent(String.self, forKey: .origin)) ?? nil).flatMap(KeywordOrigin.init(raw:))
+    }
+
+    /// Whether a paper's title and abstract (`text`, lowercased) mention it, with its required words and none it
+    /// excludes: what ranks a paper by a keyword that did not find it.
+    func mentioned(in text: String) -> Bool {
+        text.contains(phrase.lowercased()) && accepts(text)
     }
 
     /// The search this rule stands for. Rules with the same phrase and the same required words
@@ -264,8 +356,8 @@ struct Feedback: Codable, Equatable {
 }
 
 struct FeedSettings: Codable, Equatable {
-    /// Raise for any change an older copy of the app would misread.
-    static let currentFormat = 1
+    /// Raise for any change an older copy of the app would misread. 2: a keyword may rank only (`KeywordSearch`).
+    static let currentFormat = 2
     var formatVersion = FeedSettings.currentFormat
 
     // MARK: You
@@ -407,19 +499,26 @@ struct FeedSettings: Codable, Equatable {
 
     func weight(for kind: PaperKind) -> Weight { kindWeights[kind.rawValue] ?? .normal }
 
-    /// The importance of the most important followed keyword that found this paper, or nil if
-    /// no keyword did. A paper found by a high keyword and a low one counts as high.
+    /// The ranking of the strongest followed keyword that found this paper or that its title and abstract mention,
+    /// or nil if none does. Found counts as well as mentioned: a search matches words, not the exact phrase. A paper
+    /// a raising keyword and a lowering one both touch counts as raised.
     func keywordImportance(of paper: Paper) -> Importance? {
-        let byReason = Dictionary(followedKeywords.map { ($0.seed.reason, $0.importance) },
-                                  uniquingKeysWith: { $0.bonus >= $1.bonus ? $0 : $1 })
-        return paper.reasons.compactMap { byReason[$0] }.max { $0.bonus < $1.bonus }
+        guard followedKeywords.contains(where: { $0.importance != .normal }) else { return nil }
+        let text = (paper.title + " " + (paper.abstract ?? "")).lowercased()
+        let touching = followedKeywords.filter { paper.reasons.contains($0.seed.reason) || $0.mentioned(in: text) }
+        guard let top = touching.map(\.importance).max(by: { $0.bonus < $1.bonus }) else { return nil }
+        // A journal or researcher the user follows vouches for the paper: a keyword may lift it, not sink it.
+        let vouched = paper.reasons.contains { $0.hasPrefix(FacetKind.journal.reasonPrefix) || $0.hasPrefix(FacetKind.author.reasonPrefix) }
+        return top == .low && vouched ? .normal : top
     }
 
     /// A new rule on `phrase`. It takes the phrase as its id unless something already has it,
     /// so two devices that add the same word at once agree; a second rule gets its own.
-    mutating func addKeyword(_ phrase: String, alsoRequire: [String] = []) {
+    mutating func addKeyword(_ phrase: String, alsoRequire: [String] = [], search: KeywordSearch = .keepAll,
+                             importance: Importance = .normal, origin: KeywordOrigin? = nil) {
         let taken = Set(followedKeywords.map(\.id))
-        followedKeywords.append(KeywordRule(phrase: phrase, alsoRequire: alsoRequire, id: taken.contains(phrase) ? UUID().uuidString : phrase))
+        followedKeywords.append(KeywordRule(phrase: phrase, alsoRequire: alsoRequire, importance: importance, search: search,
+                                            origin: origin, id: taken.contains(phrase) ? UUID().uuidString : phrase))
     }
 
     /// Whether this exact keyword, with these words required, is followed already.
@@ -441,6 +540,8 @@ struct FeedSettings: Codable, Equatable {
     /// incremental refresh, seconds) and not a full rebuild (a minute).
     var forFetching: FeedSettings {
         var s = withoutFeedback
+        // How a keyword ranks, and where it came from, change nothing that is fetched; whether it is searched does.
+        s.followedKeywords = s.followedKeywords.map { var k = $0; k.importance = .normal; k.origin = nil; return k }
         let d = FeedSettings()
         s.recency = d.recency
         s.closeness = d.closeness

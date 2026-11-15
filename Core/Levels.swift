@@ -153,7 +153,9 @@ extension FeedSettings {
         func listed(_ entities: [Entity]) -> Bool { entities.contains { $0.id.lowercased() == id } }
         switch f.kind {
         case .keyword:
-            if followedKeywords.contains(where: { $0.phrase.lowercased() == id }) { return .maximum }
+            // Several rules can share a phrase: the one that reaches furthest decides.
+            let rules = followedKeywords.filter { $0.phrase.lowercased() == id }
+            if let top = rules.map(\.search.level).max() { return top }
             return mutedKeywords.contains { $0.lowercased() == id } ? .hide : .normal
         case .journal:
             return listed(followedJournals) ? .maximum : (listed(mutedJournals) ? .hide : .normal)

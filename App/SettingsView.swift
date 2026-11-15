@@ -77,7 +77,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Your feed")
                 } footer: {
-                    Text("What you follow is searched for and kept in full. A current interest that is on is searched for too, by its strongest phrases, and ranked with the rest. Your publications and reference library decide only the order, and can suggest what to follow. Changes take effect when you go back to the feed.")
+                    Text("What you follow is searched for and kept in full, except a keyword you set to rank with the rest or to rank only. A current interest that is on is searched for too, by its strongest phrases, and ranked with the rest. Your publications and reference library decide only the order, and can suggest what to follow. Changes take effect when you go back to the feed.")
                 }
                 Section("Connections and data") {
                     row(.references, status: referencesStatus)
@@ -400,7 +400,7 @@ struct KeywordListView: View {
                 }
                 .onDelete { rules.remove(atOffsets: $0) }
             } footer: {
-                Text("Each phrase is searched in titles and abstracts, and everything it finds is kept in your feed, however low it would score. Importance ranks your keywords against each other: a High keyword lifts its papers up the list, a Low one lowers them. Open a keyword to set it, and to require or exclude other words. Add the same phrase again to follow it with different words: \"pain\" requiring EEG and \"pain\" requiring MRI are two rules, and a paper needs to pass only one of them.")
+                Text("A keyword does two things, set separately when you open it. It can select papers: searched in titles and abstracts, with everything it finds kept in your feed (the usual), or ranked with the rest; or not searched at all. And it can rank: raise or lower every paper that mentions it, whatever found it. A broad word such as \"pain\" selects too much to search for, and can still rank. Add the same phrase again to follow it with different words: \"pain\" requiring EEG and \"pain\" requiring MRI are two rules, and a paper needs to pass only one of them.")
             }
         }
         .navigationTitle("Keywords")
@@ -416,7 +416,7 @@ struct KeywordListView: View {
                 // The same phrase may be added again: each rule has its own words to require.
                 if !phrase.isEmpty {
                     let taken = Set(rules.map(\.id))
-                    rules.append(KeywordRule(phrase: phrase, id: taken.contains(phrase) ? UUID().uuidString : phrase))
+                    rules.append(KeywordRule(phrase: phrase, origin: .hand, id: taken.contains(phrase) ? UUID().uuidString : phrase))
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -425,9 +425,16 @@ struct KeywordListView: View {
 
     private func detail(_ rule: KeywordRule) -> String {
         var parts: [String] = []
-        if rule.importance != .normal { parts.append("\(rule.importance.title) importance") }
+        switch rule.search {
+        case .keepAll: break
+        case .ranked: parts.append("searched, ranked with the rest")
+        case .rankOnly: parts.append("not searched")
+        }
+        if rule.importance == .high { parts.append("raises what mentions it") }
+        if rule.importance == .low { parts.append("lowers what mentions it") }
         if !rule.alsoRequire.isEmpty { parts.append("also: " + rule.alsoRequire.joined(separator: ", ")) }
         if !rule.exclude.isEmpty { parts.append("not: " + rule.exclude.joined(separator: ", ")) }
+        if let origin = rule.origin { parts.append(origin.label.prefix(1).lowercased() + origin.label.dropFirst()) }
         return parts.joined(separator: " · ")
     }
 }
@@ -435,20 +442,48 @@ struct KeywordListView: View {
 struct KeywordRuleEditor: View {
     @Binding var rule: KeywordRule
 
+    private var searchFooter: String {
+        let what: String
+        switch rule.search {
+        case .keepAll: what = "Searched in titles and abstracts, and everything it finds is kept in your feed, however low it would score."
+        case .ranked: what = "Searched in titles and abstracts, and what it finds is ranked with everything else: the best of it reaches your feed."
+        case .rankOnly: what = "Not searched for. It only ranks papers your other follows found, by the setting below."
+        }
+        return what + (rule.origin.map { " " + $0.label + "." } ?? "")
+    }
+
+    private var rankFooter: String {
+        if rule.search == .rankOnly && rule.importance == .normal {
+            return "As it stands this keyword does nothing: raise or lower what mentions it, or search for it."
+        }
+        return "Raise lifts every paper whose title or abstract mentions it, whatever found it; Lower moves them down, except a paper a journal or researcher you follow also found."
+    }
+
     var body: some View {
         Form {
             Section("Phrase") {
                 TextField("Phrase", text: $rule.phrase)
             }
             Section {
-                Picker("Importance", selection: $rule.importance) {
+                Picker("Search for it", selection: $rule.search) {
+                    ForEach(KeywordSearch.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } header: {
+                Text("Selecting papers")
+            } footer: {
+                Text(searchFooter)
+            }
+            Section {
+                Picker("Ranking", selection: $rule.importance) {
                     ForEach(Importance.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
             } header: {
-                Text("Importance")
+                Text("Ranking")
             } footer: {
-                Text("High lifts the papers this keyword finds up the list; Low lowers them. A paper that a journal or researcher you follow also found is never ranked below Normal.")
+                Text(rankFooter)
             }
             Section {
                 TextField("e.g. EEG, humans", text: Binding(
@@ -1291,7 +1326,10 @@ struct ProjectKeywordsSheet: View {
                     Button("Add \(chosen.count)") {
                         let all = own + asked + fromPapers + counted
                         var seen: Set<String> = []
-                        model.followKeywords(all.filter { chosen.contains($0.id) && seen.insert($0.id).inserted }.map { (phrase: $0.phrase, also: $0.also) })
+                        let name = model.project(id: projectID)?.name ?? "a current interest"
+                        model.followKeywords(all.filter { chosen.contains($0.id) && seen.insert($0.id).inserted }
+                            .map { (phrase: $0.phrase, also: $0.also, broad: $0.volume.map(KeywordPick.isBroad) ?? false) },
+                                             origin: .interest(name))
                         dismiss()
                     }
                     .disabled(chosen.isEmpty)
@@ -1362,7 +1400,7 @@ struct ProjectKeywordsSheet: View {
     private var askedFooter: String {
         var s = "A language model can be wrong: the count is how often your text uses each phrase."
         if asked.contains(where: { $0.volume != nil }) {
-            s += " A phrase that hundreds of papers a month match would list a great many, and one that a handful a year match would list almost nothing, so neither is ticked."
+            s += " A phrase that hundreds of papers a month match would list a great many, and one that a handful a year match would list almost nothing, so neither is ticked. A broad one you tick is not searched for: it raises the papers your other follows find that mention it."
         }
         if asked.contains(where: { $0.shortenedFrom != nil }) {
             s += " A phrase that describes the text too exactly to find papers is offered as its main words, all of which must appear: “rTMS + hypoalgesia”."
@@ -1414,7 +1452,7 @@ struct ProjectKeywordsSheet: View {
             parts.append(k.count == 0 ? "not in your text" : k.count == 1 ? "1 time in your text" : "\(k.count) times in your text")
         }
         if let v = k.volume {
-            if KeywordPick.isBroad(v) { parts.append("broad: about \(v / 12) papers a month") }
+            if KeywordPick.isBroad(v) { parts.append("broad: about \(v / 12) papers a month, so it would rank only") }
             else if KeywordPick.isNarrow(v) { parts.append(v == 0 ? "narrow: no papers in the last year" : v == 1 ? "narrow: 1 paper in the last year" : "narrow: \(v) papers in the last year") }
             else if v >= 24 { parts.append("about \(v / 12) papers a month") }
             else { parts.append("about \(v) papers a year") }

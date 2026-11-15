@@ -59,9 +59,16 @@ enum FeedBuilder {
             add(.funder(id: e.id, name: e.name), explicit: explicit(l))
         }
         for k in s.followedKeywords where !k.phrase.isEmpty {
-            let l = level(.keyword, k.phrase.lowercased(), k.phrase)
-            if let l, !l.fetches { continue }
-            add(k.seed, explicit: explicit(l))
+            // A level the user set on the phrase still wins; otherwise the keyword's own choice decides.
+            if let l = level(.keyword, k.phrase.lowercased(), k.phrase) {
+                if l.fetches { add(k.seed, explicit: explicit(l)) }
+                continue
+            }
+            switch k.search {
+            case .keepAll: add(k.seed, explicit: true)
+            case .ranked: add(k.seed, explicit: false)
+            case .rankOnly: continue
+            }
         }
         // What the user raised that is not in a follow list is searched for too.
         func seed(for e: FacetRef) -> Seed? {
@@ -86,10 +93,11 @@ enum FeedBuilder {
         return planned
     }
 
-    /// What the projects in use search for. Not a phrase already followed as a keyword (that search runs anyway, and
-    /// keeps everything), one the user muted or set to Hide or Lower, or one an earlier project already searches for.
+    /// What the projects in use search for. Not a phrase already searched for as a followed keyword (that search runs
+    /// anyway), one the user muted or set to Hide or Lower, or one an earlier project already searches for. A keyword
+    /// followed to rank only is not searched for, so a project may still search for it.
     static func projectSeeds(_ s: FeedSettings, projects: [ProjectFile]) -> [Seed] {
-        let followed = Set(s.followedKeywords.map { $0.phrase.lowercased() })
+        let followed = Set(s.followedKeywords.filter { $0.search != .rankOnly }.map { $0.phrase.lowercased() })
         let muted = s.mutedKeywords.map { $0.lowercased() }.filter { !$0.isEmpty }
         var taken = Set<String>()
         var out: [Seed] = []

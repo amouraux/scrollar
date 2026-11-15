@@ -127,7 +127,7 @@ slider; a bonus for each further seed that found the paper, for citing the user'
 for being found by something they follow (which matters for topics, institutions and funders, see below); a recency term that halves every fortnight, times
 its slider; a small penalty for repository records (not for preprints); the kind adjustment
 (case reports and conference abstracts start lowered; hide removes them before ranking); and
-the importance the user gave the keyword that found it (High +1.2, Normal 0, Low −0.6; the highest of the keywords that found it); and
+the ranking the user gave the keywords that found it or that its title and abstract mention (Raise +1.2, No change 0, Lower −0.6; the strongest of them); and
 two optional terms, off by default: the journal's two-year mean citedness (OpenAlex's
 open stand-in for the impact factor, which is Clarivate's) and the h-index of the first, the
 last or the higher of the two authors. Both are logarithmic, neutral for a paper with no
@@ -165,10 +165,27 @@ follows. Setting a bar to 0 ignores that sign. The best by score fill the strip,
 highlighted paper is not repeated below. Everything in this paragraph is a display choice
 (`Highlights.select`): changing it fetches and ranks nothing again.
 
-The user ranks their own keywords: each has an importance (Low, Normal, High; Normal by default),
-set in Tune under Keywords. It adds its bonus above to the papers the keyword found, which is
-how a High keyword rises in the single list. A paper that a journal or researcher also found is at
-least Normal, whatever its keywords say. Journals and researchers are unranked and count as
+**Selecting and ranking are separate choices for each keyword** (Tune, Follow and mute, Keywords; `KeywordSearch`).
+Selecting: *search, keep everything* (what following a keyword always meant, and the default), *search, rank with the
+rest* (fetched, but its papers compete like a topic's), or *don't search, rank only*. Ranking (`importance`, its stored
+name): *Raise*, *No change* or *Lower* every paper that the keyword found **or whose title and abstract mention it**,
+whatever found it, so a rank-only keyword acts on papers other follows brought in. The reason is breadth: a word such as
+"pain" matches hundreds of papers a month, too many to search for and keep, and is still worth ranking with. Suggestions
+that are broad (150 papers a month or more, in Suggest what to follow and in Suggested keywords) are therefore followed,
+if ticked, as *rank only* with *Raise*. A level set on the phrase in Levels still wins; Levels shows a kept keyword at
+Maximum, a searched-and-ranked one at Higher and a rank-only one at Normal. A project may still search for a phrase that
+is followed only to rank. Changing how a keyword ranks re-ranks; changing whether it is searched fetches again. A paper
+that a journal or researcher also found is at least No change, whatever its keywords say.
+
+**Where each keyword came from** is kept with it (`KeywordOrigin`: by hand, suggested from publications, a current
+interest by name, a search) and shown under it in the list. A keyword followed before this has none.
+
+Both are new to the sync file and the settings export, so their formats were raised (sync 7, settings 2): an older app
+would read a rank-only keyword as one to keep in full and write it back so. An older app leaves a newer file alone
+rather than flattening it, so every device needs this version for sync to carry on. A keyword with neither new setting
+is written exactly as before, so updating does not make every keyword look edited.
+
+The rest of this paragraph is about each rule's words. Journals and researchers are unranked and count as
 Normal. A keyword can require other words (all of them) and exclude some. The required words go to the
 sources with the phrase ("pain" AND "EEG"), so a broad phrase is not cut to its newest 300 papers
 before they are checked; exclusions are checked afterwards. The same phrase may be followed more than once,

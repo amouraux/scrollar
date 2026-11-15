@@ -29,8 +29,9 @@ struct SyncEntry: Codable, Equatable {
 
 struct SyncDocument: Codable, Equatable {
     /// Raise for any change an older app would misread, and never remove the guard
-    /// in the storage: an app writes only a format it knows.
-    static let currentFormat = 6
+    /// in the storage: an app writes only a format it knows. 7: a keyword may rank only, which an older app would read
+    /// as one to keep in full, and write back so.
+    static let currentFormat = 7
 
     var format = SyncDocument.currentFormat
     var entries: [String: SyncEntry] = [:]

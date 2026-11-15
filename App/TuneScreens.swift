@@ -138,7 +138,7 @@ struct FollowScreen: View {
             } header: {
                 Text("Follow")
             } footer: {
-                Text("Each follow searches for new papers, from when you go back to the feed. Everything that a journal, a researcher or a keyword you follow found is always in your feed, however low it scores. Topics, institutions and funders are too broad for that, so what they find is ranked with all the rest and gets a small bonus.")
+                Text("Each follow searches for new papers, from when you go back to the feed. Everything that a journal, a researcher or a keyword you follow found is always in your feed, however low it scores, unless you set the keyword to rank with the rest or to rank only. Topics, institutions and funders are too broad for that, so what they find is ranked with all the rest and gets a small bonus.")
             }
 
             Section("Mute") {

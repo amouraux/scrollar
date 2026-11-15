@@ -219,7 +219,7 @@ struct SearchScreen: View {
                 }
                 .buttonStyle(.borderedProminent)
                 HStack(spacing: 10) {
-                    Button { answered.insert(key); model.followKeywords([query]) } label: {
+                    Button { answered.insert(key); model.followKeywords([query], origin: .search) } label: {
                         Text("Follow as a keyword").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)

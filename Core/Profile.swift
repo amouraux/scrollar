@@ -124,6 +124,8 @@ struct ProfileSuggestion: Identifiable, Equatable {
     var selected: Bool
     /// A reason to think twice, shown with it: a journal that publishes a great deal.
     var note: String? = nil
+    /// A keyword too broad to search for: followed, it only ranks (`KeywordSearch.rankOnly`).
+    var broad = false
 
     var id: String { kind.rawValue + "/" + entity.id }
 }
@@ -179,7 +181,8 @@ enum ProfileAnalysis {
                     continue
                 }
                 if kind == .keyword, let volume = keywordVolumes[s.entity.id], volume >= broadKeyword {
-                    ordered[i].note = "Broad: about \(volume) papers a month match it. Leave it out, or add conditions to it afterwards."
+                    ordered[i].note = "Broad: about \(volume) papers a month match it, too many to search for. Ticked, it is not searched for and raises the papers your other follows find that mention it."
+                    ordered[i].broad = true
                     continue
                 }
                 if ticked < kind.defaultCount, s.count >= kind.minimumPapers, s.latestYear >= currentYear - recentYears {
