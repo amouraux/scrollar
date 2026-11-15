@@ -1252,6 +1252,14 @@ final class AppModel {
 
     /// Follow these phrases as keywords, those not followed already, in one change to the settings.
     @discardableResult
+    /// How many papers a keyword typed in the suggestions sheet found over the last year, searched as following
+    /// it would search. Nil without OpenAlex, or when the request failed.
+    func countKeyword(_ k: ProjectKeyword) async -> Int? {
+        guard usesOpenAlex else { return nil }
+        let since = Ranker.dayString(Date().addingTimeInterval(-Double(KeywordPick.volumeDays) * 86_400))
+        return await openAlex.volumes(of: [Seed.keyword(k.phrase, also: k.also)], since: since).first ?? nil
+    }
+
     /// Suggested keywords checked on OpenAlex: each with how many papers a month match it (a broad one
     /// unticked), and the keywords OpenAlex gives the papers the strongest of them find. Only the phrases are
     /// sent, never the text. Nil without OpenAlex (no key, or turned off), when there is nothing to say.

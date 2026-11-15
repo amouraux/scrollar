@@ -2430,6 +2430,10 @@ let kpNarrow = ProjectKeyword(phrase: "M1-rTMS induced hypoalgesia", count: 3, w
 let kpShort = KeywordPick.shortened(kpNarrow, wasSelected: true, forms: [("rTMS", ["hypoalgesia"]), ("rTMS", ["pain"]), ("M1", ["hypoalgesia"])], volumes: [40, 30_000, 2])
 check(kpShort?.label == "rTMS + hypoalgesia" && kpShort?.selected == true && kpShort?.shortenedFrom == "M1-rTMS induced hypoalgesia" && kpShort?.count == 3 && kpShort?.volume == 40, "keywords: a narrow phrase becomes its most specific shorter form that is neither narrow nor broad, ticked if it was")
 check(KeywordPick.shortened(kpNarrow, wasSelected: true, forms: [("rTMS", ["pain"])], volumes: [30_000]) == nil, "keywords: with no usable shorter form the phrase stays as it is")
+let kpTyped = KeywordPick.typed("  rTMS +  analgesia + rtms ", text: "rTMS was given; rtms again", from: "M1-rTMS induced hypoalgesia")
+check(kpTyped?.phrase == "rTMS" && kpTyped?.also == ["analgesia"] && kpTyped?.selected == true && kpTyped?.count == 2 && kpTyped?.shortenedFrom == "M1-rTMS induced hypoalgesia", "keywords typed: words joined by + must all appear, spaces tidied, a repeat dropped, ticked, counted in the text, with what it was edited from")
+check(KeywordPick.typed(" + ", text: "") == nil && KeywordPick.typed("\"offset analgesia\"", text: "")?.label == "offset analgesia", "keywords typed: nothing typed is no keyword, and quotes are taken off")
+check(KeywordPick.typed("thermal probe", text: "", from: "thermal probe")?.shortenedFrom == nil, "keywords typed: a suggestion kept as it was is not marked as edited")
 check(kpShort?.id == "rtms + hypoalgesia" && kpShort?.id != ProjectKeyword(phrase: "rTMS", count: 0, words: 1, selected: false).id, "keywords: a keyword with words required is told apart from the same phrase alone")
 let kpFound: [(query: String, keywords: [[String]])] = [
     ("offset analgesia", [["Offset Analgesia", "Conditioned Pain Modulation"], ["Conditioned Pain Modulation", "Open Access"], ["Conditioned pain modulation", "Open Access"], ["Thermal Pain"]]),

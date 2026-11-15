@@ -206,6 +206,22 @@ enum KeywordPick {
         return tidy(String(text[r]))
     }
 
+    /// A keyword the user typed or edited, ticked, with how often the text uses its main phrase. Words that
+    /// must all appear are joined with "+" ("rTMS + analgesia"), as they are shown. Nil for nothing typed.
+    /// `from` is the suggestion it was edited from, if it was one.
+    static func typed(_ input: String, text: String, from: String? = nil) -> ProjectKeyword? {
+        let terms = input.split(separator: "+")
+            .map { $0.split(whereSeparator: \.isWhitespace).joined(separator: " ").trimmingCharacters(in: CharacterSet(charactersIn: "\"“”")) }
+            .filter { !$0.isEmpty }
+        guard let first = terms.first else { return nil }
+        var seen: Set<String> = [first.lowercased()]
+        let also = terms.dropFirst().filter { seen.insert($0.lowercased()).inserted }
+        let fromKey = from.map { $0.lowercased() }
+        return ProjectKeyword(phrase: first, count: occurrences(first.lowercased(), in: text.lowercased()),
+                              words: first.split(separator: " ").count + also.count, selected: true, also: Array(also),
+                              shortenedFrom: fromKey == ([first] + also).joined(separator: " + ").lowercased() ? nil : from)
+    }
+
     /// One key for a phrase however it is cased or pluralised: "OA responses" and "oa response" are one.
     static func key(_ phrase: String) -> String {
         phrase.lowercased().split(separator: " ").map { w in

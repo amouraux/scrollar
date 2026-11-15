@@ -1219,6 +1219,12 @@ struct ProjectKeywordsSheet: View {
     @State private var chosen: Set<String> = []
     @State private var confirming = false
     @State private var loaded = false
+    /// Keywords the user typed, or edited from a suggestion, each counted on OpenAlex as it is entered.
+    @State private var own: [ProjectKeyword] = []
+    @State private var counting: Set<String> = []
+    @State private var newKeyword = ""
+    @State private var editing: ProjectKeyword?
+    @State private var editText = ""
 
     private var text: String { model.project(id: projectID)?.text ?? "" }
 
@@ -1230,6 +1236,7 @@ struct ProjectKeywordsSheet: View {
         NavigationStack {
             List {
                 askSection
+                ownSection
                 if !asked.isEmpty {
                     Section {
                         ForEach(asked) { row($0, suggested: true) }
@@ -1282,7 +1289,7 @@ struct ProjectKeywordsSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add \(chosen.count)") {
-                        let all = asked + fromPapers + counted
+                        let all = own + asked + fromPapers + counted
                         var seen: Set<String> = []
                         model.followKeywords(all.filter { chosen.contains($0.id) && seen.insert($0.id).inserted }.map { (phrase: $0.phrase, also: $0.also) })
                         dismiss()
@@ -1297,6 +1304,15 @@ struct ProjectKeywordsSheet: View {
                 // On the device nothing of the text leaves it, so there is nothing to ask first: the model is
                 // asked as the sheet opens. A service is still asked only on request, after its warning.
                 if ProjectAI.onDeviceAvailable && asked.isEmpty && !working { ask(.onDevice, excerpt: "") }
+            }
+            .alert("Edit keyword", isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
+                TextField("Keyword", text: $editText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Count it") { if let k = editing { enter(editText, replacing: k) }; editing = nil }
+                Button("Cancel", role: .cancel) { editing = nil }
+            } message: {
+                Text("Join words that must all appear with +, as in rTMS + analgesia.")
             }
             .sheet(isPresented: $confirming) {
                 if let config = model.remoteSummary {
@@ -1406,6 +1422,56 @@ struct ProjectKeywordsSheet: View {
         return parts.joined(separator: " · ")
     }
 
+    @ViewBuilder private var ownSection: some View {
+        Section {
+            ForEach(own) { row($0, suggested: false) }
+            HStack {
+                TextField("Add a keyword", text: $newKeyword)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.done)
+                    .onSubmit { enter(newKeyword, replacing: nil); newKeyword = "" }
+                if !newKeyword.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Button("Count") { enter(newKeyword, replacing: nil); newKeyword = "" }
+                }
+            }
+        } header: {
+            Text("Your keywords")
+        } footer: {
+            Text(model.usesOpenAlex
+                 ? "Type a keyword, or edit a suggestion (swipe it, or touch and hold), and it is counted on OpenAlex: how many papers it would have found in the last year. Join words that must all appear with +, as in rTMS + analgesia."
+                 : "Type a keyword, or edit a suggestion (swipe it, or touch and hold). Join words that must all appear with +, as in rTMS + analgesia. With OpenAlex on, each would also be counted.")
+        }
+    }
+
+    /// A typed or edited keyword: it replaces the suggestion it came from, joins Your keywords ticked, and is
+    /// counted. A keyword already followed is not offered again.
+    private func enter(_ input: String, replacing old: ProjectKeyword?) {
+        guard let k = KeywordPick.typed(input, text: text, from: old?.shortenedFrom ?? old?.label) else { return }
+        if model.settings.followsKeyword(k.phrase, alsoRequire: k.also) {
+            problem = "You follow “\(k.label)” already."
+            return
+        }
+        problem = nil
+        // The edited suggestion steps aside, and so does any copy of the new one, which is now the user's.
+        for id in [old?.id, k.id].compactMap({ $0 }) {
+            asked.removeAll { $0.id == id }
+            fromPapers.removeAll { $0.id == id }
+            counted.removeAll { $0.id == id }
+            own.removeAll { $0.id == id }
+            chosen.remove(id)
+        }
+        own.append(k)
+        chosen.insert(k.id)
+        guard model.usesOpenAlex else { return }
+        counting.insert(k.id)
+        Task {
+            let volume = await model.countKeyword(k)
+            if let i = own.firstIndex(where: { $0.id == k.id }) { own[i].volume = volume }
+            counting.remove(k.id)
+        }
+    }
+
     private func row(_ k: ProjectKeyword, suggested: Bool) -> some View {
         Button {
             if chosen.contains(k.id) { chosen.remove(k.id) } else { chosen.insert(k.id) }
@@ -1415,12 +1481,24 @@ struct ProjectKeywordsSheet: View {
                     .foregroundStyle(chosen.contains(k.id) ? Color.accentColor : Color.secondary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(k.label).foregroundStyle(.primary)
-                    Text(caption(k))
+                    Text(counting.contains(k.id) ? "counting on OpenAlex…" : caption(k))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .swipeActions(edge: .leading) {
+            Button("Edit") { edit(k) }.tint(.accentColor)
+        }
+        .contextMenu {
+            Button("Edit…", systemImage: "pencil") { edit(k) }
+        }
+    }
+
+    private func edit(_ k: ProjectKeyword) {
+        editText = k.label
+        editing = k
     }
 }
 

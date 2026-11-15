@@ -674,6 +674,13 @@ it says so. A service is asked only on request, after its warning, every time.
   different phrases agree (one search alone drifts with any word it shares with another field), unticked. They are how
   the literature names the subject: for the offset analgesia paper, descending pain modulation, conditioned pain
   modulation, diffuse noxious inhibitory control. Only the phrases go to OpenAlex, never the text; the sheet says so.
+  **Your keywords**, at the top of the sheet, takes a keyword typed by hand, or a suggestion edited (swipe it, or touch
+  and hold; on the Mac, right-click). Words that must all appear are joined with "+" ("rTMS + analgesia"), the same
+  conditions Follow and mute has (`KeywordPick.typed`, tested). An edited suggestion leaves its list and joins Your
+  keywords, ticked, marked with what it was edited from, and each entry is counted on OpenAlex as it is entered, so
+  trying "rTMS + analgesia" against "rTMS + pain" takes a few seconds. A count says narrow or broad but does not untick
+  what the user typed: that is theirs to judge. Tried on the iPhone simulator, which has no OpenAlex key, so the
+  typing and editing were checked there and the count only in code.
   Ranking candidate phrases by Apple's sentence embeddings was tried too and dropped: it preferred "clinical",
   "behavioral" and "informed consent".
 - **Claude, ChatGPT or another model**, if the user set up their own account under Summaries: the same brief, with an excerpt of up
