@@ -642,9 +642,30 @@ Counting cannot tell a topic from a frequent phrase, so **Suggested keywords** c
 (`Core/ProjectBrief.swift`, tested; the calls are in `App/ProjectAI.swift`). It is only ever on request, and
 nothing is asked or sent when the sheet opens.
 
-- **Apple's on-device model**, where the device has one: it reads an excerpt of about 5,000 characters on the
-  device, nothing is sent anywhere (it is the on-device model, never Private Cloud Compute), and the answer is
-  read as a list of phrases. Tried on the iPhone simulator, where it answered with sensible phrases.
+- **Apple's on-device model**, where the device has one, asked two things (`Core/KeywordPick.swift`, tested). First it
+  *chooses* six to ten phrases from a list of up to 50 found in the text: the counted phrases, runs of adjectives and
+  nouns that Apple's tagger finds at least twice ("conditioned pain modulation", which counting pairs cuts in two), and
+  the commonest single words, with any abbreviation the text defines written out ("OA response" becomes "offset
+  analgesia response"; searched as it stands it finds open access). The answer is matched back to the list, so it
+  cannot bring in a phrase the text never uses. Then it *writes* its own list, as it always did, and only the phrases
+  the text actually uses are kept, with the text's capitals: that catches a term said once, which counting misses.
+  Nothing is sent anywhere (the on-device model, never Private Cloud Compute). Why two questions: asked only to write,
+  a model this small drifts into general words and invents phrases ("nrs scale", "≤80% power"); asked to choose, it
+  chooses well. The guardrails are Apple's permissive ones for transforming the user's own text, because the default
+  ones refused three of four medical papers (depression, back pain, anaesthesia) when the answer had to come from a
+  fixed list; they apply only to a plain-text answer, which is why the choice is matched in code and not constrained by
+  a schema. Tried on four open-access papers on a Mac and in the app on the iPhone simulator: for an offset analgesia
+  paper it chose offset analgesia, onset hyperalgesia, pain modulation, conditioned pain, pain inhibition and temporal
+  summation.
+- **Checked on OpenAlex**, after either model answers and only with OpenAlex on and a key. Each suggested phrase is
+  counted over the last month; one with 150 papers a month or more (the same line as "Broad" in Suggest what to follow) is
+  shown with its count and not ticked. Then the first four ticked phrases are searched, fifteen papers each, and the
+  keywords OpenAlex gives those papers are offered as **Used in papers like these**, kept only where papers found for
+  different phrases agree (one search alone drifts with any word it shares with another field), unticked. They are how
+  the literature names the subject: for the offset analgesia paper, descending pain modulation, conditioned pain
+  modulation, diffuse noxious inhibitory control. Only the phrases go to OpenAlex, never the text; the sheet says so.
+  Ranking candidate phrases by Apple's sentence embeddings was tried too and dropped: it preferred "clinical",
+  "behavioral" and "informed consent".
 - **Claude, ChatGPT or another model**, if the user set up their own account under Summaries: the same brief, with an excerpt of up
   to 14,000 characters. Before anything is sent, a screen says that it leaves the device, who receives it
   (Anthropic or OpenAI, under the terms of the user's own account), that the developer receives nothing, and

@@ -1212,7 +1212,9 @@ struct ProjectKeywordsSheet: View {
     @State private var counted: [ProjectKeyword] = []
     @State private var asked: [ProjectKeyword] = []
     @State private var askedBy: String?
+    @State private var fromPapers: [ProjectKeyword] = []
     @State private var working = false
+    @State private var checking = false
     @State private var problem: String?
     @State private var chosen: Set<String> = []
     @State private var confirming = false
@@ -1234,7 +1236,19 @@ struct ProjectKeywordsSheet: View {
                     } header: {
                         Text("Suggested by \(askedBy ?? "the model")")
                     } footer: {
-                        Text("A language model can be wrong, and can suggest what the text never says: the count is how often your text uses it.")
+                        Text(askedFooter)
+                    }
+                }
+                if checking {
+                    Section { HStack { ProgressView(); Text("Looking the phrases up on OpenAlex…").foregroundStyle(.secondary) } }
+                }
+                if !fromPapers.isEmpty {
+                    Section {
+                        ForEach(fromPapers) { row($0, suggested: true) }
+                    } header: {
+                        Text("Used in papers like these")
+                    } footer: {
+                        Text("The keywords OpenAlex gives the papers that best match the ticked phrases above, kept where papers found for different phrases agree. They are how the literature names the subject, so your text may not use them. None is ticked.")
                     }
                 }
                 if loaded && counted.isEmpty && asked.isEmpty {
@@ -1268,7 +1282,7 @@ struct ProjectKeywordsSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add \(chosen.count)") {
-                        let all = asked + counted
+                        let all = asked + fromPapers + counted
                         var seen: Set<String> = []
                         model.followKeywords(all.filter { chosen.contains($0.id) && seen.insert($0.id).inserted }.map(\.phrase))
                         dismiss()
@@ -1312,7 +1326,10 @@ struct ProjectKeywordsSheet: View {
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
                 if ProjectAI.onDeviceAvailable {
-                    Text("Apple's model runs on this device. It reads about \(ProjectText.wordCount(ProjectAI.excerpt(for: .onDevice, text: text))) words of the text and nothing is sent anywhere, not even to Apple.")
+                    Text("Apple's model runs on this device. It reads about \(ProjectText.wordCount(ProjectAI.excerpt(for: .onDevice, text: text))) words of the text, chooses among the phrases found in it, and adds any it finds that the text uses. The text is not sent anywhere, not even to Apple.")
+                }
+                if model.usesOpenAlex {
+                    Text("The phrases suggested, and not the text, are then looked up on OpenAlex: how many papers a month each would list, and which keywords papers like these carry.")
                 }
                 if let config = model.remoteSummary {
                     Text((config.provider == .other ? "" : "\(config.provider.name) is run by \(config.receiver). ") + "Asking sends part of the text to \(config.provider == .other ? config.receiver : "them")\(config.key.isEmpty ? "" : ", with your key,") after showing you exactly what. Nothing is sent unless you ask, and you are asked each time.")
@@ -1321,9 +1338,18 @@ struct ProjectKeywordsSheet: View {
         }
     }
 
+    private var askedFooter: String {
+        var s = "A language model can be wrong: the count is how often your text uses each phrase."
+        if asked.contains(where: { $0.volume != nil }) {
+            s += " A phrase that hundreds of papers a month match would list a great many, so it is not ticked; add conditions to it afterwards if you keep it."
+        }
+        return s
+    }
+
     private func ask(_ route: ProjectAI.Route, excerpt: String) {
         working = true
         problem = nil
+        fromPapers = []
         let source = text
         Task {
             do {
@@ -1335,7 +1361,29 @@ struct ProjectKeywordsSheet: View {
                 problem = error.localizedDescription
             }
             working = false
+            guard !asked.isEmpty, model.usesOpenAlex else { return }
+            checking = true
+            let followed = model.settings.followedKeywords.map(\.phrase)
+            if let result = await model.checkKeywords(asked, text: source, offered: counted.map(\.phrase) + followed) {
+                // Untick only what the check found broad; a phrase the user ticked or unticked meanwhile is theirs.
+                for k in result.checked where k.volume.map({ $0 >= ProfileAnalysis.broadKeyword }) == true { chosen.remove(k.id) }
+                asked = result.checked
+                fromPapers = fresh(result.fromPapers)
+            }
+            checking = false
         }
+    }
+
+    private func caption(_ k: ProjectKeyword) -> String {
+        var parts: [String] = []
+        if let n = k.papers { parts.append(n == 1 ? "on 1 of the papers found" : "on \(n) of the papers found") }
+        if k.papers == nil || k.count > 0 {
+            parts.append(k.count == 0 ? "not in your text" : k.count == 1 ? "1 time in your text" : "\(k.count) times in your text")
+        }
+        if let v = k.volume {
+            parts.append(v >= ProfileAnalysis.broadKeyword ? "broad: about \(v) papers a month" : v == 1 ? "about 1 paper a month" : "about \(v) papers a month")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private func row(_ k: ProjectKeyword, suggested: Bool) -> some View {
@@ -1347,7 +1395,7 @@ struct ProjectKeywordsSheet: View {
                     .foregroundStyle(chosen.contains(k.id) ? Color.accentColor : Color.secondary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(k.phrase).foregroundStyle(.primary)
-                    Text(k.count == 0 ? "not in your text" : k.count == 1 ? "1 time in your text" : "\(k.count) times in your text")
+                    Text(caption(k))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

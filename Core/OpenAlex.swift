@@ -96,6 +96,16 @@ struct OpenAlexClient {
         return out
     }
 
+    /// The keywords OpenAlex gives each of the papers that best match a phrase (in titles and abstracts), to
+    /// read how the literature names a subject. Nothing on a failure: this only adds suggestions.
+    func keywordsOfWorks(matching phrase: String, perPage: Int) async -> [[String]] {
+        let filter = "title_and_abstract.search:" + phrase.replacingOccurrences(of: ",", with: " ")
+        guard let data = try? await fetch("works", ["filter": filter, "sort": "relevance_score:desc",
+                                                     "per-page": String(perPage), "select": "keywords"]),
+              let works = try? JSONDecoder().decode(WorkKeywordsDTO.self, from: data) else { return [] }
+        return works.results.map { ($0.keywords ?? []).compactMap(\.display_name) }
+    }
+
     /// How many papers each journal has published in all, by id. A general journal with a
     /// hundred thousand is not something to follow in full.
     func journalSizes(ids: [String]) async throws -> [String: Int] {
@@ -225,6 +235,12 @@ private struct AutocompleteDTO: Decodable {
         let hint: String?
         let works_count: Int?
     }
+}
+
+private struct WorkKeywordsDTO: Decodable {
+    let results: [Work]
+    struct Work: Decodable { let keywords: [Keyword]? }
+    struct Keyword: Decodable { let display_name: String? }
 }
 
 private struct CountDTO: Decodable {

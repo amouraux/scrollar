@@ -1252,6 +1252,27 @@ final class AppModel {
 
     /// Follow these phrases as keywords, those not followed already, in one change to the settings.
     @discardableResult
+    /// Suggested keywords checked on OpenAlex: each with how many papers a month match it (a broad one
+    /// unticked), and the keywords OpenAlex gives the papers the strongest of them find. Only the phrases are
+    /// sent, never the text. Nil without OpenAlex (no key, or turned off), when there is nothing to say.
+    func checkKeywords(_ words: [ProjectKeyword], text: String, offered: [String]) async -> (checked: [ProjectKeyword], fromPapers: [ProjectKeyword])? {
+        guard usesOpenAlex, !words.isEmpty else { return nil }
+        let client = openAlex
+        let monthAgo = Ranker.dayString(Date().addingTimeInterval(-30 * 86_400))
+        let checked = KeywordPick.checked(words, volumes: await client.keywordVolumes(phrases: words.map(\.phrase), since: monthAgo))
+        let queries = KeywordPick.literatureQueries(checked)
+        let found = await withTaskGroup(of: (Int, String, [[String]]).self) { group in
+            for (i, q) in queries.enumerated() {
+                group.addTask { (i, q, await client.keywordsOfWorks(matching: q, perPage: KeywordPick.papersPerQuery)) }
+            }
+            var out: [(Int, String, [[String]])] = []
+            for await r in group { out.append(r) }
+            return out.sorted { $0.0 < $1.0 }.map { (query: $0.1, keywords: $0.2) }
+        }
+        let fromPapers = KeywordPick.literature(found, excluding: offered + words.map(\.phrase), text: text)
+        return (checked, fromPapers)
+    }
+
     func followKeywords(_ phrases: [String]) -> Int {
         var s = settings
         var added = 0

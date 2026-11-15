@@ -1,6 +1,6 @@
 # Scrollar privacy policy
 
-*Last updated: 14 November 2026.*
+*Last updated: 15 November 2026.*
 
 Scrollar builds a feed of research papers from open scholarly services. It has no servers of its own, no account, no analytics, no advertising and no tracking. **The developer receives no data from the app.**
 
@@ -14,7 +14,7 @@ If you choose a sync file or a folder in iCloud Drive, Scrollar reads and writes
 
 The app contacts these services from your device, and they receive your IP address and what is needed to answer:
 
-- **OpenAlex** (api.openalex.org) and **Europe PMC** (ebi.ac.uk) and **PubMed / NCBI** (eutils.ncbi.nlm.nih.gov): the topics, keywords, authors, journals, institutions, funders, DOIs and PMIDs your feed is built from, and the ORCID iD you enter so your own publications can be found. If you give an OpenAlex key, it is sent to OpenAlex.
+- **OpenAlex** (api.openalex.org) and **Europe PMC** (ebi.ac.uk) and **PubMed / NCBI** (eutils.ncbi.nlm.nih.gov): the topics, keywords, authors, journals, institutions, funders, DOIs and PMIDs your feed is built from, and the ORCID iD you enter so your own publications can be found. When you ask for keywords to be suggested from a current interest, the phrases suggested (not its text) are sent to OpenAlex, to count the papers each would find and to read the keywords of papers like them. If you give an OpenAlex key, it is sent to OpenAlex.
 - **Crossref** (api.crossref.org), **arXiv** (export.arxiv.org) and the **Open Science Framework** (api.osf.io), only if switched on in Tune, Sources (Crossref is on by default, but asked only when OpenAlex is off; arXiv and OSF are off until you turn them on): the keywords, journal names and author names you follow, as a search (OSF is asked for keywords only). A phrase you search for is sent as a search term to the sources that are on, like a keyword you follow. Nothing else is sent.
 - **Zotero** (api.zotero.org), only if you connect an account: your key, to read the titles, abstracts and tags of your newest items and to add papers (and their PDFs) you choose.
 - **Claude (Anthropic), ChatGPT (OpenAI) or another model you name by its address** (Mistral, OpenRouter and the like, or a model on your own machine), only if you add your own account under Summaries and AI: the title and abstract of papers that stay on screen, to write a short takeaway. Nothing else is sent, except in one case you start yourself: in Tune, Your project, asking that model to suggest keywords sends an excerpt of the project description you pasted (passages of its text, without headings, tables, links or reference lists), after a screen that says who receives it and shows exactly what will be sent, and each time you ask. The service handles it under your account and its own terms. Apple's on-device model, where your device has one, can do the same without sending anything off the device.

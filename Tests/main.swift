@@ -2389,5 +2389,45 @@ let ciLate = Date(timeIntervalSince1970: 1_794_000_000)   // 2026-11-06 21:20 UT
 check(ProjectFile.day(ciLate, calendar: ciUTC) == "2026-11-06" && ProjectFile.day(ciLate, calendar: ciTokyo) == "2026-11-07", "interests: a day is the user's own calendar day")
 check(ProjectFile.date(ofDay: "2026-11-20", calendar: ciUTC).map { ProjectFile.day($0, calendar: ciUTC) } == "2026-11-20" && ProjectFile.date(ofDay: "nonsense") == nil, "interests: a last day goes to a date picker and back unchanged")
 
+
+// MARK: keywords: the model chooses from the text's phrases, OpenAlex checks them
+let kpText = """
+Offset analgesia (OA) and onset hyperalgesia (OH) were measured with a thermal probe. The OA response was \
+smaller in the NSSI group, as reported by Yelle et al. Gamma-band oscillations (GBOs) followed the stimulus. \
+Functional magnetic resonance imaging (fMRI) was not used. Offset analgesia was robust; the OA responses varied.
+"""
+let kpDefs = Abbreviations.definitions(in: kpText)
+check(kpDefs["OA"] == "offset analgesia" && kpDefs["OH"] == "onset hyperalgesia", "keywords: an abbreviation the text defines is read with its long form")
+check(kpDefs["GBOs"] == "gamma-band oscillations" && kpDefs["fMRI"] == "functional magnetic resonance imaging", "keywords: a plural or mixed-case abbreviation reads by its capitals, hyphenated words by their parts")
+check(Abbreviations.expand("OA response", kpDefs) == "offset analgesia response" && Abbreviations.expand("OAs", kpDefs) == "offset analgesias", "keywords: an abbreviation in a phrase is written out, a plural kept plural")
+check(Abbreviations.expand("NSSI group", kpDefs) == "NSSI group", "keywords: an abbreviation the text does not define is left as it is")
+let kpCounted = [ProjectKeyword(phrase: "OA response", count: 2, words: 2, selected: true),
+                 ProjectKeyword(phrase: "thermal probe", count: 1, words: 2, selected: true),
+                 ProjectKeyword(phrase: "temperature", count: 5, words: 1, selected: false)]
+let kpCands = KeywordPick.candidates(counted: kpCounted, nounPhrases: [("OA responses", 2), ("Yelle et al.", 3), ("NSSI group", 2), ("single mention", 1)], text: kpText)
+check(kpCands.map(\.phrase) == ["offset analgesia response", "thermal probe", "NSSI group", "temperature"], "keywords: candidates are phrases first, then single words, written out, a plural and a citation dropped, a noun phrase said once dropped")
+check(kpCands[0].count == 2, "keywords: a written-out phrase keeps the count of what the text says")
+let kpAnswer = "Here are the phrases:\n1. Offset analgesia responses\n2. thermal probe\n3. heat pain model\n- NSSI group"
+check(KeywordPick.matched(kpAnswer, candidates: kpCands).map(\.phrase) == ["offset analgesia response", "thermal probe", "NSSI group"], "keywords: the model's answer is matched to the list, whatever its case, plural or bullets, and anything not on it is dropped")
+let kpWritten = [ProjectKeyword(phrase: "gamma-band oscillations", count: 1, words: 2, selected: false),
+                 ProjectKeyword(phrase: "nrs scale", count: 0, words: 2, selected: false),
+                 ProjectKeyword(phrase: "thermal probes", count: 1, words: 2, selected: false),
+                 ProjectKeyword(phrase: "OH", count: 1, words: 1, selected: false)]
+let kpCombined = KeywordPick.combine(picked: KeywordPick.matched(kpAnswer, candidates: kpCands), written: kpWritten, text: kpText)
+check(kpCombined.map(\.phrase) == ["offset analgesia response", "thermal probe", "NSSI group", "gamma-band oscillations", "onset hyperalgesia"], "keywords: chosen phrases first, then what the model wrote that the text uses; invented ones and repeats dropped")
+check(KeywordPick.asWritten("nssi group", in: kpText) == "NSSI group" && KeywordPick.asWritten("Thermal Probe", in: kpText) == "thermal probe", "keywords: a written phrase takes the text's capitals for an acronym and lower case for the rest")
+check(kpCombined.prefix(3).allSatisfy(\.selected) && !kpCombined[3].selected, "keywords: the chosen phrases of several words are ticked, the written ones are not")
+let kpChecked = KeywordPick.checked(kpCombined, volumes: ["thermal probe": 12, "nssi group": 400])
+check(kpChecked[1].selected && kpChecked[1].volume == 12 && !kpChecked[2].selected && kpChecked[2].volume == 400 && kpChecked[0].volume == nil, "keywords: a phrase hundreds of papers a month match is unticked, and the count is kept to show")
+check(KeywordPick.literatureQueries(kpChecked) == ["offset analgesia response", "thermal probe"], "keywords: papers are searched for the ticked phrases only")
+let kpFound: [(query: String, keywords: [[String]])] = [
+    ("offset analgesia", [["Offset Analgesia", "Conditioned Pain Modulation"], ["Conditioned Pain Modulation", "Open Access"], ["Conditioned pain modulation", "Open Access"], ["Thermal Pain"]]),
+    ("thermal probe", [["Conditioned Pain Modulation", "Thermal pain"], ["Thermal Pain", "EEG"], ["Thermal Pain"]]),
+]
+let kpLit = KeywordPick.literature(kpFound, excluding: ["offset analgesia"], text: "conditioned pain modulation was not measured")
+check(kpLit.map(\.phrase) == ["conditioned pain modulation", "thermal pain"], "keywords from papers: kept where papers found for different phrases agree, title case undone, ones already offered left out")
+check(kpLit[0].papers == 4 && kpLit[0].count == 1 && !kpLit[0].selected, "keywords from papers: say how many papers carry them and how often the text does, and start unticked")
+check(KeywordPick.literature([kpFound[0]], excluding: [], text: "").map(\.phrase) == ["conditioned pain modulation"], "keywords from papers: with one search, only what at least three of its papers share")
+
 print(failures == 0 ? "\nAll passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)
